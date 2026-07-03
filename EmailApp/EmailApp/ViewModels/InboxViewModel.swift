@@ -174,6 +174,42 @@ final class InboxViewModel {
         }
     }
 
+    /// Subscribes to live inserts from the backend so new mail (delivered via
+    /// Gmail/Graph webhooks) appears within seconds, without polling. Runs
+    /// until cancelled — call from a long-lived `.task {}`.
+    func startRealtimeUpdates() async {
+        await RealtimeService.subscribeToMessages { [weak self] row in
+            Task { @MainActor in self?.handleRealtimeInsert(row) }
+        }
+    }
+
+    private func handleRealtimeInsert(_ row: RealtimeService.MessageRow) {
+        guard let provider = Provider(rawValue: row.provider),
+              let accountId = accounts.first(where: { $0.provider == provider && $0.email == row.accountEmail })?.id
+        else { return } // mail for an account not connected in this session — ignore
+        guard !messages.contains(where: { $0.id == row.id }) else { return }
+        messages.append(
+            Message(
+                id: row.id,
+                accountId: accountId,
+                provider: provider,
+                providerId: row.providerMessageId,
+                threadId: row.threadId,
+                messageIdHeader: row.messageIdHeader,
+                references: row.referencesHeader,
+                senderName: row.senderName,
+                senderEmail: row.senderEmail,
+                subject: row.subject,
+                snippet: row.snippet,
+                body: row.body,
+                receivedAt: row.receivedAt,
+                isRead: row.isRead,
+                categoryId: nil,
+                folder: row.folder
+            )
+        )
+    }
+
     private func fetchAndMerge(_ account: Account) async throws {
         let token = try await OAuthManager.shared.validAccessToken(for: account)
         let fetched: [Message]

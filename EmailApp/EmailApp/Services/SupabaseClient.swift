@@ -1,4 +1,9 @@
 import Foundation
+import Supabase
 
-// TODO: Phase 2+ — wrap supabase-swift client
-enum SupabaseClient {}
+enum SupabaseService {
+    static let client = SupabaseClient(
+        supabaseURL: URL(string: Config.supabaseURL)!,
+        supabaseKey: Config.supabaseAnonKey
+    )
+}

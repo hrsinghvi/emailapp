@@ -39,4 +39,16 @@ enum Config {
         "openid",
         "profile",
     ]
+
+    /// Phase 5 backend: manages webhook subscriptions + renewal, upserts
+    /// live mail into Supabase for realtime delivery to the app.
+    static let backendBaseURL = "https://backend-three-neon-86.vercel.app"
+
+    static let supabaseURL = "https://nmytrkgqefpqpjmmvzfw.supabase.co"
+
+    /// Anon/publishable key — safe client-side by design. RLS locks the
+    /// `accounts` table (refresh tokens) to the backend's service role only;
+    /// this key can only read `messages`.
+    static let supabaseAnonKey =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5teXRya2dxZWZwcXBqbW12emZ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwMTg4NjQsImV4cCI6MjA5ODU5NDg2NH0.r6rXAKD23LDY63K9oWeGqukacrtLeerh5n5TH-DpRjs"
 }

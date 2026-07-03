@@ -107,6 +107,13 @@ final class OAuthManager: NSObject {
         let tokens = try await exchangeCode(code, verifier: verifier, config: config)
         let email = try await fetchEmail(tokens.accessToken)
         try KeychainService.save(tokens, account: keychainAccount(provider: provider, email: email))
+        do {
+            try await BackendAPI.registerAccount(provider: provider, email: email, refreshToken: tokens.refreshToken)
+        } catch {
+            // Sign-in itself succeeded and the app works fine on direct API
+            // calls either way — only live push updates depend on this.
+            print("Backend registration failed for \(email), live updates won't start: \(error.localizedDescription)")
+        }
         return Account(id: UUID(), provider: provider, email: email, displayName: email)
     }
 
@@ -126,6 +133,10 @@ final class OAuthManager: NSObject {
             if tokens.isExpired {
                 guard (try? await refresh(tokens, provider: provider, keychainKey: key)) != nil else { continue }
             }
+            // Idempotent (backend upserts) — keeps accounts connected before
+            // Phase 5 (or on a fresh install restoring from Keychain) synced
+            // to the backend without a manual reconnect.
+            try? await BackendAPI.registerAccount(provider: provider, email: email, refreshToken: tokens.refreshToken)
             restored.append(Account(id: UUID(), provider: provider, email: email, displayName: email))
         }
         return restored

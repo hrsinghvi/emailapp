@@ -21,6 +21,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(hex: "#191919"))
         .task { await vm.restoreSession() }
+        .task { await vm.startRealtimeUpdates() }
         .sheet(item: $vm.composeContext) { context in
             ComposeView(vm: vm, context: context)
         }
