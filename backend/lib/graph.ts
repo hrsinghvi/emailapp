@@ -94,6 +94,57 @@ export async function getMessage(accessToken: string, id: string): Promise<Parse
   };
 }
 
+// MARK: - Mutations
+
+export async function setRead(accessToken: string, id: string, read: boolean): Promise<void> {
+  const res = await fetch(`${BASE}/me/messages/${id}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ isRead: read }),
+  });
+  if (!res.ok) throw new Error(`Graph mark-read failed (${res.status}): ${await res.text()}`);
+}
+
+/** Graph has a well-known "archive" mail folder; move between it and inbox. */
+export async function setArchived(accessToken: string, id: string, archived: boolean): Promise<void> {
+  const destinationId = archived ? "archive" : "inbox";
+  const res = await fetch(`${BASE}/me/messages/${id}/move`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ destinationId }),
+  });
+  if (!res.ok) throw new Error(`Graph move failed (${res.status}): ${await res.text()}`);
+}
+
+export async function send(
+  accessToken: string,
+  params: { to: string[]; subject: string; body: string }
+): Promise<void> {
+  const res = await fetch(`${BASE}/me/sendMail`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: {
+        subject: params.subject,
+        body: { contentType: "Text", content: params.body },
+        toRecipients: params.to.map((address) => ({ emailAddress: { address } })),
+      },
+      saveToSentItems: true,
+    }),
+  });
+  if (!res.ok) throw new Error(`Graph send failed (${res.status}): ${await res.text()}`);
+}
+
+/** Graph's /reply endpoint threads (References/In-Reply-To/conversationId) automatically. */
+export async function reply(accessToken: string, id: string, comment: string): Promise<void> {
+  const res = await fetch(`${BASE}/me/messages/${id}/reply`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ comment }),
+  });
+  if (!res.ok) throw new Error(`Graph reply failed (${res.status}): ${await res.text()}`);
+}
+
 function stripHtml(html: string): string {
   return decodeEntities(html.replace(/<[^>]+>/g, "")).trim();
 }

@@ -136,6 +136,88 @@ function decodeEntities(s: string): string {
     .replace(/&nbsp;/g, " ");
 }
 
+// MARK: - Mutations
+
+async function modifyLabels(
+  accessToken: string,
+  id: string,
+  { add = [], remove = [] }: { add?: string[]; remove?: string[] }
+): Promise<void> {
+  const res = await fetch(`${BASE}/messages/${id}/modify`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ addLabelIds: add, removeLabelIds: remove }),
+  });
+  if (!res.ok) throw new Error(`Gmail modify failed (${res.status}): ${await res.text()}`);
+}
+
+export async function setRead(accessToken: string, id: string, read: boolean): Promise<void> {
+  await modifyLabels(accessToken, id, read ? { remove: ["UNREAD"] } : { add: ["UNREAD"] });
+}
+
+/** Gmail has no "archive" label — archiving just removes INBOX. */
+export async function setArchived(accessToken: string, id: string, archived: boolean): Promise<void> {
+  await modifyLabels(accessToken, id, archived ? { remove: ["INBOX"] } : { add: ["INBOX"] });
+}
+
+export async function send(
+  accessToken: string,
+  params: { to: string; subject: string; body: string }
+): Promise<void> {
+  const raw = buildRawMessage(params);
+  await sendRaw(accessToken, raw, null);
+}
+
+export async function reply(
+  accessToken: string,
+  params: {
+    to: string;
+    subject: string;
+    body: string;
+    threadId: string | null;
+    messageIdHeader: string | null;
+    referencesHeader: string | null;
+  }
+): Promise<void> {
+  let subject = params.subject;
+  if (!subject.toLowerCase().startsWith("re:")) subject = `Re: ${subject}`;
+  const references = [params.referencesHeader, params.messageIdHeader].filter(Boolean).join(" ");
+  const raw = buildRawMessage({
+    to: params.to,
+    subject,
+    body: params.body,
+    inReplyTo: params.messageIdHeader ?? undefined,
+    references: references || undefined,
+  });
+  await sendRaw(accessToken, raw, params.threadId);
+}
+
+function buildRawMessage(params: {
+  to: string;
+  subject: string;
+  body: string;
+  inReplyTo?: string;
+  references?: string;
+}): string {
+  let headers = `To: ${params.to}\r\nSubject: ${params.subject}\r\nContent-Type: text/plain; charset=UTF-8\r\n`;
+  if (params.inReplyTo) headers += `In-Reply-To: ${params.inReplyTo}\r\n`;
+  if (params.references) headers += `References: ${params.references}\r\n`;
+  return base64UrlEncode(`${headers}\r\n${params.body}`);
+}
+
+async function sendRaw(accessToken: string, raw: string, threadId: string | null): Promise<void> {
+  const res = await fetch(`${BASE}/messages/send`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ raw, threadId: threadId ?? undefined }),
+  });
+  if (!res.ok) throw new Error(`Gmail send failed (${res.status}): ${await res.text()}`);
+}
+
+function base64UrlEncode(s: string): string {
+  return Buffer.from(s, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 function parseFrom(raw: string): { name: string; email: string } {
   const match = raw.match(/^(.*)<(.+)>$/);
   if (match) {
