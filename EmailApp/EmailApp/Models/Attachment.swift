@@ -3,7 +3,7 @@ import Foundation
 /// An attachment on a *received* message. `id` is the provider's attachment
 /// id (Gmail attachmentId / Graph attachment id) — bytes are fetched lazily
 /// on click, not eagerly with the message list.
-struct Attachment: Identifiable, Hashable {
+struct Attachment: Identifiable, Hashable, Codable {
     let id: String
     let filename: String
     let mimeType: String

@@ -64,6 +64,13 @@ final class InboxViewModel {
                 origin: origin, lastModified: Date()
             )
         }
+
+        var asQueuedSend: QueuedSend {
+            QueuedSend(
+                origin: origin, to: to, cc: cc, bcc: bcc, subject: subject, bodyHTML: bodyHTML,
+                attachments: attachments.map { DraftAttachment(filename: $0.filename, mimeType: $0.mimeType, data: $0.data) }
+            )
+        }
     }
 
     var accounts: [Account]
@@ -86,6 +93,7 @@ final class InboxViewModel {
 
     var drafts: [Draft] = []
     var pendingSends: [PendingSend] = []
+    var offlineQueue: [QueuedActionEnvelope] = []
 
     /// Unread count across every connected account's inbox, regardless of
     /// whatever provider filter/search/folder is currently on screen —
@@ -98,6 +106,10 @@ final class InboxViewModel {
         accounts = []
         messages = []
         drafts = DraftStore.loadAll()
+        offlineQueue = OfflineActionQueueStore.load()
+        NetworkMonitor.shared.onBecomeOnline = { [weak self] in
+            Task { await self?.replayOfflineQueue() }
+        }
     }
 
     // MARK: - Drafts
@@ -156,12 +168,27 @@ final class InboxViewModel {
     private func performActualSend(_ id: UUID) async {
         guard let index = pendingSends.firstIndex(where: { $0.id == id }) else { return }
         let pending = pendingSends[index]
+
+        guard NetworkMonitor.shared.isOnline else {
+            pendingSends.removeAll { $0.id == id }
+            enqueueOffline(.send(pending.asQueuedSend))
+            if let draftId = pending.draftId { deleteDraft(id: draftId) }
+            return
+        }
         do {
-            try await dispatchSend(pending)
+            try await dispatchSend(
+                origin: pending.origin, to: pending.to, cc: pending.cc, bcc: pending.bcc,
+                subject: pending.subject, bodyHTML: pending.bodyHTML, attachments: pending.attachments
+            )
             pendingSends.removeAll { $0.id == id }
             if let draftId = pending.draftId { deleteDraft(id: draftId) }
         } catch {
             pendingSends.removeAll { $0.id == id }
+            guard NetworkMonitor.shared.isOnline else {
+                enqueueOffline(.send(pending.asQueuedSend))
+                if let draftId = pending.draftId { deleteDraft(id: draftId) }
+                return
+            }
             // Falls back to a resumable draft rather than silently dropping
             // the content the user wrote.
             saveDraft(pending.asDraft)
@@ -169,22 +196,88 @@ final class InboxViewModel {
         }
     }
 
-    private func dispatchSend(_ pending: PendingSend) async throws {
+    private func dispatchSend(
+        origin: DraftOrigin, to: String, cc: String, bcc: String, subject: String, bodyHTML: String,
+        attachments: [OutgoingAttachment]
+    ) async throws {
         func plainSend() async throws {
-            try await send(
-                to: pending.to, cc: pending.cc, bcc: pending.bcc, subject: pending.subject,
-                bodyHTML: pending.bodyHTML, attachments: pending.attachments
-            )
+            try await send(to: to, cc: cc, bcc: bcc, subject: subject, bodyHTML: bodyHTML, attachments: attachments)
         }
-        switch pending.origin {
+        switch origin {
         case .new, .forward:
             try await plainSend()
         case .reply(let messageId):
             guard let message = messages.first(where: { $0.id == messageId }) else { try await plainSend(); return }
-            try await reply(to: message, cc: pending.cc, bcc: pending.bcc, bodyHTML: pending.bodyHTML, attachments: pending.attachments)
+            try await reply(to: message, cc: cc, bcc: bcc, bodyHTML: bodyHTML, attachments: attachments)
         case .replyAll(let messageId):
             guard let message = messages.first(where: { $0.id == messageId }) else { try await plainSend(); return }
-            try await replyAll(to: message, cc: pending.cc, bcc: pending.bcc, bodyHTML: pending.bodyHTML, attachments: pending.attachments)
+            try await replyAll(to: message, cc: cc, bcc: bcc, bodyHTML: bodyHTML, attachments: attachments)
+        }
+    }
+
+    // MARK: - Offline queue
+
+    private func enqueueOffline(_ action: OfflineAction) {
+        offlineQueue.append(QueuedActionEnvelope(id: UUID(), action: action, queuedAt: Date()))
+        OfflineActionQueueStore.save(offlineQueue)
+    }
+
+    /// Replays the queue in the exact order actions were originally
+    /// performed, removing each only after it actually succeeds. Stops
+    /// (rather than dropping the rest) if connectivity drops again
+    /// mid-replay — the remainder waits for the next `onBecomeOnline` fire.
+    func replayOfflineQueue() async {
+        guard NetworkMonitor.shared.isOnline else { return }
+        for envelope in offlineQueue {
+            guard NetworkMonitor.shared.isOnline else { return }
+            do {
+                try await performOfflineAction(envelope.action)
+                offlineQueue.removeAll { $0.id == envelope.id }
+                OfflineActionQueueStore.save(offlineQueue)
+            } catch {
+                if NetworkMonitor.shared.isOnline {
+                    // A genuine failure, not just still-offline — surface it
+                    // and drop it; retrying a permanently-broken action
+                    // forever isn't useful.
+                    offlineQueue.removeAll { $0.id == envelope.id }
+                    OfflineActionQueueStore.save(offlineQueue)
+                    errorMessage = "A queued action failed: \(error.localizedDescription)"
+                } else {
+                    return
+                }
+            }
+        }
+    }
+
+    private func performOfflineAction(_ action: OfflineAction) async throws {
+        switch action {
+        case .archive(let messageId):
+            guard let message = messages.first(where: { $0.id == messageId }) else { return }
+            let token = try await accessToken(for: message)
+            switch message.provider {
+            case .gmail: try await GmailAPI.setArchived(id: message.providerId, accessToken: token)
+            case .outlook: try await GraphAPI.setArchived(id: message.providerId, accessToken: token)
+            }
+        case .delete(let messageId):
+            guard let message = messages.first(where: { $0.id == messageId }) else { return }
+            let token = try await accessToken(for: message)
+            switch message.provider {
+            case .gmail: try await GmailAPI.trash(id: message.providerId, accessToken: token)
+            case .outlook: try await GraphAPI.delete(id: message.providerId, accessToken: token)
+            }
+        case .markRead(let messageId, let read):
+            guard let message = messages.first(where: { $0.id == messageId }) else { return }
+            let token = try await accessToken(for: message)
+            switch message.provider {
+            case .gmail: try await GmailAPI.setRead(id: message.providerId, accessToken: token, read: read)
+            case .outlook: try await GraphAPI.setRead(id: message.providerId, accessToken: token, read: read)
+            }
+        case .send(let payload):
+            try await dispatchSend(
+                origin: payload.origin, to: payload.to, cc: payload.cc, bcc: payload.bcc,
+                subject: payload.subject, bodyHTML: payload.bodyHTML,
+                attachments: payload.attachments.compactMap(\.outgoing)
+            )
         }
     }
 
@@ -296,11 +389,19 @@ final class InboxViewModel {
         toggleReadStatus(message)
     }
 
-    /// Optimistic update, rolled back if the provider call fails.
+    /// Optimistic update. Offline: queued and kept as-is (offline actions
+    /// never fail immediately). Online but the call still fails: a genuine
+    /// error, rolled back and surfaced.
     private func setRead(_ message: Message, read: Bool) async {
         guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
         let previous = messages[index].isRead
         messages[index].isRead = read
+        MessageCacheStore.save(messages)
+
+        guard NetworkMonitor.shared.isOnline else {
+            enqueueOffline(.markRead(messageId: message.id, read: read))
+            return
+        }
         do {
             let token = try await accessToken(for: message)
             switch message.provider {
@@ -308,7 +409,12 @@ final class InboxViewModel {
             case .outlook: try await GraphAPI.setRead(id: message.providerId, accessToken: token, read: read)
             }
         } catch {
+            guard NetworkMonitor.shared.isOnline else {
+                enqueueOffline(.markRead(messageId: message.id, read: read))
+                return
+            }
             messages[index].isRead = previous
+            MessageCacheStore.save(messages)
             errorMessage = "Couldn't update read status: \(error.localizedDescription)"
         }
     }
@@ -320,14 +426,21 @@ final class InboxViewModel {
         archive(message)
     }
 
-    /// Optimistic: message disappears from the inbox list immediately,
-    /// rolled back to "inbox" if the provider call fails.
+    /// Optimistic: message disappears from the inbox list immediately.
+    /// Offline: queued, kept archived locally. Online but the call still
+    /// fails: a genuine error, rolled back and surfaced.
     func archive(_ message: Message) {
         guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
         let previousFolder = messages[index].folder
         messages[index].folder = "archive"
+        MessageCacheStore.save(messages)
         if selectedThreadKey == message.threadKey, selectedThread == nil {
             selectedThreadKey = nil
+        }
+
+        guard NetworkMonitor.shared.isOnline else {
+            enqueueOffline(.archive(messageId: message.id))
+            return
         }
         Task {
             do {
@@ -337,8 +450,13 @@ final class InboxViewModel {
                 case .outlook: try await GraphAPI.setArchived(id: message.providerId, accessToken: token)
                 }
             } catch {
+                guard NetworkMonitor.shared.isOnline else {
+                    enqueueOffline(.archive(messageId: message.id))
+                    return
+                }
                 if let idx = messages.firstIndex(where: { $0.id == message.id }) {
                     messages[idx].folder = previousFolder
+                    MessageCacheStore.save(messages)
                 }
                 errorMessage = "Couldn't archive: \(error.localizedDescription)"
             }
@@ -369,6 +487,12 @@ final class InboxViewModel {
         guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
         let previousFolder = messages[index].folder
         messages[index].folder = "trash"
+        MessageCacheStore.save(messages)
+
+        guard NetworkMonitor.shared.isOnline else {
+            enqueueOffline(.delete(messageId: message.id))
+            return
+        }
         Task {
             do {
                 let token = try await accessToken(for: message)
@@ -377,8 +501,13 @@ final class InboxViewModel {
                 case .outlook: try await GraphAPI.delete(id: message.providerId, accessToken: token)
                 }
             } catch {
+                guard NetworkMonitor.shared.isOnline else {
+                    enqueueOffline(.delete(messageId: message.id))
+                    return
+                }
                 if let idx = messages.firstIndex(where: { $0.id == message.id }) {
                     messages[idx].folder = previousFolder
+                    MessageCacheStore.save(messages)
                 }
                 errorMessage = "Couldn't delete: \(error.localizedDescription)"
             }
@@ -533,6 +662,12 @@ final class InboxViewModel {
     /// Restores any accounts signed in during a prior launch (silent token
     /// refresh, no browser prompt) and loads their mail. Call once at startup.
     func restoreSession() async {
+        // Populate from local cache first so previously-synced mail is
+        // visible instantly and works fully offline — the in-memory
+        // `messages` array alone doesn't survive a relaunch with no network.
+        if messages.isEmpty {
+            messages = MessageCacheStore.load()
+        }
         for account in await OAuthManager.shared.restoreAccounts() {
             do {
                 try await fetchAndMerge(account)
@@ -623,5 +758,6 @@ final class InboxViewModel {
         for thread in filteredThreads.prefix(6) {
             prewarmHTML(for: thread.latest)
         }
+        MessageCacheStore.save(messages)
     }
 }

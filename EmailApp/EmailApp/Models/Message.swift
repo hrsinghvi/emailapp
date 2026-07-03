@@ -1,6 +1,6 @@
 import Foundation
 
-struct Message: Identifiable, Hashable {
+struct Message: Identifiable, Hashable, Codable {
     let id: UUID
     let accountId: UUID
     let provider: Provider

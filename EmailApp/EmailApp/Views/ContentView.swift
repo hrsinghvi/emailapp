@@ -78,6 +78,34 @@ private struct TopBar: View {
             FilterChip(title: "Outlook", tint: Provider.outlook.color, isActive: vm.providerFilter == .outlook) {
                 vm.providerFilter = .outlook
             }
+
+            ConnectivityIndicator(vm: vm)
+        }
+    }
+}
+
+/// Makes offline mode legible instead of the UI just silently doing
+/// nothing — shows either "Offline" or, once back online, how many queued
+/// actions are still catching up.
+private struct ConnectivityIndicator: View {
+    let vm: InboxViewModel
+    var network = NetworkMonitor.shared
+
+    var body: some View {
+        if !network.isOnline {
+            Label("Offline", systemImage: "wifi.slash")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.orange)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color.orange.opacity(0.15)))
+        } else if !vm.offlineQueue.isEmpty {
+            Label("Syncing \(vm.offlineQueue.count)…", systemImage: "arrow.triangle.2.circlepath")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color.white.opacity(0.06)))
         }
     }
 }
