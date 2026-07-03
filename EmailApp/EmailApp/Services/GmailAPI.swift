@@ -90,39 +90,117 @@ enum GmailAPI {
         }
     }
 
+    /// Gmail has no "archive" label — archiving just removes INBOX.
+    nonisolated static func setArchived(id: String, accessToken: String) async throws {
+        try await modifyLabels(id: id, accessToken: accessToken, remove: ["INBOX"])
+    }
+
     /// Sends a brand-new, unthreaded message.
-    nonisolated static func send(to: String, subject: String, body: String, accessToken: String) async throws {
-        let raw = buildRawMessage(to: to, subject: subject, body: body)
+    nonisolated static func send(
+        to: String, subject: String, body: String,
+        attachments: [OutgoingAttachment] = [], accessToken: String
+    ) async throws {
+        let raw = buildRawMessage(to: to, subject: subject, body: body, attachments: attachments)
         try await sendRaw(raw, threadId: nil, accessToken: accessToken)
     }
 
-    /// Replies in-thread using References/In-Reply-To headers + Gmail's threadId.
-    nonisolated static func reply(to message: Message, body: String, accessToken: String) async throws {
+    /// Replies to just the original sender, in-thread.
+    nonisolated static func reply(
+        to message: Message, body: String,
+        attachments: [OutgoingAttachment] = [], accessToken: String
+    ) async throws {
+        try await sendThreadedReply(
+            to: message, recipients: [message.senderEmail], body: body,
+            attachments: attachments, accessToken: accessToken
+        )
+    }
+
+    /// Replies to the sender plus every original To/Cc recipient (minus the
+    /// account replying), in-thread.
+    nonisolated static func replyAll(
+        to message: Message, selfEmail: String, body: String,
+        attachments: [OutgoingAttachment] = [], accessToken: String
+    ) async throws {
+        var seen = Set<String>()
+        let recipients = ([message.senderEmail] + message.toRecipients + message.ccRecipients)
+            .filter { seen.insert($0.lowercased()).inserted }
+            .filter { $0.lowercased() != selfEmail.lowercased() }
+        try await sendThreadedReply(
+            to: message, recipients: recipients, body: body,
+            attachments: attachments, accessToken: accessToken
+        )
+    }
+
+    private nonisolated static func sendThreadedReply(
+        to message: Message, recipients: [String], body: String,
+        attachments: [OutgoingAttachment], accessToken: String
+    ) async throws {
         var subject = message.subject
         if !subject.lowercased().hasPrefix("re:") { subject = "Re: \(subject)" }
         let references = [message.references, message.messageIdHeader]
             .compactMap { $0 }.joined(separator: " ")
         let raw = buildRawMessage(
-            to: message.senderEmail, subject: subject, body: body,
+            to: recipients.joined(separator: ", "), subject: subject, body: body,
             inReplyTo: message.messageIdHeader,
-            references: references.isEmpty ? nil : references
+            references: references.isEmpty ? nil : references,
+            attachments: attachments
         )
         try await sendRaw(raw, threadId: message.threadId, accessToken: accessToken)
     }
 
     private nonisolated static func buildRawMessage(
-        to: String, subject: String, body: String, inReplyTo: String? = nil, references: String? = nil
+        to: String, subject: String, body: String, inReplyTo: String? = nil, references: String? = nil,
+        attachments: [OutgoingAttachment] = []
     ) -> String {
-        var headers = "To: \(to)\r\nSubject: \(subject)\r\nContent-Type: text/plain; charset=UTF-8\r\n"
+        guard !attachments.isEmpty else {
+            var headers = "To: \(to)\r\nSubject: \(subject)\r\nContent-Type: text/plain; charset=UTF-8\r\n"
+            if let inReplyTo { headers += "In-Reply-To: \(inReplyTo)\r\n" }
+            if let references { headers += "References: \(references)\r\n" }
+            return Data((headers + "\r\n" + body).utf8).base64URLEncoded()
+        }
+
+        let boundary = "boundary-\(UUID().uuidString)"
+        var headers = "To: \(to)\r\nSubject: \(subject)\r\nMIME-Version: 1.0\r\n"
+        headers += "Content-Type: multipart/mixed; boundary=\"\(boundary)\"\r\n"
         if let inReplyTo { headers += "In-Reply-To: \(inReplyTo)\r\n" }
         if let references { headers += "References: \(references)\r\n" }
-        return Data((headers + "\r\n" + body).utf8).base64URLEncoded()
+
+        var mime = "--\(boundary)\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n\(body)\r\n"
+        for attachment in attachments {
+            let encoded = attachment.data.base64EncodedString(
+                options: [.lineLength76Characters, .endLineWithCarriageReturn, .endLineWithLineFeed]
+            )
+            mime += "--\(boundary)\r\n"
+            mime += "Content-Type: \(attachment.mimeType); name=\"\(attachment.filename)\"\r\n"
+            mime += "Content-Disposition: attachment; filename=\"\(attachment.filename)\"\r\n"
+            mime += "Content-Transfer-Encoding: base64\r\n\r\n\(encoded)\r\n"
+        }
+        mime += "--\(boundary)--"
+
+        return Data((headers + "\r\n" + mime).utf8).base64URLEncoded()
     }
 
     private nonisolated static func sendRaw(_ raw: String, threadId: String?, accessToken: String) async throws {
         struct Body: Encodable { let raw: String; let threadId: String? }
         _ = try await post(
             "\(base)/messages/send", accessToken: accessToken, json: Body(raw: raw, threadId: threadId))
+    }
+
+    // MARK: - Attachments
+
+    /// Fetches the raw bytes of a single attachment on demand (never pulled
+    /// in bulk with the message list).
+    nonisolated static func fetchAttachmentData(
+        messageId: String, attachmentId: String, accessToken: String
+    ) async throws -> Data {
+        struct AttachmentBody: Decodable { let data: String }
+        let data = try await get(
+            "\(base)/messages/\(messageId)/attachments/\(attachmentId)", accessToken: accessToken)
+        let decoded = try JSONDecoder().decode(AttachmentBody.self, from: data)
+        guard let raw = RawMessage.decodeBase64URLData(decoded.data) else {
+            throw GmailError.requestFailed(-1, "bad attachment data")
+        }
+        return raw
     }
 
     // MARK: - Single message
@@ -144,12 +222,13 @@ enum GmailAPI {
 
         struct Payload: Decodable {
             let mimeType: String?
+            let filename: String?
             let headers: [Header]?
             let body: Body?
             let parts: [Payload]?
         }
         struct Header: Decodable { let name: String; let value: String }
-        struct Body: Decodable { let data: String? }
+        struct Body: Decodable { let data: String?; let attachmentId: String?; let size: Int? }
 
         func toMessage(account: Account, folder: String) -> Message {
             let headers = payload?.headers ?? []
@@ -180,8 +259,37 @@ enum GmailAPI {
                 body: Self.extractBody(payload) ?? (snippet ?? ""),
                 receivedAt: date,
                 isRead: !(labelIds?.contains("UNREAD") ?? false),
-                folder: folder
+                folder: folder,
+                toRecipients: Self.parseAddressList(header("To")),
+                ccRecipients: Self.parseAddressList(header("Cc")),
+                attachments: Self.extractAttachments(payload)
             )
+        }
+
+        static func parseAddressList(_ raw: String) -> [String] {
+            guard !raw.isEmpty else { return [] }
+            return raw.split(separator: ",").map { parseFrom(String($0)).email }
+        }
+
+        /// Walks the MIME part tree collecting parts that carry a filename +
+        /// attachmentId — the primary text/plain or text/html body parts have
+        /// neither, so they're naturally excluded.
+        static func extractAttachments(_ payload: Payload?) -> [Attachment] {
+            guard let payload else { return [] }
+            var results: [Attachment] = []
+            if let filename = payload.filename, !filename.isEmpty, let attachmentId = payload.body?.attachmentId {
+                results.append(
+                    Attachment(
+                        id: attachmentId, filename: filename,
+                        mimeType: payload.mimeType ?? "application/octet-stream",
+                        sizeBytes: payload.body?.size ?? 0
+                    )
+                )
+            }
+            for part in payload.parts ?? [] {
+                results.append(contentsOf: extractAttachments(part))
+            }
+            return results
         }
 
         /// Prefers text/plain anywhere in the MIME tree; falls back to stripped text/html.
@@ -203,11 +311,15 @@ enum GmailAPI {
         }
 
         static func decodeBase64URL(_ s: String) -> String? {
+            guard let data = decodeBase64URLData(s) else { return nil }
+            return String(data: data, encoding: .utf8)
+        }
+
+        static func decodeBase64URLData(_ s: String) -> Data? {
             var b64 = s.replacingOccurrences(of: "-", with: "+")
                        .replacingOccurrences(of: "_", with: "/")
             while b64.count % 4 != 0 { b64 += "=" }
-            guard let data = Data(base64Encoded: b64) else { return nil }
-            return String(data: data, encoding: .utf8)
+            return Data(base64Encoded: b64)
         }
 
         static func parseFrom(_ raw: String) -> (name: String, email: String) {

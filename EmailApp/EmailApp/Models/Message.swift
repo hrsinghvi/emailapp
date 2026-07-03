@@ -7,8 +7,8 @@ struct Message: Identifiable, Hashable {
     /// Raw provider-side id (Gmail message id / Graph message id) — needed for
     /// API calls, since `id` above is a derived stable UUID for SwiftUI identity.
     let providerId: String
-    /// Gmail thread id, used to keep replies in the same thread. Nil for Outlook
-    /// (Graph's /reply endpoint threads automatically off providerId).
+    /// Thread grouping key: Gmail's threadId, or Outlook's conversationId.
+    /// Both are stable per-provider ids that group a reply chain together.
     let threadId: String?
     /// Gmail RFC822 "Message-ID" header, needed to build In-Reply-To/References.
     let messageIdHeader: String?
@@ -22,6 +22,15 @@ struct Message: Identifiable, Hashable {
     let receivedAt: Date
     var isRead: Bool
     var folder: String = "inbox"
+    /// Original To/Cc recipients, needed to build a correct reply-all list.
+    var toRecipients: [String] = []
+    var ccRecipients: [String] = []
+    var attachments: [Attachment] = []
+
+    /// Grouping key for thread view: falls back to the message's own id so
+    /// a message with no thread/conversation id still renders as a
+    /// single-message "thread".
+    var threadKey: String { threadId ?? id.uuidString }
 
     var senderInitials: String {
         senderName

@@ -1,3 +1,5 @@
+import { randomUUID } from "crypto";
+
 const BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 
 export interface ParsedMessage {
@@ -160,9 +162,16 @@ export async function setArchived(accessToken: string, id: string, archived: boo
   await modifyLabels(accessToken, id, archived ? { remove: ["INBOX"] } : { add: ["INBOX"] });
 }
 
+export interface MailAttachment {
+  filename: string;
+  mimeType: string;
+  /** Raw base64 content (not base64url), exactly as an MCP client would send it. */
+  contentBase64: string;
+}
+
 export async function send(
   accessToken: string,
-  params: { to: string; subject: string; body: string }
+  params: { to: string; subject: string; body: string; attachments?: MailAttachment[] }
 ): Promise<void> {
   const raw = buildRawMessage(params);
   await sendRaw(accessToken, raw, null);
@@ -177,6 +186,7 @@ export async function reply(
     threadId: string | null;
     messageIdHeader: string | null;
     referencesHeader: string | null;
+    attachments?: MailAttachment[];
   }
 ): Promise<void> {
   let subject = params.subject;
@@ -188,6 +198,7 @@ export async function reply(
     body: params.body,
     inReplyTo: params.messageIdHeader ?? undefined,
     references: references || undefined,
+    attachments: params.attachments,
   });
   await sendRaw(accessToken, raw, params.threadId);
 }
@@ -198,11 +209,33 @@ function buildRawMessage(params: {
   body: string;
   inReplyTo?: string;
   references?: string;
+  attachments?: MailAttachment[];
 }): string {
-  let headers = `To: ${params.to}\r\nSubject: ${params.subject}\r\nContent-Type: text/plain; charset=UTF-8\r\n`;
+  const attachments = params.attachments ?? [];
+  if (attachments.length === 0) {
+    let headers = `To: ${params.to}\r\nSubject: ${params.subject}\r\nContent-Type: text/plain; charset=UTF-8\r\n`;
+    if (params.inReplyTo) headers += `In-Reply-To: ${params.inReplyTo}\r\n`;
+    if (params.references) headers += `References: ${params.references}\r\n`;
+    return base64UrlEncode(`${headers}\r\n${params.body}`);
+  }
+
+  const boundary = `boundary-${randomUUID()}`;
+  let headers = `To: ${params.to}\r\nSubject: ${params.subject}\r\nMIME-Version: 1.0\r\n`;
+  headers += `Content-Type: multipart/mixed; boundary="${boundary}"\r\n`;
   if (params.inReplyTo) headers += `In-Reply-To: ${params.inReplyTo}\r\n`;
   if (params.references) headers += `References: ${params.references}\r\n`;
-  return base64UrlEncode(`${headers}\r\n${params.body}`);
+
+  let mime = `--${boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${params.body}\r\n`;
+  for (const attachment of attachments) {
+    const b64 = Buffer.from(attachment.contentBase64, "base64").toString("base64").replace(/(.{76})/g, "$1\r\n");
+    mime += `--${boundary}\r\n`;
+    mime += `Content-Type: ${attachment.mimeType}; name="${attachment.filename}"\r\n`;
+    mime += `Content-Disposition: attachment; filename="${attachment.filename}"\r\n`;
+    mime += `Content-Transfer-Encoding: base64\r\n\r\n${b64}\r\n`;
+  }
+  mime += `--${boundary}--`;
+
+  return base64UrlEncode(`${headers}\r\n${mime}`);
 }
 
 async function sendRaw(accessToken: string, raw: string, threadId: string | null): Promise<void> {

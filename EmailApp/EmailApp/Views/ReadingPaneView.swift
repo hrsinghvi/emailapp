@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ReadingPaneView: View {
@@ -5,8 +6,8 @@ struct ReadingPaneView: View {
 
     var body: some View {
         Group {
-            if let message = vm.selectedMessage {
-                messageView(message)
+            if let thread = vm.selectedThread {
+                threadView(thread)
             } else {
                 emptyState
             }
@@ -26,45 +27,133 @@ struct ReadingPaneView: View {
         }
     }
 
-    private func messageView(_ message: Message) -> some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 12) {
-                        Circle()
-                            .fill(message.provider.color)
-                            .frame(width: 44, height: 44)
-                            .overlay(
-                                Text(message.senderInitials)
-                                    .font(.headline)
-                                    .foregroundStyle(.white)
-                            )
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(message.senderName)
-                                .font(.headline)
-                            Text(message.senderEmail)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text(message.receivedAt, format: .dateTime.month().day().hour().minute())
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+    private func threadView(_ thread: MessageThread) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(thread.latest.subject)
+                    .font(.title2.weight(.semibold))
+                    .padding(.horizontal, 4)
+
+                ForEach(thread.messages) { message in
+                    if vm.expandedMessageIds.contains(message.id) {
+                        expandedCard(message)
+                    } else {
+                        collapsedRow(message)
                     }
-
-                    Text(message.subject)
-                        .font(.title2.weight(.semibold))
-
-                    Text(message.body)
-                        .font(.body)
-                        .foregroundStyle(.primary.opacity(0.85))
-                        .lineSpacing(5)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(20)
+            }
+            .padding(20)
+        }
+    }
+
+    private func collapsedRow(_ message: Message) -> some View {
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(message.provider.color)
+                .frame(width: 3, height: 32)
+            Circle()
+                .fill(message.provider.color)
+                .frame(width: 28, height: 28)
+                .overlay(
+                    Text(message.senderInitials)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white)
+                )
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(message.senderName)
+                        .font(.subheadline.weight(message.isRead ? .regular : .semibold))
+                        .lineLimit(1)
+                    Spacer()
+                    Text(message.receivedAt, format: .dateTime.month().day().hour().minute())
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Text(message.snippet)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .contentShape(Rectangle())
+        .onTapGesture { vm.toggleExpand(message) }
+    }
+
+    private func expandedCard(_ message: Message) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(message.provider.color)
+                    .frame(width: 3, height: 44)
+                Circle()
+                    .fill(message.provider.color)
+                    .frame(width: 44, height: 44)
+                    .overlay(
+                        Text(message.senderInitials)
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                    )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(message.senderName)
+                        .font(.headline)
+                    Text(message.senderEmail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(message.receivedAt, format: .dateTime.month().day().hour().minute())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { vm.toggleExpand(message) }
+
+            Text(message.body)
+                .font(.body)
+                .foregroundStyle(.primary.opacity(0.85))
+                .lineSpacing(5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+
+            if !message.attachments.isEmpty {
+                attachmentsView(message)
             }
 
             actionBar(message)
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func attachmentsView(_ message: Message) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(message.attachments) { attachment in
+                    AttachmentCardView(
+                        filename: attachment.filename,
+                        sizeMB: attachment.sizeMB,
+                        systemIconName: AttachmentIcon.systemName(forMimeType: attachment.mimeType)
+                    )
+                    .onTapGesture { saveAttachment(attachment, from: message) }
+                }
+            }
+        }
+    }
+
+    private func saveAttachment(_ attachment: Attachment, from message: Message) {
+        Task {
+            do {
+                let data = try await vm.attachmentData(attachment, on: message)
+                let panel = NSSavePanel()
+                panel.nameFieldStringValue = attachment.filename
+                if panel.runModal() == .OK, let url = panel.url {
+                    try data.write(to: url)
+                }
+            } catch {
+                vm.errorMessage = "Couldn't download attachment: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -72,6 +161,9 @@ struct ReadingPaneView: View {
         HStack(spacing: 10) {
             ActionPill(title: "Reply", icon: "arrowshape.turn.up.left", tint: .white) {
                 vm.composeContext = .reply(message)
+            }
+            ActionPill(title: "Reply All", icon: "arrowshape.turn.up.left.2", tint: .white) {
+                vm.composeContext = .replyAll(message)
             }
             ActionPill(title: "Forward", icon: "arrowshape.turn.up.right", tint: .white) {
                 vm.composeContext = .forward(message)
@@ -83,11 +175,12 @@ struct ReadingPaneView: View {
             ) {
                 vm.toggleReadStatus(message)
             }
+            ActionPill(title: "Archive", icon: "archivebox", tint: .white) {
+                vm.archive(message)
+            }
             Spacer()
             ActionPill(title: "Ask Claude", icon: "sparkles", tint: Color(hex: "#b58ee0"), filled: true) {}
         }
-        .padding(16)
-        .background(.regularMaterial)
     }
 }
 

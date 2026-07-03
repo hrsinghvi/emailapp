@@ -2,36 +2,51 @@ import SwiftUI
 
 struct MessageListView: View {
     @Bindable var vm: InboxViewModel
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 4) {
-                ForEach(vm.filteredMessages) { message in
-                    MessageRow(
-                        message: message,
-                        isSelected: vm.selectedMessageId == message.id
+                ForEach(vm.filteredThreads) { thread in
+                    ThreadRow(
+                        thread: thread,
+                        isSelected: vm.selectedThreadKey == thread.id
                     )
-                    .onTapGesture { vm.select(message) }
+                    .onTapGesture {
+                        isFocused = true
+                        vm.select(thread)
+                    }
                 }
             }
             .padding(8)
         }
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .focusable()
+        .focusEffectDisabled()
+        .focused($isFocused)
+        .onAppear { isFocused = true }
+        .onKeyPress(.upArrow) { vm.selectAdjacent(-1); return .handled }
+        .onKeyPress(.downArrow) { vm.selectAdjacent(1); return .handled }
+        .onKeyPress(.return) { vm.openSelected(); return .handled }
+        .onKeyPress(.delete) { vm.archiveFocused(); return .handled }
+        .onKeyPress(.deleteForward) { vm.archiveFocused(); return .handled }
     }
 }
 
-private struct MessageRow: View {
-    let message: Message
+private struct ThreadRow: View {
+    let thread: MessageThread
     let isSelected: Bool
 
     var body: some View {
+        let message = thread.latest
+
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 2)
                 .fill(message.provider.color)
                 .frame(width: 3)
 
             Circle()
-                .fill(message.isRead ? Color.clear : Color(hex: "#5b9bd5"))
+                .fill(thread.hasUnread ? Color(hex: "#5b9bd5") : Color.clear)
                 .frame(width: 7, height: 7)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -39,6 +54,14 @@ private struct MessageRow: View {
                     Text(message.senderName)
                         .font(.subheadline.weight(.medium))
                         .lineLimit(1)
+                    if thread.count > 1 {
+                        Text("\(thread.count)")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.white.opacity(0.1)))
+                    }
                     Spacer()
                     Text(message.receivedAt, format: .relative(presentation: .numeric))
                         .font(.caption2)

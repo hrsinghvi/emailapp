@@ -57,12 +57,31 @@ enum GraphAPI {
         comps.queryItems = [
             .init(name: "$top", value: String(limit)),
             .init(name: "$orderby", value: "receivedDateTime desc"),
-            .init(name: "$select", value: "id,subject,bodyPreview,body,from,receivedDateTime,isRead"),
+            .init(
+                name: "$select",
+                value: "id,subject,bodyPreview,body,from,receivedDateTime,isRead,conversationId,"
+                    + "toRecipients,ccRecipients,hasAttachments"
+            ),
         ]
         struct ListResponse: Decodable { let value: [RawMessage] }
         let data = try await get(comps.url!.absoluteString, accessToken: accessToken)
-        let messages = try JSONDecoder().decode(ListResponse.self, from: data).value
-        return messages.map { $0.toMessage(account: account, folder: folder) }
+        let raw = try JSONDecoder().decode(ListResponse.self, from: data).value
+        var messages = raw.map { $0.toMessage(account: account, folder: folder) }
+
+        // Attachment bytes aren't in the list response — fetch metadata only
+        // (name/type/size) for messages that actually have any, concurrently.
+        try await withThrowingTaskGroup(of: (Int, [Attachment]).self) { group in
+            for (index, message) in raw.enumerated() where message.hasAttachments == true {
+                group.addTask {
+                    let attachments = try await fetchAttachments(messageId: message.id, accessToken: accessToken)
+                    return (index, attachments)
+                }
+            }
+            while let (index, attachments) = try await group.next() {
+                messages[index].attachments = attachments
+            }
+        }
+        return messages
     }
 
     // MARK: - Mutations
@@ -72,18 +91,50 @@ enum GraphAPI {
         _ = try await patch("\(base)/me/messages/\(id)", accessToken: accessToken, json: Body(isRead: read))
     }
 
+    /// Graph has a well-known "archive" mail folder; move the message into it.
+    nonisolated static func setArchived(id: String, accessToken: String) async throws {
+        struct Body: Encodable { let destinationId: String }
+        _ = try await post(
+            "\(base)/me/messages/\(id)/move", accessToken: accessToken, json: Body(destinationId: "archive"))
+    }
+
+    private nonisolated struct GraphAttachment: Encodable {
+        let odataType = "#microsoft.graph.fileAttachment"
+        let name: String
+        let contentType: String
+        let contentBytes: String
+
+        enum CodingKeys: String, CodingKey {
+            case odataType = "@odata.type"
+            case name, contentType, contentBytes
+        }
+    }
+
+    private nonisolated static func graphAttachments(_ attachments: [OutgoingAttachment]) -> [GraphAttachment] {
+        attachments.map {
+            GraphAttachment(name: $0.filename, contentType: $0.mimeType, contentBytes: $0.data.base64EncodedString())
+        }
+    }
+
     /// Sends a brand-new message.
-    nonisolated static func send(to: String, subject: String, body: String, accessToken: String) async throws {
+    nonisolated static func send(
+        to: String, subject: String, body: String,
+        attachments: [OutgoingAttachment] = [], accessToken: String
+    ) async throws {
         struct Recipient: Encodable { let emailAddress: Addr }
         struct Addr: Encodable { let address: String }
         struct Content: Encodable { let contentType: String; let content: String }
-        struct OutMessage: Encodable { let subject: String; let body: Content; let toRecipients: [Recipient] }
+        struct OutMessage: Encodable {
+            let subject: String; let body: Content; let toRecipients: [Recipient]
+            let attachments: [GraphAttachment]?
+        }
         struct SendMailRequest: Encodable { let message: OutMessage; let saveToSentItems: Bool }
         let payload = SendMailRequest(
             message: OutMessage(
                 subject: subject,
                 body: Content(contentType: "Text", content: body),
-                toRecipients: [Recipient(emailAddress: Addr(address: to))]
+                toRecipients: [Recipient(emailAddress: Addr(address: to))],
+                attachments: attachments.isEmpty ? nil : graphAttachments(attachments)
             ),
             saveToSentItems: true
         )
@@ -91,16 +142,86 @@ enum GraphAPI {
     }
 
     /// Graph's /reply endpoint threads (References/In-Reply-To/conversationId) automatically.
-    nonisolated static func reply(to message: Message, body: String, accessToken: String) async throws {
+    nonisolated static func reply(
+        to message: Message, body: String,
+        attachments: [OutgoingAttachment] = [], accessToken: String
+    ) async throws {
+        try await sendReply(
+            endpoint: "reply", message: message, body: body, attachments: attachments, accessToken: accessToken)
+    }
+
+    /// Graph's /replyAll endpoint replies to the sender plus every original
+    /// To/Cc recipient automatically — no need to reconstruct the list.
+    nonisolated static func replyAll(
+        to message: Message, body: String,
+        attachments: [OutgoingAttachment] = [], accessToken: String
+    ) async throws {
+        try await sendReply(
+            endpoint: "replyAll", message: message, body: body, attachments: attachments, accessToken: accessToken)
+    }
+
+    private nonisolated static func sendReply(
+        endpoint: String, message: Message, body: String,
+        attachments: [OutgoingAttachment], accessToken: String
+    ) async throws {
+        guard attachments.isEmpty else {
+            // Graph's /reply and /replyAll only take a comment string, no
+            // attachments param — create the reply draft, attach files to
+            // it, then send the draft.
+            let createEndpoint = endpoint == "reply" ? "createReply" : "createReplyAll"
+            struct CreateReplyBody: Encodable { let comment: String }
+            let draftData = try await post(
+                "\(base)/me/messages/\(message.providerId)/\(createEndpoint)",
+                accessToken: accessToken, json: CreateReplyBody(comment: body)
+            )
+            struct Draft: Decodable { let id: String }
+            let draft = try JSONDecoder().decode(Draft.self, from: draftData)
+            for attachment in graphAttachments(attachments) {
+                _ = try await post(
+                    "\(base)/me/messages/\(draft.id)/attachments", accessToken: accessToken, json: attachment)
+            }
+            _ = try await post("\(base)/me/messages/\(draft.id)/send", accessToken: accessToken, json: EmptyBody())
+            return
+        }
         struct Body: Encodable { let comment: String }
         _ = try await post(
-            "\(base)/me/messages/\(message.providerId)/reply", accessToken: accessToken, json: Body(comment: body))
+            "\(base)/me/messages/\(message.providerId)/\(endpoint)", accessToken: accessToken, json: Body(comment: body))
+    }
+
+    private nonisolated struct EmptyBody: Encodable {}
+
+    // MARK: - Attachments
+
+    nonisolated static func fetchAttachments(messageId: String, accessToken: String) async throws -> [Attachment] {
+        struct ListResponse: Decodable {
+            struct Att: Decodable { let id: String; let name: String; let contentType: String?; let size: Int? }
+            let value: [Att]
+        }
+        let data = try await get(
+            "\(base)/me/messages/\(messageId)/attachments?$select=id,name,contentType,size", accessToken: accessToken)
+        return try JSONDecoder().decode(ListResponse.self, from: data).value.map {
+            Attachment(id: $0.id, filename: $0.name, mimeType: $0.contentType ?? "application/octet-stream", sizeBytes: $0.size ?? 0)
+        }
+    }
+
+    nonisolated static func fetchAttachmentData(
+        messageId: String, attachmentId: String, accessToken: String
+    ) async throws -> Data {
+        struct FileAttachment: Decodable { let contentBytes: String }
+        let data = try await get(
+            "\(base)/me/messages/\(messageId)/attachments/\(attachmentId)", accessToken: accessToken)
+        let decoded = try JSONDecoder().decode(FileAttachment.self, from: data)
+        guard let raw = Data(base64Encoded: decoded.contentBytes) else {
+            throw GraphError.requestFailed(-1, "bad attachment data")
+        }
+        return raw
     }
 
     // MARK: - Wire model
 
     private nonisolated struct RawMessage: Decodable {
         struct EmailAddress: Decodable { let name: String?; let address: String? }
+        struct Recipient: Decodable { let emailAddress: EmailAddress? }
         struct From: Decodable { let emailAddress: EmailAddress? }
         struct Body: Decodable { let contentType: String?; let content: String? }
 
@@ -111,6 +232,10 @@ enum GraphAPI {
         let from: From?
         let receivedDateTime: String?
         let isRead: Bool?
+        let conversationId: String?
+        let toRecipients: [Recipient]?
+        let ccRecipients: [Recipient]?
+        let hasAttachments: Bool?
 
         func toMessage(account: Account, folder: String) -> Message {
             let senderName = from?.emailAddress?.name ?? from?.emailAddress?.address ?? ""
@@ -128,7 +253,7 @@ enum GraphAPI {
                 accountId: account.id,
                 provider: .outlook,
                 providerId: id,
-                threadId: nil,
+                threadId: conversationId,
                 messageIdHeader: nil,
                 references: nil,
                 senderName: senderName.isEmpty ? senderEmail : senderName,
@@ -138,7 +263,9 @@ enum GraphAPI {
                 body: plainBody,
                 receivedAt: date,
                 isRead: isRead ?? true,
-                folder: folder
+                folder: folder,
+                toRecipients: (toRecipients ?? []).compactMap { $0.emailAddress?.address },
+                ccRecipients: (ccRecipients ?? []).compactMap { $0.emailAddress?.address }
             )
         }
     }

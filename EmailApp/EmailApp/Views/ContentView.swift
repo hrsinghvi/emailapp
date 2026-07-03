@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var vm = InboxViewModel()
+    @Bindable var vm: InboxViewModel
 
     var body: some View {
         HStack(spacing: 12) {
@@ -48,6 +48,7 @@ struct ContentView: View {
 
 private struct TopBar: View {
     @Bindable var vm: InboxViewModel
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         HStack(spacing: 10) {
@@ -56,6 +57,8 @@ private struct TopBar: View {
                     .foregroundStyle(.secondary)
                 TextField("Search", text: $vm.searchText)
                     .textFieldStyle(.plain)
+                    .focused($isSearchFocused)
+                    .onChange(of: vm.searchFocusTrigger) { _, _ in isSearchFocused = true }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -96,7 +99,7 @@ private struct FilterChip: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(vm: InboxViewModel())
         .frame(width: 1100, height: 700)
         .preferredColorScheme(.dark)
 }

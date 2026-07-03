@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ComposeView: View {
     @Environment(\.dismiss) private var dismiss
@@ -8,6 +10,7 @@ struct ComposeView: View {
     @State private var to = ""
     @State private var subject = ""
     @State private var messageBody = ""
+    @State private var attachments: [OutgoingAttachment] = []
     @State private var isSending = false
     @State private var errorText: String?
 
@@ -15,13 +18,16 @@ struct ComposeView: View {
         switch context {
         case .new: return "New Message"
         case .reply: return "Reply"
+        case .replyAll: return "Reply All"
         case .forward: return "Forward"
         }
     }
 
     private var toIsFixed: Bool {
-        if case .reply = context { return true }
-        return false
+        switch context {
+        case .reply, .replyAll: return true
+        case .new, .forward: return false
+        }
     }
 
     var body: some View {
@@ -37,8 +43,24 @@ struct ComposeView: View {
                 .font(.body)
                 .scrollContentBackground(.hidden)
                 .padding(8)
-                .frame(minHeight: 200)
+                .frame(minHeight: 160)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+
+            if !attachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(attachments) { attachment in
+                            AttachmentCardView(
+                                filename: attachment.filename,
+                                sizeMB: attachment.sizeMB,
+                                thumbnail: thumbnail(for: attachment),
+                                systemIconName: AttachmentIcon.systemName(forMimeType: attachment.mimeType),
+                                onRemove: { attachments.removeAll { $0.id == attachment.id } }
+                            )
+                        }
+                    }
+                }
+            }
 
             if let errorText {
                 Text(errorText)
@@ -47,6 +69,18 @@ struct ComposeView: View {
             }
 
             HStack {
+                Button {
+                    pickAttachments()
+                } label: {
+                    Image(systemName: "paperclip")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(8)
+                        .background(Circle().fill(Color.white.opacity(0.07)))
+                }
+                .buttonStyle(.plain)
+                .disabled(isSending)
+
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .buttonStyle(.plain)
@@ -70,7 +104,7 @@ struct ComposeView: View {
             }
         }
         .padding(20)
-        .frame(width: 480, height: 420)
+        .frame(width: 480, height: 460)
         .background(
             ZStack {
                 VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
@@ -88,11 +122,35 @@ struct ComposeView: View {
         case .reply(let message):
             to = message.senderEmail
             subject = message.subject.lowercased().hasPrefix("re:") ? message.subject : "Re: \(message.subject)"
+        case .replyAll(let message):
+            var seen = Set<String>()
+            let recipients = ([message.senderEmail] + message.toRecipients + message.ccRecipients)
+                .filter { seen.insert($0.lowercased()).inserted }
+            to = recipients.joined(separator: ", ")
+            subject = message.subject.lowercased().hasPrefix("re:") ? message.subject : "Re: \(message.subject)"
         case .forward(let message):
             subject = message.subject.lowercased().hasPrefix("fwd:") ? message.subject : "Fwd: \(message.subject)"
             messageBody =
                 "\n\n---------- Forwarded message ----------\nFrom: \(message.senderName) <\(message.senderEmail)>\nSubject: \(message.subject)\n\n\(message.body)"
         }
+    }
+
+    private func pickAttachments() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let mimeType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+            attachments.append(OutgoingAttachment(filename: url.lastPathComponent, mimeType: mimeType, data: data))
+        }
+    }
+
+    private func thumbnail(for attachment: OutgoingAttachment) -> NSImage? {
+        guard attachment.mimeType.hasPrefix("image/") else { return nil }
+        return NSImage(data: attachment.data)
     }
 
     private func send() async {
@@ -101,9 +159,11 @@ struct ComposeView: View {
         do {
             switch context {
             case .new, .forward:
-                try await vm.send(to: to, subject: subject, body: messageBody)
+                try await vm.send(to: to, subject: subject, body: messageBody, attachments: attachments)
             case .reply(let message):
-                try await vm.reply(to: message, body: messageBody)
+                try await vm.reply(to: message, body: messageBody, attachments: attachments)
+            case .replyAll(let message):
+                try await vm.replyAll(to: message, body: messageBody, attachments: attachments)
             }
             dismiss()
         } catch {

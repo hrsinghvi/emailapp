@@ -146,6 +146,12 @@ export function registerTools(server: McpServer): void {
     }
   );
 
+  const attachmentSchema = z.object({
+    filename: z.string(),
+    mime_type: z.string().describe('e.g. "application/pdf", "image/png"'),
+    content_base64: z.string().describe("Raw base64 file content"),
+  });
+
   server.registerTool(
     "send_email",
     {
@@ -155,16 +161,22 @@ export function registerTools(server: McpServer): void {
         subject: z.string(),
         body: z.string(),
         account: z.string().email().describe("Which connected account to send from"),
+        attachments: z.array(attachmentSchema).optional(),
       },
     },
-    async ({ to, subject, body, account }) => {
+    async ({ to, subject, body, account, attachments }) => {
       try {
         const acc = await findAccountByEmail(account);
         const accessToken = await accessTokenFor(acc);
+        const mailAttachments = attachments?.map((a) => ({
+          filename: a.filename,
+          mimeType: a.mime_type,
+          contentBase64: a.content_base64,
+        }));
         if (acc.provider === "gmail") {
-          await gmail.send(accessToken, { to: to.join(", "), subject, body });
+          await gmail.send(accessToken, { to: to.join(", "), subject, body, attachments: mailAttachments });
         } else {
-          await graph.send(accessToken, { to, subject, body });
+          await graph.send(accessToken, { to, subject, body, attachments: mailAttachments });
         }
         return textResult({ ok: true });
       } catch (err) {
@@ -180,13 +192,19 @@ export function registerTools(server: McpServer): void {
       inputSchema: {
         message_id: messageIdSchema,
         body: z.string(),
+        attachments: z.array(attachmentSchema).optional(),
       },
     },
-    async ({ message_id, body }) => {
+    async ({ message_id, body, attachments }) => {
       try {
         const row = await findMessageRow(message_id);
         const account = await findAccountById(row.account_id);
         const accessToken = await accessTokenFor(account);
+        const mailAttachments = attachments?.map((a) => ({
+          filename: a.filename,
+          mimeType: a.mime_type,
+          contentBase64: a.content_base64,
+        }));
         if (account.provider === "gmail") {
           await gmail.reply(accessToken, {
             to: row.sender_email,
@@ -195,9 +213,10 @@ export function registerTools(server: McpServer): void {
             threadId: row.thread_id,
             messageIdHeader: row.message_id_header,
             referencesHeader: row.references_header,
+            attachments: mailAttachments,
           });
         } else {
-          await graph.reply(accessToken, row.provider_message_id, body);
+          await graph.reply(accessToken, row.provider_message_id, body, mailAttachments);
         }
         return textResult({ ok: true });
       } catch (err) {

@@ -116,9 +116,25 @@ export async function setArchived(accessToken: string, id: string, archived: boo
   if (!res.ok) throw new Error(`Graph move failed (${res.status}): ${await res.text()}`);
 }
 
+export interface MailAttachment {
+  filename: string;
+  mimeType: string;
+  /** Raw base64 content, exactly as an MCP client would send it. */
+  contentBase64: string;
+}
+
+function graphAttachments(attachments: MailAttachment[] = []) {
+  return attachments.map((a) => ({
+    "@odata.type": "#microsoft.graph.fileAttachment",
+    name: a.filename,
+    contentType: a.mimeType,
+    contentBytes: a.contentBase64,
+  }));
+}
+
 export async function send(
   accessToken: string,
-  params: { to: string[]; subject: string; body: string }
+  params: { to: string[]; subject: string; body: string; attachments?: MailAttachment[] }
 ): Promise<void> {
   const res = await fetch(`${BASE}/me/sendMail`, {
     method: "POST",
@@ -128,6 +144,7 @@ export async function send(
         subject: params.subject,
         body: { contentType: "Text", content: params.body },
         toRecipients: params.to.map((address) => ({ emailAddress: { address } })),
+        attachments: params.attachments?.length ? graphAttachments(params.attachments) : undefined,
       },
       saveToSentItems: true,
     }),
@@ -135,14 +152,49 @@ export async function send(
   if (!res.ok) throw new Error(`Graph send failed (${res.status}): ${await res.text()}`);
 }
 
-/** Graph's /reply endpoint threads (References/In-Reply-To/conversationId) automatically. */
-export async function reply(accessToken: string, id: string, comment: string): Promise<void> {
-  const res = await fetch(`${BASE}/me/messages/${id}/reply`, {
+/**
+ * Graph's /reply endpoint threads (References/In-Reply-To/conversationId)
+ * automatically but takes no attachments param — when there are
+ * attachments, create the reply draft, attach files to it, then send.
+ */
+export async function reply(
+  accessToken: string,
+  id: string,
+  comment: string,
+  attachments: MailAttachment[] = []
+): Promise<void> {
+  if (attachments.length === 0) {
+    const res = await fetch(`${BASE}/me/messages/${id}/reply`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ comment }),
+    });
+    if (!res.ok) throw new Error(`Graph reply failed (${res.status}): ${await res.text()}`);
+    return;
+  }
+
+  const draftRes = await fetch(`${BASE}/me/messages/${id}/createReply`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({ comment }),
   });
-  if (!res.ok) throw new Error(`Graph reply failed (${res.status}): ${await res.text()}`);
+  if (!draftRes.ok) throw new Error(`Graph createReply failed (${draftRes.status}): ${await draftRes.text()}`);
+  const draft = (await draftRes.json()) as { id: string };
+
+  for (const attachment of graphAttachments(attachments)) {
+    const attRes = await fetch(`${BASE}/me/messages/${draft.id}/attachments`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(attachment),
+    });
+    if (!attRes.ok) throw new Error(`Graph attach failed (${attRes.status}): ${await attRes.text()}`);
+  }
+
+  const sendRes = await fetch(`${BASE}/me/messages/${draft.id}/send`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!sendRes.ok) throw new Error(`Graph send draft failed (${sendRes.status}): ${await sendRes.text()}`);
 }
 
 function stripHtml(html: string): string {
