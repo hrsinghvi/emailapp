@@ -95,6 +95,11 @@ enum GmailAPI {
         try await modifyLabels(id: id, accessToken: accessToken, remove: ["INBOX"])
     }
 
+    /// Moves to Gmail's Trash (recoverable for 30 days) — not a permanent delete.
+    nonisolated static func trash(id: String, accessToken: String) async throws {
+        _ = try await post("\(base)/messages/\(id)/trash", accessToken: accessToken, json: EmptyEncodable())
+    }
+
     /// Sends a brand-new, unthreaded message.
     nonisolated static func send(
         to: String, cc: String = "", bcc: String = "", subject: String, body: String, isHTML: Bool = false,
@@ -401,6 +406,8 @@ enum GmailAPI {
         return data
     }
 }
+
+private nonisolated struct EmptyEncodable: Encodable {}
 
 private nonisolated extension Data {
     func base64URLEncoded() -> String {

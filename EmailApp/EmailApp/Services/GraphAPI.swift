@@ -98,6 +98,11 @@ enum GraphAPI {
             "\(base)/me/messages/\(id)/move", accessToken: accessToken, json: Body(destinationId: "archive"))
     }
 
+    /// Graph's DELETE moves the message to Deleted Items — not a permanent delete.
+    nonisolated static func delete(id: String, accessToken: String) async throws {
+        try await delete("\(base)/me/messages/\(id)", accessToken: accessToken)
+    }
+
     private nonisolated struct GraphAttachment: Encodable {
         let odataType = "#microsoft.graph.fileAttachment"
         let name: String
@@ -345,6 +350,23 @@ enum GraphAPI {
         _ urlString: String, accessToken: String, json: T
     ) async throws -> Data {
         try await send(urlString, method: "PATCH", accessToken: accessToken, json: json)
+    }
+
+    private nonisolated static func delete(_ urlString: String, accessToken: String) async throws {
+        guard let url = URL(string: urlString) else {
+            throw GraphError.requestFailed(-1, "bad url: \(urlString)")
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "DELETE"
+        req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw GraphError.requestFailed(-1, "no HTTP response")
+        }
+        if http.statusCode == 401 { throw GraphError.unauthorized }
+        guard (200..<300).contains(http.statusCode) else {
+            throw GraphError.requestFailed(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+        }
     }
 }
 

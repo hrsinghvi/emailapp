@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct MessageListView: View {
@@ -5,20 +6,37 @@ struct MessageListView: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 4) {
-                ForEach(vm.filteredThreads) { thread in
-                    ThreadRow(
-                        thread: thread,
-                        isSelected: vm.selectedThreadKey == thread.id
-                    )
-                    .onTapGesture {
-                        isFocused = true
-                        vm.select(thread)
+        VStack(spacing: 8) {
+            if !vm.selectedThreadKeys.isEmpty {
+                BulkActionBar(vm: vm)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 8)
+            }
+
+            ScrollView {
+                LazyVStack(spacing: 4) {
+                    ForEach(vm.filteredThreads) { thread in
+                        SwipeableRow(
+                            onSwipeRight: { vm.archiveThread(thread) },
+                            onSwipeLeft: { vm.markThreadUnread(thread) }
+                        ) {
+                            ThreadRow(
+                                thread: thread,
+                                isOpen: vm.selectedThreadKey == thread.id,
+                                isChecked: vm.selectedThreadKeys.contains(thread.id),
+                                anySelectionActive: !vm.selectedThreadKeys.isEmpty,
+                                onToggleCheck: { vm.toggleSelection(thread) }
+                            )
+                            .onTapGesture {
+                                isFocused = true
+                                let flags = NSEvent.modifierFlags
+                                vm.handleRowClick(thread, shift: flags.contains(.shift), command: flags.contains(.command))
+                            }
+                        }
                     }
                 }
+                .padding(8)
             }
-            .padding(8)
         }
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
         .focusable()
@@ -33,14 +51,77 @@ struct MessageListView: View {
     }
 }
 
+private struct BulkActionBar: View {
+    @Bindable var vm: InboxViewModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button {
+                vm.toggleSelectAll()
+            } label: {
+                Image(systemName: allSelected ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(allSelected ? Color(hex: "#b58ee0") : .secondary)
+            }
+            .buttonStyle(.plain)
+
+            Text("\(vm.selectedThreadKeys.count) selected")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            bulkButton("Archive", icon: "archivebox") { vm.bulkArchive() }
+            bulkButton("Delete", icon: "trash") { vm.bulkDelete() }
+            bulkButton("Mark Read", icon: "envelope.open") { vm.bulkMarkRead(true) }
+            bulkButton("Mark Unread", icon: "envelope.badge") { vm.bulkMarkRead(false) }
+
+            Button {
+                vm.selectedThreadKeys.removeAll()
+            } label: {
+                Image(systemName: "xmark")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var allSelected: Bool {
+        !vm.filteredThreads.isEmpty && Set(vm.filteredThreads.map(\.id)) == vm.selectedThreadKeys
+    }
+
+    private func bulkButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.caption.weight(.medium))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+    }
+}
+
 private struct ThreadRow: View {
     let thread: MessageThread
-    let isSelected: Bool
+    let isOpen: Bool
+    let isChecked: Bool
+    let anySelectionActive: Bool
+    let onToggleCheck: () -> Void
+    @State private var isHovering = false
 
     var body: some View {
         let message = thread.latest
 
         HStack(spacing: 10) {
+            Button(action: onToggleCheck) {
+                Image(systemName: isChecked ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(isChecked ? Color(hex: "#b58ee0") : .secondary)
+            }
+            .buttonStyle(.plain)
+            .opacity(isHovering || anySelectionActive ? 1 : 0)
+            .frame(width: (isHovering || anySelectionActive) ? nil : 0)
+
             RoundedRectangle(cornerRadius: 2)
                 .fill(message.provider.color)
                 .frame(width: 3)
@@ -79,8 +160,10 @@ private struct ThreadRow: View {
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(isSelected ? Color.white.opacity(0.07) : .clear)
+                .fill(isOpen || isChecked ? Color.white.opacity(0.07) : .clear)
         )
         .contentShape(Rectangle())
+        .onHover { isHovering = $0 }
+        .animation(.easeInOut(duration: 0.12), value: isHovering)
     }
 }

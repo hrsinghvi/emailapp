@@ -320,6 +320,106 @@ final class InboxViewModel {
         }
     }
 
+    /// Every message in a thread — swiping/archiving a collapsed row acts
+    /// on the whole conversation, not just whichever message happens to be
+    /// latest.
+    func archiveThread(_ thread: MessageThread) {
+        for message in thread.messages { archive(message) }
+    }
+
+    func markThreadUnread(_ thread: MessageThread) {
+        for message in thread.messages { markUnread(message) }
+    }
+
+    private func markUnread(_ message: Message) {
+        guard message.isRead else { return }
+        Task { await setRead(message, read: false) }
+    }
+
+    // MARK: - Delete (soft — Trash / Deleted Items, never permanent)
+
+    /// Optimistic: message disappears from the current view immediately,
+    /// rolled back to its prior folder if the provider call fails.
+    func delete(_ message: Message) {
+        guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
+        let previousFolder = messages[index].folder
+        messages[index].folder = "trash"
+        Task {
+            do {
+                let token = try await accessToken(for: message)
+                switch message.provider {
+                case .gmail: try await GmailAPI.trash(id: message.providerId, accessToken: token)
+                case .outlook: try await GraphAPI.delete(id: message.providerId, accessToken: token)
+                }
+            } catch {
+                if let idx = messages.firstIndex(where: { $0.id == message.id }) {
+                    messages[idx].folder = previousFolder
+                }
+                errorMessage = "Couldn't delete: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    // MARK: - Bulk selection
+
+    var selectedThreadKeys: Set<String> = []
+    private var lastClickedThreadKey: String?
+
+    private var selectedMessages: [Message] {
+        filteredThreads.filter { selectedThreadKeys.contains($0.id) }.flatMap(\.messages)
+    }
+
+    /// Plain click opens the thread as before; Cmd-click toggles just this
+    /// row; Shift-click selects the continuous range from the last click.
+    func handleRowClick(_ thread: MessageThread, shift: Bool, command: Bool) {
+        if command {
+            if selectedThreadKeys.contains(thread.id) {
+                selectedThreadKeys.remove(thread.id)
+            } else {
+                selectedThreadKeys.insert(thread.id)
+            }
+            lastClickedThreadKey = thread.id
+        } else if shift, let anchor = lastClickedThreadKey {
+            let ids = filteredThreads.map(\.id)
+            if let a = ids.firstIndex(of: anchor), let b = ids.firstIndex(of: thread.id) {
+                selectedThreadKeys.formUnion(ids[(a <= b ? a...b : b...a)])
+            }
+        } else {
+            selectedThreadKeys.removeAll()
+            select(thread)
+        }
+    }
+
+    func toggleSelection(_ thread: MessageThread) {
+        if selectedThreadKeys.contains(thread.id) {
+            selectedThreadKeys.remove(thread.id)
+        } else {
+            selectedThreadKeys.insert(thread.id)
+        }
+        lastClickedThreadKey = thread.id
+    }
+
+    func toggleSelectAll() {
+        let all = Set(filteredThreads.map(\.id))
+        selectedThreadKeys = selectedThreadKeys == all ? [] : all
+    }
+
+    func bulkArchive() {
+        for message in selectedMessages { archive(message) }
+        selectedThreadKeys.removeAll()
+    }
+
+    func bulkDelete() {
+        for message in selectedMessages { delete(message) }
+        selectedThreadKeys.removeAll()
+    }
+
+    func bulkMarkRead(_ read: Bool) {
+        let targets = selectedMessages
+        Task { for message in targets { await setRead(message, read: read) } }
+        selectedThreadKeys.removeAll()
+    }
+
     // MARK: - Compose / send
 
     /// Sends a brand-new message from the first connected account. Body is
