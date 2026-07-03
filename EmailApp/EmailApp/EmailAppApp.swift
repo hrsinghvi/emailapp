@@ -9,6 +9,7 @@ import SwiftUI
 
 @main
 struct EmailAppApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var vm = InboxViewModel()
 
     var body: some Scene {
@@ -16,6 +17,10 @@ struct EmailAppApp: App {
             ContentView(vm: vm)
                 .frame(minWidth: 1100, minHeight: 700)
                 .preferredColorScheme(.dark)
+                .onAppear { appDelegate.vm = vm }
+                .onChange(of: vm.totalUnreadCount) { _, count in
+                    NSApplication.shared.dockTile.badgeLabel = count > 0 ? "\(count)" : nil
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1300, height: 800)

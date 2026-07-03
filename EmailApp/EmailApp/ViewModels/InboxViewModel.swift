@@ -87,6 +87,13 @@ final class InboxViewModel {
     var drafts: [Draft] = []
     var pendingSends: [PendingSend] = []
 
+    /// Unread count across every connected account's inbox, regardless of
+    /// whatever provider filter/search/folder is currently on screen —
+    /// this is what the Dock badge always reflects.
+    var totalUnreadCount: Int {
+        messages.filter { $0.folder == "inbox" && !$0.isRead }.count
+    }
+
     init() {
         accounts = []
         messages = []
@@ -544,30 +551,46 @@ final class InboxViewModel {
         }
     }
 
+    /// Realtime inserts are the ONLY source of genuinely-new mail — the
+    /// initial REST-fetched sync never routes through here, so this is also
+    /// the one place it's correct to fire a notification (existing mail
+    /// syncing for the first time must never notify).
     private func handleRealtimeInsert(_ row: RealtimeService.MessageRow) {
         guard let provider = Provider(rawValue: row.provider),
               let accountId = accounts.first(where: { $0.provider == provider && $0.email == row.accountEmail })?.id
         else { return } // mail for an account not connected in this session — ignore
         guard !messages.contains(where: { $0.id == row.id }) else { return }
-        messages.append(
-            Message(
-                id: row.id,
-                accountId: accountId,
-                provider: provider,
-                providerId: row.providerMessageId,
-                threadId: row.threadId,
-                messageIdHeader: row.messageIdHeader,
-                references: row.referencesHeader,
-                senderName: row.senderName,
-                senderEmail: row.senderEmail,
-                subject: row.subject,
-                snippet: row.snippet,
-                body: row.body,
-                receivedAt: row.receivedAt,
-                isRead: row.isRead,
-                folder: row.folder
-            )
+        let message = Message(
+            id: row.id,
+            accountId: accountId,
+            provider: provider,
+            providerId: row.providerMessageId,
+            threadId: row.threadId,
+            messageIdHeader: row.messageIdHeader,
+            references: row.referencesHeader,
+            senderName: row.senderName,
+            senderEmail: row.senderEmail,
+            subject: row.subject,
+            snippet: row.snippet,
+            body: row.body,
+            receivedAt: row.receivedAt,
+            isRead: row.isRead,
+            folder: row.folder
         )
+        messages.append(message)
+        NotificationService.notifyNewMail(message)
+    }
+
+    /// Jumps straight to a message regardless of whatever folder/filter/
+    /// search is currently active — used when the user clicks a
+    /// notification for mail that arrived while looking at something else.
+    func openMessage(byId id: UUID) {
+        guard let message = messages.first(where: { $0.id == id }) else { return }
+        selectedFolder = message.folder
+        providerFilter = nil
+        searchText = ""
+        guard let thread = filteredThreads.first(where: { $0.id == message.threadKey }) else { return }
+        select(thread)
     }
 
     private func fetchAndMerge(_ account: Account) async throws {
