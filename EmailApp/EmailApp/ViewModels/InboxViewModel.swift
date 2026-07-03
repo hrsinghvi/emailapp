@@ -145,11 +145,7 @@ final class InboxViewModel {
     func loadGmail() async {
         do {
             let account = try await OAuthManager.shared.signInWithGoogle()
-            let token = try await OAuthManager.shared.validAccessToken(for: account)
-            async let inboxTask = GmailAPI.fetchInbox(for: account, accessToken: token)
-            async let sentTask = GmailAPI.fetchSent(for: account, accessToken: token)
-            let (inbox, sent) = try await (inboxTask, sentTask)
-            merge(account: account, fetched: inbox + sent)
+            try await fetchAndMerge(account)
         } catch {
             print("Gmail load failed: \(error.localizedDescription)")
         }
@@ -160,14 +156,40 @@ final class InboxViewModel {
     func loadOutlook() async {
         do {
             let account = try await OAuthManager.shared.signInWithMicrosoft()
-            let token = try await OAuthManager.shared.validAccessToken(for: account)
-            async let inboxTask = GraphAPI.fetchInbox(for: account, accessToken: token)
-            async let sentTask = GraphAPI.fetchSent(for: account, accessToken: token)
-            let (inbox, sent) = try await (inboxTask, sentTask)
-            merge(account: account, fetched: inbox + sent)
+            try await fetchAndMerge(account)
         } catch {
             print("Outlook load failed: \(error.localizedDescription)")
         }
+    }
+
+    /// Restores any accounts signed in during a prior launch (silent token
+    /// refresh, no browser prompt) and loads their mail. Call once at startup.
+    func restoreSession() async {
+        for account in await OAuthManager.shared.restoreAccounts() {
+            do {
+                try await fetchAndMerge(account)
+            } catch {
+                print("Silent restore failed for \(account.email): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func fetchAndMerge(_ account: Account) async throws {
+        let token = try await OAuthManager.shared.validAccessToken(for: account)
+        let fetched: [Message]
+        switch account.provider {
+        case .gmail:
+            async let inboxTask = GmailAPI.fetchInbox(for: account, accessToken: token)
+            async let sentTask = GmailAPI.fetchSent(for: account, accessToken: token)
+            let (inbox, sent) = try await (inboxTask, sentTask)
+            fetched = inbox + sent
+        case .outlook:
+            async let inboxTask = GraphAPI.fetchInbox(for: account, accessToken: token)
+            async let sentTask = GraphAPI.fetchSent(for: account, accessToken: token)
+            let (inbox, sent) = try await (inboxTask, sentTask)
+            fetched = inbox + sent
+        }
+        merge(account: account, fetched: fetched)
     }
 
     private func merge(account: Account, fetched: [Message]) {

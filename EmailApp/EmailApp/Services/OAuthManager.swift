@@ -110,6 +110,27 @@ final class OAuthManager: NSObject {
         return Account(id: UUID(), provider: provider, email: email, displayName: email)
     }
 
+    /// Enumerates every Keychain-stored account from a prior session and
+    /// silently refreshes any expired access token, so launch doesn't force
+    /// re-consent. An account whose refresh token has been revoked (or fails
+    /// to refresh) is just skipped rather than surfaced as an error.
+    func restoreAccounts() async -> [Account] {
+        guard let keys = try? KeychainService.allAccounts() else { return [] }
+        var restored: [Account] = []
+        for key in keys {
+            guard let colon = key.firstIndex(of: ":"),
+                  let provider = Provider(rawValue: String(key[key.startIndex..<colon]))
+            else { continue }
+            let email = String(key[key.index(after: colon)...])
+            guard let tokens = try? KeychainService.load(account: key) else { continue }
+            if tokens.isExpired {
+                guard (try? await refresh(tokens, provider: provider, keychainKey: key)) != nil else { continue }
+            }
+            restored.append(Account(id: UUID(), provider: provider, email: email, displayName: email))
+        }
+        return restored
+    }
+
     /// Returns a non-expired access token, refreshing (and re-saving) if needed.
     func validAccessToken(for account: Account) async throws -> String {
         let key = keychainAccount(provider: account.provider, email: account.email)

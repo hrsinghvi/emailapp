@@ -62,6 +62,24 @@ enum KeychainService {
         return try JSONDecoder().decode(OAuthTokens.self, from: data)
     }
 
+    /// All stored account keys ("provider:email") for this app — used to
+    /// restore signed-in accounts silently on launch.
+    static func allAccounts() throws -> [String] {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return [] }
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else {
+            throw KeychainError.unexpectedStatus(status)
+        }
+        return items.compactMap { $0[kSecAttrAccount as String] as? String }
+    }
+
     static func delete(account: String) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
