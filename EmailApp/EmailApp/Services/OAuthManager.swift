@@ -9,6 +9,11 @@ import Foundation
 final class OAuthManager: NSObject {
     static let shared = OAuthManager()
 
+    /// ASWebAuthenticationSession doesn't retain itself — without a strong
+    /// reference here, ARC can deallocate it mid-flow before the completion
+    /// handler fires, silently dropping the callback.
+    private var authSession: ASWebAuthenticationSession?
+
     enum OAuthError: LocalizedError {
         case invalidAuthURL
         case sessionFailed(String)
@@ -135,7 +140,8 @@ final class OAuthManager: NSObject {
             let session = ASWebAuthenticationSession(
                 url: url,
                 callbackURLScheme: config.redirectScheme
-            ) { callbackURL, error in
+            ) { [weak self] callbackURL, error in
+                self?.authSession = nil
                 if let error {
                     continuation.resume(throwing: OAuthError.sessionFailed(error.localizedDescription))
                     return
@@ -151,7 +157,9 @@ final class OAuthManager: NSObject {
             }
             session.presentationContextProvider = self
             session.prefersEphemeralWebBrowserSession = false
+            authSession = session
             if !session.start() {
+                authSession = nil
                 continuation.resume(throwing: OAuthError.sessionFailed("Could not start the auth session."))
             }
         }

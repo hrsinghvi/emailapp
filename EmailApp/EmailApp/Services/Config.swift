@@ -33,6 +33,7 @@ enum Config {
     static let azureTokenURL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 
     static let azureScopes = [
+        "https://graph.microsoft.com/User.Read",
         "https://graph.microsoft.com/Mail.Read",
         "https://graph.microsoft.com/Mail.Send",
         "offline_access",
