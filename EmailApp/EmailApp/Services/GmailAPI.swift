@@ -180,7 +180,6 @@ enum GmailAPI {
                 body: Self.extractBody(payload) ?? (snippet ?? ""),
                 receivedAt: date,
                 isRead: !(labelIds?.contains("UNREAD") ?? false),
-                categoryId: nil,
                 folder: folder
             )
         }

@@ -21,7 +21,6 @@ struct Message: Identifiable, Hashable {
     let body: String
     let receivedAt: Date
     var isRead: Bool
-    var categoryId: UUID?
     var folder: String = "inbox"
 
     var senderInitials: String {

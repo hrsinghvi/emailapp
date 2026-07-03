@@ -16,7 +16,7 @@ enum BackendAPI {
 
     /// Registers an account's refresh token with the backend and kicks off
     /// its push subscription. Called right after interactive sign-in.
-    nonisolated static func registerAccount(
+    static func registerAccount(
         provider: Provider, email: String, refreshToken: String
     ) async throws {
         var req = URLRequest(url: URL(string: "\(Config.backendBaseURL)/api/accounts/register")!)

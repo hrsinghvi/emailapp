@@ -16,9 +16,9 @@ Two pieces, split by what actually requires a public endpoint vs what doesn't.
 **Thin backend (Node/TS on Vercel)** — only for what requires a public HTTPS endpoint or has to run when the Mac app isn't open:
 - Webhook receivers: Gmail Pub/Sub push, Graph change notifications
 - Cron jobs: webhook subscription renewal (Gmail every 6 days, Outlook every 2.5 days)
-- MCP server: the 11 tools, so Claude can reach your inbox from any chat regardless of whether the Mac app is running
+- MCP server: tools so Claude can reach your inbox from any chat regardless of whether the Mac app is running
 
-Supabase is the shared source of truth both sides read/write: message metadata cache, categories, rules. Full message bodies never stored, fetched live.
+Supabase is the shared source of truth both sides read/write: message metadata cache. Full message bodies never stored, fetched live.
 
 ## Supabase
 
@@ -37,21 +37,6 @@ create table accounts (
   created_at timestamptz default now()
 );
 
-create table categories (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  color text not null,
-  is_system boolean default false,
-  created_at timestamptz default now()
-);
-
-create table category_rules (
-  id uuid primary key default gen_random_uuid(),
-  category_id uuid references categories(id) on delete cascade,
-  match_type text not null check (match_type in ('sender_domain','sender_email','keyword')),
-  match_value text not null
-);
-
 create table messages (
   id uuid primary key default gen_random_uuid(),
   account_id uuid references accounts(id) on delete cascade,
@@ -64,51 +49,43 @@ create table messages (
   received_at timestamptz not null,
   is_read boolean default false,
   is_archived boolean default false,
-  category_id uuid references categories(id),
-  provider_category text,
+  provider_category text, -- gmail: primary/promotions/social/updates | outlook: focused/other
   folder text default 'inbox',
   unique(account_id, provider_message_id)
 );
 
 create index on messages (account_id, received_at desc);
-create index on messages (category_id);
 create index on messages (is_read) where is_read = false;
 ```
 
 Note the change from v1: refresh token is the only token in Supabase, and it's the backend's copy for webhook/cron use. The Swift app's own access token lives in Keychain and never touches Supabase.
 
+No custom category system. Organization is provider-native tabs only (Gmail Primary/Promotions/Social/Updates, Outlook Focused/Other), no user-defined categories, no rules engine.
+
 ## OAuth
 
-**Gmail**: new Cloud Console project. Enable Gmail API. OAuth consent: External, Testing, add self as test user. Client type: match to what Swift needs, i.e. a client ID usable with `ASWebAuthenticationSession` (still a "Web application" OAuth client on Google's side, the redirect URI is a custom URL scheme like `com.hritvik.unifiedinbox://oauth-callback` instead of localhost). Scopes: `gmail.readonly`, `gmail.send`, `gmail.labels`.
+**Gmail**: Cloud Console project. Gmail API enabled. OAuth consent: External, Testing, self as test user. Client type: iOS (native/public client, PKCE, no secret). Scopes: `gmail.readonly`, `gmail.send`, `gmail.labels`.
 
-**Outlook**: reuse or redo the Azure app registration, redirect URI updated to the same custom URL scheme pattern. Scopes already proven working: `Mail.Read`, `Mail.Send`, `offline_access`, `openid`, `profile`.
+**Outlook**: Azure app, public client/native redirect type, PKCE, no secret used client-side. Scopes: `Mail.Read`, `Mail.Send`, `offline_access`, `openid`, `profile`.
 
-Flow in Swift: `ASWebAuthenticationSession` opens the provider's consent page, callback comes back via custom URL scheme, app exchanges code for tokens, access token to Keychain, refresh token also sent to backend/Supabase (encrypted) so webhook renewal and MCP tools can use it independently of the Mac app being open.
+Flow in Swift: `ASWebAuthenticationSession` opens the provider's consent page, callback comes back via custom URL scheme, app exchanges code for tokens, access token to Keychain, refresh token also sent to backend/Supabase (encrypted) so webhook renewal and MCP tools can use it independently of the Mac app being open. Silent refresh on launch using stored refresh token before ever showing the OAuth screen again.
 
 ## Sync
 
-Webhooks, backend-side, same as before: Gmail Pub/Sub push + Graph change notifications, Vercel cron for renewal. Swift app polls Supabase for new metadata rows (simple realtime subscription via Supabase's realtime feature, or a lightweight timer, either works) rather than receiving webhooks directly, since the app isn't always running and can't hold a public endpoint anyway.
-
-## Category rules engine
-
-Same logic as v1: sender_domain / sender_email / keyword matching, first match wins, runs on every new message insert (backend-side, since that's where webhook-triggered inserts happen), bulk pass on first account sync.
+Webhooks, backend-side: Gmail Pub/Sub push + Graph change notifications, Vercel cron for renewal. Swift app subscribes to Supabase realtime for new message rows, not polling.
 
 ## MCP server
 
-Same 11 tools as v1, same signatures, still lives on the backend (Vercel), not in the Swift app, since Claude needs to reach it independent of whether your Mac app is open.
+Lives on the backend (Vercel), not the Swift app, since Claude needs to reach it independent of whether the Mac app is open.
 
 ```typescript
-get_recent_emails(account?: string, category?: string, limit = 20)
+get_recent_emails(account?: string, limit = 20)
 get_email_body(message_id: string)
 search_emails(query: string, account?: string)
 send_email(to: string[], subject: string, body: string, account: string)
 reply_email(message_id: string, body: string)
 archive_email(message_id: string)
 mark_read(message_id: string, is_read: boolean)
-list_categories()
-create_category(name: string, color: string)
-assign_category(message_id: string, category_id: string)
-get_uncategorized_emails(limit = 50)
 ```
 
 ## Swift app structure
@@ -119,7 +96,6 @@ UnifiedInbox/
   Models/
     Account.swift
     Message.swift
-    Category.swift
   Services/
     SupabaseClient.swift       -- wraps supabase-swift
     GmailAPI.swift             -- direct Gmail REST calls
@@ -133,24 +109,23 @@ UnifiedInbox/
     ReadingPaneView.swift
     ComposeView.swift
   ViewModels/
-    InboxViewModel.swift       -- @Observable, owns message list state, category filters
+    InboxViewModel.swift       -- @Observable, owns message list state
 ```
 
-Dependencies via SPM: `supabase-swift` (official Supabase Swift client).
+Dependencies via SPM: `supabase-swift`.
 
 ## Phase order
 
-1. Xcode project scaffold, SPM deps added, basic three-pane SwiftUI shell with mock data (no backend yet, just prove the UI compiles and looks right)
-2. Gmail OAuth via ASWebAuthenticationSession, Keychain token storage, direct Gmail API fetch, display real messages in the UI
-3. Outlook OAuth, same pattern, merge into same list
-4. Send / reply / archive / mark-read, both providers, direct from Swift
-5. Backend: webhook receivers + cron renewal, Supabase realtime subscription wired into Swift app for near-live updates
-6. Category rules engine (backend-side) + bulk first-sync pass
-7. MCP server, all 11 tools
-8. Polish pass: frosted materials via `.ultraThinMaterial`/`.regularMaterial`, matches the dark `#191919` + Notion-Mail-grouped-categories design locked earlier
+1. Xcode project scaffold, SPM deps, basic three-pane SwiftUI shell with mock data — done
+2. Gmail OAuth, Keychain, real fetch — done
+3. Outlook OAuth, merged into same list — done
+4. Send / reply / archive / mark-read, both providers — done
+5. Backend webhooks + cron + Supabase realtime — done
+6. MCP server, tools above
+7. Polish pass: frosted materials via `.ultraThinMaterial`/`.regularMaterial`, dark `#191919` base, provider-colored left borders on list rows (Gmail coral, Outlook blue)
 
 ## Required before start
 - Xcode installed
-- New Supabase project (old one discarded), URL + anon key + service role key
-- Gmail Cloud Console client ID + secret (custom URL scheme redirect)
-- Azure app client ID + secret (custom URL scheme redirect)
+- Supabase project, URL + anon key + service role key
+- Gmail Cloud Console client ID (public client, no secret)
+- Azure app client ID (public client, no secret)

@@ -50,7 +50,7 @@ enum RealtimeService {
     static func subscribeToMessages(onInsert: @escaping (MessageRow) -> Void) async {
         let channel = SupabaseService.client.channel("messages-inserts")
         let insertions = channel.postgresChange(InsertAction.self, schema: "public", table: "messages")
-        await channel.subscribe()
+        try? await channel.subscribeWithError()
         for await insertion in insertions {
             guard let row = try? insertion.decodeRecord(as: MessageRow.self, decoder: decoder) else { continue }
             onInsert(row)

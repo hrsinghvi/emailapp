@@ -138,7 +138,6 @@ enum GraphAPI {
                 body: plainBody,
                 receivedAt: date,
                 isRead: isRead ?? true,
-                categoryId: nil,
                 folder: folder
             )
         }

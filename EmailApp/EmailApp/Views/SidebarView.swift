@@ -40,26 +40,6 @@ struct SidebarView: View {
                 }
             }
 
-            SectionLabel("Categories")
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(vm.categories) { category in
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(category.color)
-                            .frame(width: 8, height: 8)
-                        Text(category.name)
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        Text("\(vm.count(for: category.id))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                }
-            }
-
             SectionLabel("Accounts")
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(vm.accounts) { account in

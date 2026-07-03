@@ -1,16 +1,5 @@
 import SwiftUI
 
-struct MailCategory: Identifiable, Hashable {
-    let id: UUID
-    let name: String
-    let colorHex: String
-    let isSystem: Bool
-
-    var color: Color {
-        Color(hex: colorHex)
-    }
-}
-
 extension Color {
     init(hex: String) {
         let cleaned = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex

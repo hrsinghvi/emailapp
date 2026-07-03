@@ -5,24 +5,13 @@ struct MessageListView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 4, pinnedViews: .sectionHeaders) {
-                ForEach(vm.groupedByCategory, id: \.category?.id) { group in
-                    Section {
-                        ForEach(group.messages) { message in
-                            MessageRow(
-                                message: message,
-                                category: group.category,
-                                isSelected: vm.selectedMessageId == message.id
-                            )
-                            .onTapGesture { vm.select(message) }
-                        }
-                    } header: {
-                        SectionHeader(
-                            title: group.category?.name ?? "Other",
-                            color: group.category?.color ?? .gray,
-                            count: group.messages.count
-                        )
-                    }
+            LazyVStack(spacing: 4) {
+                ForEach(vm.filteredMessages) { message in
+                    MessageRow(
+                        message: message,
+                        isSelected: vm.selectedMessageId == message.id
+                    )
+                    .onTapGesture { vm.select(message) }
                 }
             }
             .padding(8)
@@ -31,32 +20,8 @@ struct MessageListView: View {
     }
 }
 
-private struct SectionHeader: View {
-    let title: String
-    let color: Color
-    let count: Int
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-            Text("\(count)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer()
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
-        .background(.regularMaterial)
-    }
-}
-
 private struct MessageRow: View {
     let message: Message
-    let category: MailCategory?
     let isSelected: Bool
 
     var body: some View {
@@ -86,14 +51,6 @@ private struct MessageRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                if let category {
-                    Text(category.name)
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(category.color)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(category.color.opacity(0.15)))
-                }
             }
         }
         .padding(8)

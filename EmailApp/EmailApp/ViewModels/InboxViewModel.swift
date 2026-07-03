@@ -23,7 +23,6 @@ final class InboxViewModel {
     }
 
     var accounts: [Account]
-    var categories: [MailCategory]
     var messages: [Message]
 
     var selectedMessageId: UUID?
@@ -35,7 +34,6 @@ final class InboxViewModel {
 
     init() {
         accounts = []
-        categories = []
         messages = []
     }
 
@@ -56,30 +54,6 @@ final class InboxViewModel {
                     || message.snippet.lowercased().contains(q)
             }
             .sorted { $0.receivedAt > $1.receivedAt }
-    }
-
-    var groupedByCategory: [(category: MailCategory?, messages: [Message])] {
-        let msgs = filteredMessages
-        var groups: [(category: MailCategory?, messages: [Message])] = []
-        for category in categories {
-            let inCategory = msgs.filter { $0.categoryId == category.id }
-            if !inCategory.isEmpty {
-                groups.append((category, inCategory))
-            }
-        }
-        let uncategorized = msgs.filter { $0.categoryId == nil }
-        if !uncategorized.isEmpty {
-            groups.append((nil, uncategorized))
-        }
-        return groups
-    }
-
-    func unreadCount(for categoryId: UUID?) -> Int {
-        filteredMessages.filter { $0.categoryId == categoryId && !$0.isRead }.count
-    }
-
-    func count(for categoryId: UUID?) -> Int {
-        filteredMessages.filter { $0.categoryId == categoryId }.count
     }
 
     func select(_ message: Message) {
@@ -204,7 +178,6 @@ final class InboxViewModel {
                 body: row.body,
                 receivedAt: row.receivedAt,
                 isRead: row.isRead,
-                categoryId: nil,
                 folder: row.folder
             )
         )
