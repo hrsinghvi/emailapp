@@ -116,24 +116,32 @@ enum GraphAPI {
         }
     }
 
+    private nonisolated struct Recipient: Encodable { let emailAddress: Addr }
+    private nonisolated struct Addr: Encodable { let address: String }
+
+    private nonisolated static func recipients(_ csv: String) -> [Recipient] {
+        csv.split(separator: ",").map { Recipient(emailAddress: Addr(address: $0.trimmingCharacters(in: .whitespaces))) }
+    }
+
     /// Sends a brand-new message.
     nonisolated static func send(
-        to: String, subject: String, body: String,
+        to: String, cc: String = "", bcc: String = "", subject: String, body: String, isHTML: Bool = false,
         attachments: [OutgoingAttachment] = [], accessToken: String
     ) async throws {
-        struct Recipient: Encodable { let emailAddress: Addr }
-        struct Addr: Encodable { let address: String }
         struct Content: Encodable { let contentType: String; let content: String }
         struct OutMessage: Encodable {
-            let subject: String; let body: Content; let toRecipients: [Recipient]
+            let subject: String; let body: Content
+            let toRecipients: [Recipient]; let ccRecipients: [Recipient]?; let bccRecipients: [Recipient]?
             let attachments: [GraphAttachment]?
         }
         struct SendMailRequest: Encodable { let message: OutMessage; let saveToSentItems: Bool }
         let payload = SendMailRequest(
             message: OutMessage(
                 subject: subject,
-                body: Content(contentType: "Text", content: body),
-                toRecipients: [Recipient(emailAddress: Addr(address: to))],
+                body: Content(contentType: isHTML ? "HTML" : "Text", content: body),
+                toRecipients: recipients(to),
+                ccRecipients: cc.isEmpty ? nil : recipients(cc),
+                bccRecipients: bcc.isEmpty ? nil : recipients(bcc),
                 attachments: attachments.isEmpty ? nil : graphAttachments(attachments)
             ),
             saveToSentItems: true
@@ -143,31 +151,34 @@ enum GraphAPI {
 
     /// Graph's /reply endpoint threads (References/In-Reply-To/conversationId) automatically.
     nonisolated static func reply(
-        to message: Message, body: String,
+        to message: Message, cc: String = "", bcc: String = "", body: String,
         attachments: [OutgoingAttachment] = [], accessToken: String
     ) async throws {
         try await sendReply(
-            endpoint: "reply", message: message, body: body, attachments: attachments, accessToken: accessToken)
+            endpoint: "reply", message: message, cc: cc, bcc: bcc, body: body,
+            attachments: attachments, accessToken: accessToken)
     }
 
     /// Graph's /replyAll endpoint replies to the sender plus every original
     /// To/Cc recipient automatically — no need to reconstruct the list.
     nonisolated static func replyAll(
-        to message: Message, body: String,
+        to message: Message, cc: String = "", bcc: String = "", body: String,
         attachments: [OutgoingAttachment] = [], accessToken: String
     ) async throws {
         try await sendReply(
-            endpoint: "replyAll", message: message, body: body, attachments: attachments, accessToken: accessToken)
+            endpoint: "replyAll", message: message, cc: cc, bcc: bcc, body: body,
+            attachments: attachments, accessToken: accessToken)
     }
 
     private nonisolated static func sendReply(
-        endpoint: String, message: Message, body: String,
+        endpoint: String, message: Message, cc: String, bcc: String, body: String,
         attachments: [OutgoingAttachment], accessToken: String
     ) async throws {
-        guard attachments.isEmpty else {
-            // Graph's /reply and /replyAll only take a comment string, no
-            // attachments param — create the reply draft, attach files to
-            // it, then send the draft.
+        // The native /reply and /replyAll endpoints only take a comment
+        // string — no way to override Cc/Bcc or attach files. Whenever
+        // either is needed, create the reply as a draft instead (which is a
+        // full message you can PATCH), then send that draft.
+        guard attachments.isEmpty, cc.isEmpty, bcc.isEmpty else {
             let createEndpoint = endpoint == "reply" ? "createReply" : "createReplyAll"
             struct CreateReplyBody: Encodable { let comment: String }
             let draftData = try await post(
@@ -176,6 +187,17 @@ enum GraphAPI {
             )
             struct Draft: Decodable { let id: String }
             let draft = try JSONDecoder().decode(Draft.self, from: draftData)
+
+            if !cc.isEmpty || !bcc.isEmpty {
+                struct PatchBody: Encodable { let ccRecipients: [Recipient]?; let bccRecipients: [Recipient]? }
+                _ = try await patch(
+                    "\(base)/me/messages/\(draft.id)", accessToken: accessToken,
+                    json: PatchBody(
+                        ccRecipients: cc.isEmpty ? nil : recipients(cc),
+                        bccRecipients: bcc.isEmpty ? nil : recipients(bcc)
+                    )
+                )
+            }
             for attachment in graphAttachments(attachments) {
                 _ = try await post(
                     "\(base)/me/messages/\(draft.id)/attachments", accessToken: accessToken, json: attachment)
@@ -241,12 +263,13 @@ enum GraphAPI {
             let senderName = from?.emailAddress?.name ?? from?.emailAddress?.address ?? ""
             let senderEmail = from?.emailAddress?.address ?? ""
             let date = receivedDateTime.flatMap { GraphAPI.parseReceivedDate($0) } ?? Date()
-            let plainBody: String = {
-                guard let body else { return bodyPreview ?? "" }
+            let (plainBody, htmlBody): (String, String?) = {
+                guard let body else { return (bodyPreview ?? "", nil) }
                 if body.contentType?.lowercased() == "html" {
-                    return (body.content ?? "").strippingHTML()
+                    let html = body.content ?? ""
+                    return (html.strippingHTML(), html)
                 }
-                return body.content ?? bodyPreview ?? ""
+                return (body.content ?? bodyPreview ?? "", nil)
             }()
             return Message(
                 id: UUID(stableFrom: id),
@@ -261,6 +284,7 @@ enum GraphAPI {
                 subject: subject ?? "",
                 snippet: (bodyPreview ?? "").decodingHTMLEntities(),
                 body: plainBody,
+                htmlBody: htmlBody,
                 receivedAt: date,
                 isRead: isRead ?? true,
                 folder: folder,

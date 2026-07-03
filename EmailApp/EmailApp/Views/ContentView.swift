@@ -10,7 +10,11 @@ struct ContentView: View {
 
             VStack(spacing: 12) {
                 TopBar(vm: vm)
-                MessageListView(vm: vm)
+                if vm.selectedFolder == "drafts" {
+                    DraftsListView(vm: vm)
+                } else {
+                    MessageListView(vm: vm)
+                }
             }
             .frame(minWidth: 320, idealWidth: 400)
 
@@ -32,6 +36,7 @@ struct ContentView: View {
         )
         .task { await vm.restoreSession() }
         .task { await vm.startRealtimeUpdates() }
+        .overlay(alignment: .bottom) { PendingSendBannerStack(vm: vm) }
         .sheet(item: $vm.composeContext) { context in
             ComposeView(vm: vm, context: context)
         }

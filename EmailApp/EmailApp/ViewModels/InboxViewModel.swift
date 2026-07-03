@@ -21,6 +21,9 @@ final class InboxViewModel {
         case reply(Message)
         case replyAll(Message)
         case forward(Message)
+        /// Reopens an existing draft, or a send that was just undone —
+        /// both are "resume this exact compose session".
+        case draft(Draft)
 
         var id: String {
             switch self {
@@ -28,6 +31,7 @@ final class InboxViewModel {
             case .reply(let message): return "reply-\(message.id)"
             case .replyAll(let message): return "replyAll-\(message.id)"
             case .forward(let message): return "forward-\(message.id)"
+            case .draft(let draft): return "draft-\(draft.id)"
             }
         }
     }
@@ -35,6 +39,31 @@ final class InboxViewModel {
     enum SendError: LocalizedError {
         case noAccount
         var errorDescription: String? { "No connected account to send from." }
+    }
+
+    /// A send in its 8-second undoable window — nothing has been
+    /// transmitted yet, the email exists only locally.
+    struct PendingSend: Identifiable {
+        let id = UUID()
+        let draftId: UUID?
+        let origin: DraftOrigin
+        let to: String
+        let cc: String
+        let bcc: String
+        let subject: String
+        let bodyHTML: String
+        let attachments: [OutgoingAttachment]
+        let scheduledAt: Date
+        var task: Task<Void, Never>?
+
+        var asDraft: Draft {
+            Draft(
+                id: draftId ?? UUID(), accountEmail: nil, to: to, cc: cc, bcc: bcc, subject: subject,
+                bodyHTML: bodyHTML,
+                attachments: attachments.map { DraftAttachment(filename: $0.filename, mimeType: $0.mimeType, data: $0.data) },
+                origin: origin, lastModified: Date()
+            )
+        }
     }
 
     var accounts: [Account]
@@ -55,9 +84,101 @@ final class InboxViewModel {
     /// Bumped to request the search field take keyboard focus (Cmd+K).
     var searchFocusTrigger = 0
 
+    var drafts: [Draft] = []
+    var pendingSends: [PendingSend] = []
+
     init() {
         accounts = []
         messages = []
+        drafts = DraftStore.loadAll()
+    }
+
+    // MARK: - Drafts
+
+    func saveDraft(_ draft: Draft) {
+        DraftStore.save(draft)
+        if let index = drafts.firstIndex(where: { $0.id == draft.id }) {
+            drafts[index] = draft
+        } else {
+            drafts.insert(draft, at: 0)
+        }
+    }
+
+    func deleteDraft(id: UUID) {
+        DraftStore.delete(id: id)
+        drafts.removeAll { $0.id == id }
+    }
+
+    // MARK: - Undo Send
+
+    /// Queues a send for an 8-second undoable window. Nothing is
+    /// transmitted until the window elapses uninterrupted — the email
+    /// exists only locally until then.
+    func queueSend(
+        draftId: UUID?, origin: DraftOrigin, to: String, cc: String, bcc: String,
+        subject: String, bodyHTML: String, attachments: [OutgoingAttachment]
+    ) {
+        // A pending send is its own state, not simultaneously a draft — drop
+        // it from the drafts list now. The file itself stays on disk until
+        // the real send succeeds, so a crash mid-countdown doesn't lose it.
+        if let draftId { drafts.removeAll { $0.id == draftId } }
+
+        var pending = PendingSend(
+            draftId: draftId, origin: origin, to: to, cc: cc, bcc: bcc, subject: subject,
+            bodyHTML: bodyHTML, attachments: attachments, scheduledAt: Date().addingTimeInterval(8)
+        )
+        let sendId = pending.id
+        pending.task = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled else { return }
+            await self?.performActualSend(sendId)
+        }
+        pendingSends.append(pending)
+    }
+
+    /// Cancels a pending send and reopens Compose with everything restored
+    /// exactly as it was.
+    func undoSend(_ id: UUID) {
+        guard let index = pendingSends.firstIndex(where: { $0.id == id }) else { return }
+        let pending = pendingSends[index]
+        pending.task?.cancel()
+        pendingSends.remove(at: index)
+        composeContext = .draft(pending.asDraft)
+    }
+
+    private func performActualSend(_ id: UUID) async {
+        guard let index = pendingSends.firstIndex(where: { $0.id == id }) else { return }
+        let pending = pendingSends[index]
+        do {
+            try await dispatchSend(pending)
+            pendingSends.removeAll { $0.id == id }
+            if let draftId = pending.draftId { deleteDraft(id: draftId) }
+        } catch {
+            pendingSends.removeAll { $0.id == id }
+            // Falls back to a resumable draft rather than silently dropping
+            // the content the user wrote.
+            saveDraft(pending.asDraft)
+            errorMessage = "Send failed, saved as a draft: \(error.localizedDescription)"
+        }
+    }
+
+    private func dispatchSend(_ pending: PendingSend) async throws {
+        func plainSend() async throws {
+            try await send(
+                to: pending.to, cc: pending.cc, bcc: pending.bcc, subject: pending.subject,
+                bodyHTML: pending.bodyHTML, attachments: pending.attachments
+            )
+        }
+        switch pending.origin {
+        case .new, .forward:
+            try await plainSend()
+        case .reply(let messageId):
+            guard let message = messages.first(where: { $0.id == messageId }) else { try await plainSend(); return }
+            try await reply(to: message, cc: pending.cc, bcc: pending.bcc, bodyHTML: pending.bodyHTML, attachments: pending.attachments)
+        case .replyAll(let messageId):
+            guard let message = messages.first(where: { $0.id == messageId }) else { try await plainSend(); return }
+            try await replyAll(to: message, cc: pending.cc, bcc: pending.bcc, bodyHTML: pending.bodyHTML, attachments: pending.attachments)
+        }
     }
 
     // MARK: - Thread grouping
@@ -201,36 +322,41 @@ final class InboxViewModel {
 
     // MARK: - Compose / send
 
-    /// Sends a brand-new message from the first connected account.
+    /// Sends a brand-new message from the first connected account. Body is
+    /// always HTML now that compose is rich text.
     /// - ponytail: no sender picker — single default account. Add one if
     ///   multi-account send-from becomes a real need.
-    func send(to: String, subject: String, body: String, attachments: [OutgoingAttachment] = []) async throws {
+    func send(to: String, cc: String = "", bcc: String = "", subject: String, bodyHTML: String, attachments: [OutgoingAttachment] = []) async throws {
         guard let account = accounts.first else { throw SendError.noAccount }
         let token = try await OAuthManager.shared.validAccessToken(for: account)
         switch account.provider {
-        case .gmail: try await GmailAPI.send(to: to, subject: subject, body: body, attachments: attachments, accessToken: token)
-        case .outlook: try await GraphAPI.send(to: to, subject: subject, body: body, attachments: attachments, accessToken: token)
+        case .gmail:
+            try await GmailAPI.send(to: to, cc: cc, bcc: bcc, subject: subject, body: bodyHTML, isHTML: true, attachments: attachments, accessToken: token)
+        case .outlook:
+            try await GraphAPI.send(to: to, cc: cc, bcc: bcc, subject: subject, body: bodyHTML, isHTML: true, attachments: attachments, accessToken: token)
         }
     }
 
     /// Sends a threaded reply-to-sender from the account the original message arrived on.
-    func reply(to message: Message, body: String, attachments: [OutgoingAttachment] = []) async throws {
+    func reply(to message: Message, cc: String = "", bcc: String = "", bodyHTML: String, attachments: [OutgoingAttachment] = []) async throws {
         let token = try await accessToken(for: message)
         switch message.provider {
-        case .gmail: try await GmailAPI.reply(to: message, body: body, attachments: attachments, accessToken: token)
-        case .outlook: try await GraphAPI.reply(to: message, body: body, attachments: attachments, accessToken: token)
+        case .gmail:
+            try await GmailAPI.reply(to: message, cc: cc, bcc: bcc, body: bodyHTML, isHTML: true, attachments: attachments, accessToken: token)
+        case .outlook:
+            try await GraphAPI.reply(to: message, cc: cc, bcc: bcc, body: bodyHTML, attachments: attachments, accessToken: token)
         }
     }
 
     /// Sends a threaded reply to the sender plus every original To/Cc recipient.
-    func replyAll(to message: Message, body: String, attachments: [OutgoingAttachment] = []) async throws {
+    func replyAll(to message: Message, cc: String = "", bcc: String = "", bodyHTML: String, attachments: [OutgoingAttachment] = []) async throws {
         guard let account = accounts.first(where: { $0.id == message.accountId }) else { throw SendError.noAccount }
         let token = try await OAuthManager.shared.validAccessToken(for: account)
         switch message.provider {
         case .gmail:
-            try await GmailAPI.replyAll(to: message, selfEmail: account.email, body: body, attachments: attachments, accessToken: token)
+            try await GmailAPI.replyAll(to: message, selfEmail: account.email, cc: cc, bcc: bcc, body: bodyHTML, isHTML: true, attachments: attachments, accessToken: token)
         case .outlook:
-            try await GraphAPI.replyAll(to: message, body: body, attachments: attachments, accessToken: token)
+            try await GraphAPI.replyAll(to: message, cc: cc, bcc: bcc, body: bodyHTML, attachments: attachments, accessToken: token)
         }
     }
 

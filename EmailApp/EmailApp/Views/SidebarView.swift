@@ -33,7 +33,8 @@ struct SidebarView: View {
                     NavItem(
                         label: folder.label,
                         icon: folder.icon,
-                        isActive: vm.selectedFolder == folder.id
+                        isActive: vm.selectedFolder == folder.id,
+                        badge: folder.id == "drafts" && !vm.drafts.isEmpty ? "\(vm.drafts.count)" : nil
                     ) {
                         vm.selectedFolder = folder.id
                     }
@@ -117,6 +118,7 @@ private struct NavItem: View {
     let label: String
     let icon: String
     let isActive: Bool
+    var badge: String? = nil
     let action: () -> Void
 
     var body: some View {
@@ -127,6 +129,14 @@ private struct NavItem: View {
                 Text(label)
                     .font(.subheadline)
                 Spacer()
+                if let badge {
+                    Text(badge)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.white.opacity(0.1)))
+                }
             }
             .foregroundStyle(isActive ? .primary : .secondary)
             .padding(.horizontal, 8)

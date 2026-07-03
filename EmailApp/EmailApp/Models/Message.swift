@@ -18,7 +18,13 @@ struct Message: Identifiable, Hashable {
     let senderEmail: String
     let subject: String
     let snippet: String
+    /// Plain-text body — used for search/snippets, and as the reading-pane
+    /// fallback when no HTML part exists.
     let body: String
+    /// Raw HTML part, preferred for reading-pane display whenever present.
+    /// Nil for realtime-webhook-delivered rows (the cache doesn't carry it) —
+    /// falls back to plain text until the next full sync backfills it.
+    var htmlBody: String? = nil
     let receivedAt: Date
     var isRead: Bool
     var folder: String = "inbox"

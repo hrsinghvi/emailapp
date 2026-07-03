@@ -97,20 +97,20 @@ enum GmailAPI {
 
     /// Sends a brand-new, unthreaded message.
     nonisolated static func send(
-        to: String, subject: String, body: String,
+        to: String, cc: String = "", bcc: String = "", subject: String, body: String, isHTML: Bool = false,
         attachments: [OutgoingAttachment] = [], accessToken: String
     ) async throws {
-        let raw = buildRawMessage(to: to, subject: subject, body: body, attachments: attachments)
+        let raw = buildRawMessage(to: to, cc: cc, bcc: bcc, subject: subject, body: body, isHTML: isHTML, attachments: attachments)
         try await sendRaw(raw, threadId: nil, accessToken: accessToken)
     }
 
     /// Replies to just the original sender, in-thread.
     nonisolated static func reply(
-        to message: Message, body: String,
+        to message: Message, cc: String = "", bcc: String = "", body: String, isHTML: Bool = false,
         attachments: [OutgoingAttachment] = [], accessToken: String
     ) async throws {
         try await sendThreadedReply(
-            to: message, recipients: [message.senderEmail], body: body,
+            to: message, recipients: [message.senderEmail], cc: cc, bcc: bcc, body: body, isHTML: isHTML,
             attachments: attachments, accessToken: accessToken
         )
     }
@@ -118,7 +118,7 @@ enum GmailAPI {
     /// Replies to the sender plus every original To/Cc recipient (minus the
     /// account replying), in-thread.
     nonisolated static func replyAll(
-        to message: Message, selfEmail: String, body: String,
+        to message: Message, selfEmail: String, cc: String = "", bcc: String = "", body: String, isHTML: Bool = false,
         attachments: [OutgoingAttachment] = [], accessToken: String
     ) async throws {
         var seen = Set<String>()
@@ -126,13 +126,13 @@ enum GmailAPI {
             .filter { seen.insert($0.lowercased()).inserted }
             .filter { $0.lowercased() != selfEmail.lowercased() }
         try await sendThreadedReply(
-            to: message, recipients: recipients, body: body,
+            to: message, recipients: recipients, cc: cc, bcc: bcc, body: body, isHTML: isHTML,
             attachments: attachments, accessToken: accessToken
         )
     }
 
     private nonisolated static func sendThreadedReply(
-        to message: Message, recipients: [String], body: String,
+        to message: Message, recipients: [String], cc: String, bcc: String, body: String, isHTML: Bool,
         attachments: [OutgoingAttachment], accessToken: String
     ) async throws {
         var subject = message.subject
@@ -140,7 +140,7 @@ enum GmailAPI {
         let references = [message.references, message.messageIdHeader]
             .compactMap { $0 }.joined(separator: " ")
         let raw = buildRawMessage(
-            to: recipients.joined(separator: ", "), subject: subject, body: body,
+            to: recipients.joined(separator: ", "), cc: cc, bcc: bcc, subject: subject, body: body, isHTML: isHTML,
             inReplyTo: message.messageIdHeader,
             references: references.isEmpty ? nil : references,
             attachments: attachments
@@ -149,23 +149,31 @@ enum GmailAPI {
     }
 
     private nonisolated static func buildRawMessage(
-        to: String, subject: String, body: String, inReplyTo: String? = nil, references: String? = nil,
+        to: String, cc: String = "", bcc: String = "", subject: String, body: String, isHTML: Bool = false,
+        inReplyTo: String? = nil, references: String? = nil,
         attachments: [OutgoingAttachment] = []
     ) -> String {
+        let bodyContentType = isHTML ? "text/html" : "text/plain"
+        func recipientHeaders() -> String {
+            var h = "To: \(to)\r\n"
+            if !cc.isEmpty { h += "Cc: \(cc)\r\n" }
+            if !bcc.isEmpty { h += "Bcc: \(bcc)\r\n" }
+            return h
+        }
         guard !attachments.isEmpty else {
-            var headers = "To: \(to)\r\nSubject: \(subject)\r\nContent-Type: text/plain; charset=UTF-8\r\n"
+            var headers = recipientHeaders() + "Subject: \(subject)\r\nContent-Type: \(bodyContentType); charset=UTF-8\r\n"
             if let inReplyTo { headers += "In-Reply-To: \(inReplyTo)\r\n" }
             if let references { headers += "References: \(references)\r\n" }
             return Data((headers + "\r\n" + body).utf8).base64URLEncoded()
         }
 
         let boundary = "boundary-\(UUID().uuidString)"
-        var headers = "To: \(to)\r\nSubject: \(subject)\r\nMIME-Version: 1.0\r\n"
+        var headers = recipientHeaders() + "Subject: \(subject)\r\nMIME-Version: 1.0\r\n"
         headers += "Content-Type: multipart/mixed; boundary=\"\(boundary)\"\r\n"
         if let inReplyTo { headers += "In-Reply-To: \(inReplyTo)\r\n" }
         if let references { headers += "References: \(references)\r\n" }
 
-        var mime = "--\(boundary)\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n\(body)\r\n"
+        var mime = "--\(boundary)\r\nContent-Type: \(bodyContentType); charset=UTF-8\r\n\r\n\(body)\r\n"
         for attachment in attachments {
             let encoded = attachment.data.base64EncodedString(
                 options: [.lineLength76Characters, .endLineWithCarriageReturn, .endLineWithLineFeed]
@@ -254,9 +262,8 @@ enum GmailAPI {
                 senderEmail: email,
                 subject: header("Subject"),
                 snippet: (snippet ?? "").decodingHTMLEntities(),
-                // ponytail: full body when parseable, else the snippet. Good enough
-                // for reading-pane display; richer HTML rendering can come later.
                 body: Self.extractBody(payload) ?? (snippet ?? ""),
+                htmlBody: Self.extractRawHTML(payload),
                 receivedAt: date,
                 isRead: !(labelIds?.contains("UNREAD") ?? false),
                 folder: folder,
@@ -264,6 +271,24 @@ enum GmailAPI {
                 ccRecipients: Self.parseAddressList(header("Cc")),
                 attachments: Self.extractAttachments(payload)
             )
+        }
+
+        /// Walks the MIME tree for the raw (unstripped) text/html part, if any
+        /// — preferred for reading-pane display over the plain-text `body`.
+        static func extractRawHTML(_ payload: Payload?) -> String? {
+            guard let payload else { return nil }
+            if payload.mimeType == "text/html", let d = payload.body?.data, let s = decodeBase64URL(d) {
+                return s
+            }
+            if let parts = payload.parts {
+                for p in parts where p.mimeType == "text/html" {
+                    if let d = p.body?.data, let s = decodeBase64URL(d) { return s }
+                }
+                for p in parts {
+                    if let s = extractRawHTML(p) { return s }
+                }
+            }
+            return nil
         }
 
         static func parseAddressList(_ raw: String) -> [String] {

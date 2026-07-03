@@ -36,7 +36,7 @@ struct ReadingPaneView: View {
 
                 ForEach(thread.messages) { message in
                     if vm.expandedMessageIds.contains(message.id) {
-                        expandedCard(message)
+                        ExpandedMessageCard(vm: vm, message: message)
                     } else {
                         collapsedRow(message)
                     }
@@ -80,8 +80,17 @@ struct ReadingPaneView: View {
         .contentShape(Rectangle())
         .onTapGesture { vm.toggleExpand(message) }
     }
+}
 
-    private func expandedCard(_ message: Message) -> some View {
+/// A single expanded message within a thread. Its own View struct (not a
+/// helper function) so `@State htmlHeight` is stable per-message rather than
+/// being recreated on every parent body re-evaluation.
+private struct ExpandedMessageCard: View {
+    let vm: InboxViewModel
+    let message: Message
+    @State private var htmlHeight: CGFloat = 200
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 RoundedRectangle(cornerRadius: 2)
@@ -110,24 +119,34 @@ struct ReadingPaneView: View {
             .contentShape(Rectangle())
             .onTapGesture { vm.toggleExpand(message) }
 
+            bodyContent
+
+            if !message.attachments.isEmpty {
+                attachmentsView
+            }
+
+            actionBar
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    @ViewBuilder
+    private var bodyContent: some View {
+        if let html = message.htmlBody {
+            HTMLBodyView(html: HTMLSanitizer.sanitize(html), height: $htmlHeight)
+                .frame(height: htmlHeight)
+        } else {
             Text(message.body)
                 .font(.body)
                 .foregroundStyle(.primary.opacity(0.85))
                 .lineSpacing(5)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
-
-            if !message.attachments.isEmpty {
-                attachmentsView(message)
-            }
-
-            actionBar(message)
         }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
-    private func attachmentsView(_ message: Message) -> some View {
+    private var attachmentsView: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(message.attachments) { attachment in
@@ -136,13 +155,13 @@ struct ReadingPaneView: View {
                         sizeMB: attachment.sizeMB,
                         systemIconName: AttachmentIcon.systemName(forMimeType: attachment.mimeType)
                     )
-                    .onTapGesture { saveAttachment(attachment, from: message) }
+                    .onTapGesture { saveAttachment(attachment) }
                 }
             }
         }
     }
 
-    private func saveAttachment(_ attachment: Attachment, from message: Message) {
+    private func saveAttachment(_ attachment: Attachment) {
         Task {
             do {
                 let data = try await vm.attachmentData(attachment, on: message)
@@ -157,7 +176,7 @@ struct ReadingPaneView: View {
         }
     }
 
-    private func actionBar(_ message: Message) -> some View {
+    private var actionBar: some View {
         HStack(spacing: 10) {
             ActionPill(title: "Reply", icon: "arrowshape.turn.up.left", tint: .white) {
                 vm.composeContext = .reply(message)
