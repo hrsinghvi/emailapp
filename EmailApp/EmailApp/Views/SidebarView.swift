@@ -4,6 +4,7 @@ struct SidebarView: View {
     @Bindable var vm: InboxViewModel
     @Binding var showingCompose: Bool
     @State private var isConnectingGmail = false
+    @State private var isConnectingOutlook = false
 
     private let folders: [(id: String, label: String, icon: String)] = [
         ("inbox", "Inbox", "tray"),
@@ -100,6 +101,30 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isConnectingGmail)
+
+                Button {
+                    isConnectingOutlook = true
+                    Task {
+                        await vm.loadOutlook()
+                        isConnectingOutlook = false
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        if isConnectingOutlook {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "plus.circle")
+                        }
+                        Text(isConnectingOutlook ? "Connecting…" : "Connect Outlook")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+                .disabled(isConnectingOutlook)
             }
 
             Spacer()

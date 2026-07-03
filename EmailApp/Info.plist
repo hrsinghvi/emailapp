@@ -14,6 +14,16 @@
 				<string>com.googleusercontent.apps.1049176105925-tasmcnkpj3m8sr6r81rff57knq3euut1</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.hritviksinghvi.EmailApp.outlookoauth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.hritviksinghvi.emailapp.outlook</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

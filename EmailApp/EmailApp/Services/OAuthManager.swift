@@ -35,51 +35,106 @@ final class OAuthManager: NSObject {
         let expires_in: Int
     }
 
+    /// Per-provider OAuth endpoints/params. Both are native/public clients
+    /// (PKCE, no client secret) — only the URLs and IDs differ.
+    private struct ProviderConfig {
+        let authorizeURL: String
+        let tokenURL: String
+        let clientID: String
+        let redirectURI: String
+        let redirectScheme: String
+        let scopes: [String]
+        let extraAuthParams: [String: String]
+    }
+
+    private func providerConfig(for provider: Provider) -> ProviderConfig {
+        switch provider {
+        case .gmail:
+            return ProviderConfig(
+                authorizeURL: "https://accounts.google.com/o/oauth2/v2/auth",
+                tokenURL: "https://oauth2.googleapis.com/token",
+                clientID: Config.googleClientID,
+                redirectURI: Config.googleRedirectURI,
+                redirectScheme: Config.googleRedirectScheme,
+                scopes: Config.googleScopes,
+                extraAuthParams: ["access_type": "offline", "prompt": "consent"]
+            )
+        case .outlook:
+            return ProviderConfig(
+                authorizeURL: Config.azureAuthorizeURL,
+                tokenURL: Config.azureTokenURL,
+                clientID: Config.azureClientID,
+                redirectURI: Config.azureRedirectURI,
+                redirectScheme: Config.azureRedirectScheme,
+                scopes: Config.azureScopes,
+                extraAuthParams: ["prompt": "select_account"]
+            )
+        }
+    }
+
+    /// Separate Keychain accounts per provider so Gmail and Outlook tokens
+    /// for the same-looking address never collide or overwrite each other.
+    private func keychainAccount(provider: Provider, email: String) -> String {
+        "\(provider.rawValue):\(email)"
+    }
+
     // MARK: - Public API
 
     /// Runs the interactive consent flow, stores tokens in the Keychain,
     /// and returns an Account built from the authenticated Gmail address.
     func signInWithGoogle() async throws -> Account {
+        try await signIn(provider: .gmail) { try await GmailAPI.getProfile(accessToken: $0) }
+    }
+
+    /// Runs the interactive consent flow, stores tokens in the Keychain,
+    /// and returns an Account built from the authenticated Outlook address.
+    func signInWithMicrosoft() async throws -> Account {
+        try await signIn(provider: .outlook) { try await GraphAPI.getProfile(accessToken: $0) }
+    }
+
+    private func signIn(
+        provider: Provider, fetchEmail: (String) async throws -> String
+    ) async throws -> Account {
+        let config = providerConfig(for: provider)
         let verifier = Self.makeCodeVerifier()
         let challenge = Self.codeChallenge(for: verifier)
-        let code = try await authorize(challenge: challenge)
-        let tokens = try await exchangeCode(code, verifier: verifier)
-        let email = try await GmailAPI.getProfile(accessToken: tokens.accessToken)
-        try KeychainService.save(tokens, account: email)
-        return Account(id: UUID(), provider: .gmail, email: email, displayName: email)
+        let code = try await authorize(config: config, challenge: challenge)
+        let tokens = try await exchangeCode(code, verifier: verifier, config: config)
+        let email = try await fetchEmail(tokens.accessToken)
+        try KeychainService.save(tokens, account: keychainAccount(provider: provider, email: email))
+        return Account(id: UUID(), provider: provider, email: email, displayName: email)
     }
 
     /// Returns a non-expired access token, refreshing (and re-saving) if needed.
     func validAccessToken(for account: Account) async throws -> String {
-        guard var tokens = try KeychainService.load(account: account.email) else {
+        let key = keychainAccount(provider: account.provider, email: account.email)
+        guard var tokens = try KeychainService.load(account: key) else {
             throw OAuthError.notAuthenticated
         }
         if tokens.isExpired {
-            tokens = try await refresh(tokens, account: account.email)
+            tokens = try await refresh(tokens, provider: account.provider, keychainKey: key)
         }
         return tokens.accessToken
     }
 
     // MARK: - Authorization (ASWebAuthenticationSession)
 
-    private func authorize(challenge: String) async throws -> String {
-        var comps = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
+    private func authorize(config: ProviderConfig, challenge: String) async throws -> String {
+        var comps = URLComponents(string: config.authorizeURL)!
         comps.queryItems = [
-            .init(name: "client_id", value: Config.googleClientID),
-            .init(name: "redirect_uri", value: Config.googleRedirectURI),
+            .init(name: "client_id", value: config.clientID),
+            .init(name: "redirect_uri", value: config.redirectURI),
             .init(name: "response_type", value: "code"),
-            .init(name: "scope", value: Config.googleScopes.joined(separator: " ")),
+            .init(name: "scope", value: config.scopes.joined(separator: " ")),
             .init(name: "code_challenge", value: challenge),
             .init(name: "code_challenge_method", value: "S256"),
-            .init(name: "access_type", value: "offline"),
-            .init(name: "prompt", value: "consent"),
-        ]
+        ] + config.extraAuthParams.map { .init(name: $0.key, value: $0.value) }
         guard let url = comps.url else { throw OAuthError.invalidAuthURL }
 
         return try await withCheckedThrowingContinuation { continuation in
             let session = ASWebAuthenticationSession(
                 url: url,
-                callbackURLScheme: Config.googleRedirectScheme
+                callbackURLScheme: config.redirectScheme
             ) { callbackURL, error in
                 if let error {
                     continuation.resume(throwing: OAuthError.sessionFailed(error.localizedDescription))
@@ -104,12 +159,14 @@ final class OAuthManager: NSObject {
 
     // MARK: - Token exchange / refresh
 
-    private func exchangeCode(_ code: String, verifier: String) async throws -> OAuthTokens {
-        let resp = try await postToken([
+    private func exchangeCode(
+        _ code: String, verifier: String, config: ProviderConfig
+    ) async throws -> OAuthTokens {
+        let resp = try await postToken(config.tokenURL, [
             "grant_type": "authorization_code",
             "code": code,
-            "client_id": Config.googleClientID,
-            "redirect_uri": Config.googleRedirectURI,
+            "client_id": config.clientID,
+            "redirect_uri": config.redirectURI,
             "code_verifier": verifier,
         ])
         guard let refresh = resp.refresh_token else { throw OAuthError.noRefreshToken }
@@ -120,11 +177,14 @@ final class OAuthManager: NSObject {
         )
     }
 
-    private func refresh(_ tokens: OAuthTokens, account: String) async throws -> OAuthTokens {
-        let resp = try await postToken([
+    private func refresh(
+        _ tokens: OAuthTokens, provider: Provider, keychainKey: String
+    ) async throws -> OAuthTokens {
+        let config = providerConfig(for: provider)
+        let resp = try await postToken(config.tokenURL, [
             "grant_type": "refresh_token",
             "refresh_token": tokens.refreshToken,
-            "client_id": Config.googleClientID,
+            "client_id": config.clientID,
         ])
         // A refresh response usually omits refresh_token; keep the existing one.
         let updated = OAuthTokens(
@@ -132,12 +192,12 @@ final class OAuthManager: NSObject {
             refreshToken: resp.refresh_token ?? tokens.refreshToken,
             expiresAt: Date().addingTimeInterval(TimeInterval(resp.expires_in))
         )
-        try KeychainService.save(updated, account: account)
+        try KeychainService.save(updated, account: keychainKey)
         return updated
     }
 
-    private func postToken(_ params: [String: String]) async throws -> TokenResponse {
-        var req = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
+    private func postToken(_ tokenURL: String, _ params: [String: String]) async throws -> TokenResponse {
+        var req = URLRequest(url: URL(string: tokenURL)!)
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         req.httpBody = Self.formEncode(params)
