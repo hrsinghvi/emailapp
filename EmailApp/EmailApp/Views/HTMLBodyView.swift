@@ -21,6 +21,7 @@ struct HTMLBodyView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         if let cached = HTMLPrewarmCache.shared.webView(for: messageId) {
             cached.navigationDelegate = context.coordinator
+            Self.forceTransparentLayer(cached)
             return cached
         }
         let webView = Self.makeConfiguredWebView()
@@ -46,7 +47,18 @@ struct HTMLBodyView: NSViewRepresentable {
         config.defaultWebpagePreferences = prefs
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.underPageBackgroundColor = .clear
+        forceTransparentLayer(webView)
         return webView
+    }
+
+    /// `underPageBackgroundColor` alone still leaves a one-frame flash of
+    /// opaque black on the view's own backing layer — visible whenever a
+    /// prewarmed WKWebView gets reattached to a fresh host. Forcing the
+    /// CALayer itself transparent removes that flash at the source.
+    private static func forceTransparentLayer(_ webView: WKWebView) {
+        webView.wantsLayer = true
+        webView.layer?.isOpaque = false
+        webView.layer?.backgroundColor = .clear
     }
 
     /// Most HTML email is authored on a white canvas with no dark-mode
