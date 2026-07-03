@@ -88,7 +88,15 @@ struct ReadingPaneView: View {
 private struct ExpandedMessageCard: View {
     let vm: InboxViewModel
     let message: Message
-    @State private var htmlHeight: CGFloat = 0
+    @State private var htmlHeight: CGFloat
+
+    init(vm: InboxViewModel, message: Message) {
+        self.vm = vm
+        self.message = message
+        // If this message was prewarmed, its height is already known —
+        // start there so there's no loading-spinner flash at all.
+        _htmlHeight = State(initialValue: HTMLPrewarmCache.shared.height(for: message.id) ?? 0)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -140,7 +148,7 @@ private struct ExpandedMessageCard: View {
                         .controlSize(.small)
                         .frame(height: 120)
                 }
-                HTMLBodyView(html: HTMLSanitizer.sanitize(html), height: $htmlHeight)
+                HTMLBodyView(messageId: message.id, html: html, height: $htmlHeight)
                     .frame(height: max(htmlHeight, 1))
                     .opacity(htmlHeight == 0 ? 0 : 1)
             }

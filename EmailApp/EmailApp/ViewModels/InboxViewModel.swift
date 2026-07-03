@@ -224,6 +224,24 @@ final class InboxViewModel {
         focusedMessageId = thread.latest.id
         expandedMessageIds = [thread.latest.id]
         markRead(thread.latest)
+        prewarmAdjacent(to: thread)
+    }
+
+    /// Prewarms the HTML render for whichever threads the user is likely to
+    /// open next (the ones right next to the one they just opened), so
+    /// arrow-key/click navigation through the inbox feels instant instead
+    /// of starting each message's load at click-time.
+    private func prewarmAdjacent(to thread: MessageThread) {
+        let threads = filteredThreads
+        guard let index = threads.firstIndex(where: { $0.id == thread.id }) else { return }
+        for neighborIndex in [index - 1, index + 1] where threads.indices.contains(neighborIndex) {
+            prewarmHTML(for: threads[neighborIndex].latest)
+        }
+    }
+
+    private func prewarmHTML(for message: Message) {
+        guard let html = message.htmlBody else { return }
+        HTMLPrewarmCache.shared.prewarm(messageId: message.id, html: html)
     }
 
     /// Expands/collapses one message within the open thread. Expanding
@@ -576,5 +594,11 @@ final class InboxViewModel {
         }
         let existing = Set(messages.map(\.id))
         messages.append(contentsOf: fetched.filter { !existing.contains($0.id) })
+        // Warm the messages actually visible in the inbox right now — by
+        // far the most likely to be opened first — so the very first click
+        // of the session is already loaded too, not just subsequent ones.
+        for thread in filteredThreads.prefix(6) {
+            prewarmHTML(for: thread.latest)
+        }
     }
 }
