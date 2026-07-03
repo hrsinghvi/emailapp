@@ -17,9 +17,17 @@ struct ContentView: View {
             ReadingPaneView(vm: vm)
                 .frame(minWidth: 380)
         }
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
+        .padding(.top, 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(hex: "#191919"))
+        .background(
+            ZStack {
+                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+                Color(hex: "#191919").opacity(0.35)
+                WindowConfigurator()
+            }
+        )
         .task { await vm.restoreSession() }
         .task { await vm.startRealtimeUpdates() }
         .sheet(item: $vm.composeContext) { context in

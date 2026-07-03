@@ -15,5 +15,7 @@ struct EmailAppApp: App {
                 .frame(minWidth: 1100, minHeight: 700)
                 .preferredColorScheme(.dark)
         }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1300, height: 800)
     }
 }
