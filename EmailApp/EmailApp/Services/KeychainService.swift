@@ -1,4 +1,76 @@
 import Foundation
+import Security
 
-// TODO: Phase 2 — token storage/retrieval
-enum KeychainService {}
+struct OAuthTokens: Codable, Sendable {
+    var accessToken: String
+    var refreshToken: String
+    var expiresAt: Date
+
+    /// Treat as expired 60s early so a request never races the expiry.
+    var isExpired: Bool { Date() >= expiresAt.addingTimeInterval(-60) }
+}
+
+/// Same-app macOS Keychain wrapper. A sandboxed app can read/write its own
+/// generic-password items with no extra keychain entitlement.
+enum KeychainService {
+    private static let service = "com.hritvik.unifiedinbox"
+
+    enum KeychainError: LocalizedError {
+        case unexpectedStatus(OSStatus)
+        var errorDescription: String? {
+            switch self {
+            case .unexpectedStatus(let s):
+                return "Keychain error \(s): \(SecCopyErrorMessageString(s, nil) as String? ?? "")"
+            }
+        }
+    }
+
+    static func save(_ tokens: OAuthTokens, account: String) throws {
+        let data = try JSONEncoder().encode(tokens)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        let update = SecItemUpdate(query as CFDictionary,
+                                   [kSecValueData as String: data] as CFDictionary)
+        if update == errSecItemNotFound {
+            var add = query
+            add[kSecValueData as String] = data
+            let status = SecItemAdd(add as CFDictionary, nil)
+            guard status == errSecSuccess else { throw KeychainError.unexpectedStatus(status) }
+        } else if update != errSecSuccess {
+            throw KeychainError.unexpectedStatus(update)
+        }
+    }
+
+    /// Returns nil for a missing item — not an error.
+    static func load(account: String) throws -> OAuthTokens? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = result as? Data else {
+            throw KeychainError.unexpectedStatus(status)
+        }
+        return try JSONDecoder().decode(OAuthTokens.self, from: data)
+    }
+
+    static func delete(account: String) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainError.unexpectedStatus(status)
+        }
+    }
+}

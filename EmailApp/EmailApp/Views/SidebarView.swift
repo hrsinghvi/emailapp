@@ -3,6 +3,7 @@ import SwiftUI
 struct SidebarView: View {
     @Bindable var vm: InboxViewModel
     @Binding var showingCompose: Bool
+    @State private var isConnectingGmail = false
 
     private let folders: [(id: String, label: String, icon: String)] = [
         ("inbox", "Inbox", "tray"),
@@ -75,6 +76,30 @@ struct SidebarView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                 }
+
+                Button {
+                    isConnectingGmail = true
+                    Task {
+                        await vm.loadGmail()
+                        isConnectingGmail = false
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        if isConnectingGmail {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "plus.circle")
+                        }
+                        Text(isConnectingGmail ? "Connecting…" : "Connect Gmail")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+                .disabled(isConnectingGmail)
             }
 
             Spacer()

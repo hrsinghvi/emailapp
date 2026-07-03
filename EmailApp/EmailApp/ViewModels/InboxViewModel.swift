@@ -309,4 +309,21 @@ final class InboxViewModel {
         guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
         messages[index].isArchived.toggle()
     }
+
+    /// Interactive Gmail sign-in + inbox fetch. Merges live mail alongside the
+    /// mock data (deduped by stable id). UI wiring happens in the next subtask.
+    func loadGmail() async {
+        do {
+            let account = try await OAuthManager.shared.signInWithGoogle()
+            let token = try await OAuthManager.shared.validAccessToken(for: account)
+            let fetched = try await GmailAPI.fetchInbox(for: account, accessToken: token)
+            if !accounts.contains(where: { $0.email == account.email }) {
+                accounts.append(account)
+            }
+            let existing = Set(messages.map(\.id))
+            messages.append(contentsOf: fetched.filter { !existing.contains($0.id) })
+        } catch {
+            print("Gmail load failed: \(error.localizedDescription)")
+        }
+    }
 }

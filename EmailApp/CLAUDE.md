@@ -1,12 +1,11 @@
 # Model Routing
 
-Orchestration lives in the main session (Fable 5). Implementation is delegated to subagents.
+Orchestration lives in the main session (Sonnet 5). Implementation is delegated to subagents.
 
-- Main session: Fable 5. Plans, breaks tasks into subtasks, reviews subagent output at merge points, resolves conflicts. Does not write code directly except trivial one-line fixes.
-- `.claude/agents/worker-sonnet.md`: default implementation subagent. Boilerplate, CRUD, single-file edits, renames, tests for existing code, simple refactors, lint fixes.
-- `.claude/agents/worker-opus.md`: escalation subagent. Cross-file reasoning, non-trivial features, debugging without obvious cause. Only invoked when main session's breakdown explicitly flags a subtask as complex, or when worker-sonnet fails at it.
+- Main session: Sonnet 5. Plans, breaks tasks into subtasks, reviews subagent output at merge points, resolves conflicts. Does not write code directly except trivial one-line fixes.
+- `.claude/agents/worker-sonnet.md`: only implementation subagent. Handles everything, no escalation path.
 
-Default every subtask to worker-sonnet. Escalate to worker-opus only on explicit flag or failure.
+All subtasks go to worker-sonnet. No opus.
 
 ## Workflow
 
