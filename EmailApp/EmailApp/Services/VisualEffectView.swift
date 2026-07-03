@@ -40,5 +40,10 @@ struct WindowConfigurator: NSViewRepresentable {
         guard let window = view.window else { return }
         window.isOpaque = false
         window.backgroundColor = .clear
+        // Single-window app — the native tab bar ("+ / EmailApp" strip)
+        // only appears because macOS's automatic window tabbing defaults
+        // it in; this app has no use for it.
+        window.tabbingMode = .disallowed
+        NSWindow.allowsAutomaticWindowTabbing = false
     }
 }
