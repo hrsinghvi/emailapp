@@ -70,14 +70,18 @@ struct ReadingPaneView: View {
 
     private func actionBar(_ message: Message) -> some View {
         HStack(spacing: 10) {
-            ActionPill(title: "Reply", icon: "arrowshape.turn.up.left", tint: .white) {}
-            ActionPill(title: "Forward", icon: "arrowshape.turn.up.right", tint: .white) {}
+            ActionPill(title: "Reply", icon: "arrowshape.turn.up.left", tint: .white) {
+                vm.composeContext = .reply(message)
+            }
+            ActionPill(title: "Forward", icon: "arrowshape.turn.up.right", tint: .white) {
+                vm.composeContext = .forward(message)
+            }
             ActionPill(
-                title: message.isArchived ? "Unarchive" : "Archive",
-                icon: "archivebox",
+                title: message.isRead ? "Mark Unread" : "Mark Read",
+                icon: "envelope.badge",
                 tint: .white
             ) {
-                vm.toggleArchive(message)
+                vm.toggleReadStatus(message)
             }
             Spacer()
             ActionPill(title: "Ask Claude", icon: "sparkles", tint: Color(hex: "#b58ee0"), filled: true) {}

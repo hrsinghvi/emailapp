@@ -3,6 +3,25 @@ import SwiftUI
 
 @Observable
 final class InboxViewModel {
+    enum ComposeContext: Identifiable {
+        case new
+        case reply(Message)
+        case forward(Message)
+
+        var id: String {
+            switch self {
+            case .new: return "new"
+            case .reply(let message): return "reply-\(message.id)"
+            case .forward(let message): return "forward-\(message.id)"
+            }
+        }
+    }
+
+    enum SendError: LocalizedError {
+        case noAccount
+        var errorDescription: String? { "No connected account to send from." }
+    }
+
     var accounts: [Account]
     var categories: [MailCategory]
     var messages: [Message]
@@ -11,6 +30,8 @@ final class InboxViewModel {
     var selectedFolder: String = "inbox"
     var providerFilter: Provider?
     var searchText: String = ""
+    var composeContext: ComposeContext?
+    var errorMessage: String?
 
     init() {
         accounts = []
@@ -67,35 +88,83 @@ final class InboxViewModel {
     }
 
     func markRead(_ message: Message) {
-        guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
-        messages[index].isRead = true
+        guard !message.isRead else { return }
+        Task { await setRead(message, read: true) }
     }
 
-    func toggleArchive(_ message: Message) {
-        guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
-        messages[index].isArchived.toggle()
+    func toggleReadStatus(_ message: Message) {
+        Task { await setRead(message, read: !message.isRead) }
     }
 
-    /// Interactive Gmail sign-in + inbox fetch. Merges live mail into `messages`.
+    /// Optimistic update, rolled back if the provider call fails.
+    private func setRead(_ message: Message, read: Bool) async {
+        guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
+        let previous = messages[index].isRead
+        messages[index].isRead = read
+        do {
+            let token = try await accessToken(for: message)
+            switch message.provider {
+            case .gmail: try await GmailAPI.setRead(id: message.providerId, accessToken: token, read: read)
+            case .outlook: try await GraphAPI.setRead(id: message.providerId, accessToken: token, read: read)
+            }
+        } catch {
+            messages[index].isRead = previous
+            errorMessage = "Couldn't update read status: \(error.localizedDescription)"
+        }
+    }
+
+    /// Sends a brand-new message from the first connected account.
+    /// - ponytail: no sender picker — single default account. Add one if
+    ///   multi-account send-from becomes a real need.
+    func send(to: String, subject: String, body: String) async throws {
+        guard let account = accounts.first else { throw SendError.noAccount }
+        let token = try await OAuthManager.shared.validAccessToken(for: account)
+        switch account.provider {
+        case .gmail: try await GmailAPI.send(to: to, subject: subject, body: body, accessToken: token)
+        case .outlook: try await GraphAPI.send(to: to, subject: subject, body: body, accessToken: token)
+        }
+    }
+
+    /// Sends a threaded reply from the account the original message arrived on.
+    func reply(to message: Message, body: String) async throws {
+        let token = try await accessToken(for: message)
+        switch message.provider {
+        case .gmail: try await GmailAPI.reply(to: message, body: body, accessToken: token)
+        case .outlook: try await GraphAPI.reply(to: message, body: body, accessToken: token)
+        }
+    }
+
+    private func accessToken(for message: Message) async throws -> String {
+        guard let account = accounts.first(where: { $0.id == message.accountId }) else {
+            throw SendError.noAccount
+        }
+        return try await OAuthManager.shared.validAccessToken(for: account)
+    }
+
+    /// Interactive Gmail sign-in + inbox/sent fetch. Merges live mail into `messages`.
     func loadGmail() async {
         do {
             let account = try await OAuthManager.shared.signInWithGoogle()
             let token = try await OAuthManager.shared.validAccessToken(for: account)
-            let fetched = try await GmailAPI.fetchInbox(for: account, accessToken: token)
-            merge(account: account, fetched: fetched)
+            async let inboxTask = GmailAPI.fetchInbox(for: account, accessToken: token)
+            async let sentTask = GmailAPI.fetchSent(for: account, accessToken: token)
+            let (inbox, sent) = try await (inboxTask, sentTask)
+            merge(account: account, fetched: inbox + sent)
         } catch {
             print("Gmail load failed: \(error.localizedDescription)")
         }
     }
 
-    /// Interactive Outlook (Microsoft Graph) sign-in + inbox fetch. Merges
+    /// Interactive Outlook (Microsoft Graph) sign-in + inbox/sent fetch. Merges
     /// live mail into `messages` alongside any Gmail account already loaded.
     func loadOutlook() async {
         do {
             let account = try await OAuthManager.shared.signInWithMicrosoft()
             let token = try await OAuthManager.shared.validAccessToken(for: account)
-            let fetched = try await GraphAPI.fetchInbox(for: account, accessToken: token)
-            merge(account: account, fetched: fetched)
+            async let inboxTask = GraphAPI.fetchInbox(for: account, accessToken: token)
+            async let sentTask = GraphAPI.fetchSent(for: account, accessToken: token)
+            let (inbox, sent) = try await (inboxTask, sentTask)
+            merge(account: account, fetched: inbox + sent)
         } catch {
             print("Outlook load failed: \(error.localizedDescription)")
         }

@@ -29,12 +29,25 @@ enum GmailAPI {
     nonisolated static func fetchInbox(
         for account: Account, accessToken: String, limit: Int = 25
     ) async throws -> [Message] {
+        try await fetchMessages(labelId: "INBOX", folder: "inbox", for: account, accessToken: accessToken, limit: limit)
+    }
+
+    /// Fetches SENT messages so the Sent folder in the sidebar has content.
+    nonisolated static func fetchSent(
+        for account: Account, accessToken: String, limit: Int = 25
+    ) async throws -> [Message] {
+        try await fetchMessages(labelId: "SENT", folder: "sent", for: account, accessToken: accessToken, limit: limit)
+    }
+
+    private nonisolated static func fetchMessages(
+        labelId: String, folder: String, for account: Account, accessToken: String, limit: Int
+    ) async throws -> [Message] {
         struct ListResponse: Decodable {
             struct Ref: Decodable { let id: String }
             let messages: [Ref]?
         }
         let listData = try await get(
-            "\(base)/messages?labelIds=INBOX&maxResults=\(limit)", accessToken: accessToken)
+            "\(base)/messages?labelIds=\(labelId)&maxResults=\(limit)", accessToken: accessToken)
         let ids = (try JSONDecoder().decode(ListResponse.self, from: listData).messages ?? []).map(\.id)
 
         return try await withThrowingTaskGroup(of: Message?.self) { group in
@@ -43,7 +56,9 @@ enum GmailAPI {
 
             func addNext() {
                 guard let id = iterator.next() else { return }
-                group.addTask { try await fetchMessage(id: id, account: account, accessToken: accessToken) }
+                group.addTask {
+                    try await fetchMessage(id: id, account: account, accessToken: accessToken, folder: folder)
+                }
             }
             for _ in 0..<min(maxConcurrent, ids.count) { addNext() }
 
@@ -56,17 +71,72 @@ enum GmailAPI {
         }
     }
 
+    // MARK: - Mutations
+
+    private nonisolated static func modifyLabels(
+        id: String, accessToken: String, add: [String] = [], remove: [String] = []
+    ) async throws {
+        struct Body: Encodable { let addLabelIds: [String]; let removeLabelIds: [String] }
+        _ = try await post(
+            "\(base)/messages/\(id)/modify", accessToken: accessToken,
+            json: Body(addLabelIds: add, removeLabelIds: remove))
+    }
+
+    nonisolated static func setRead(id: String, accessToken: String, read: Bool) async throws {
+        if read {
+            try await modifyLabels(id: id, accessToken: accessToken, remove: ["UNREAD"])
+        } else {
+            try await modifyLabels(id: id, accessToken: accessToken, add: ["UNREAD"])
+        }
+    }
+
+    /// Sends a brand-new, unthreaded message.
+    nonisolated static func send(to: String, subject: String, body: String, accessToken: String) async throws {
+        let raw = buildRawMessage(to: to, subject: subject, body: body)
+        try await sendRaw(raw, threadId: nil, accessToken: accessToken)
+    }
+
+    /// Replies in-thread using References/In-Reply-To headers + Gmail's threadId.
+    nonisolated static func reply(to message: Message, body: String, accessToken: String) async throws {
+        var subject = message.subject
+        if !subject.lowercased().hasPrefix("re:") { subject = "Re: \(subject)" }
+        let references = [message.references, message.messageIdHeader]
+            .compactMap { $0 }.joined(separator: " ")
+        let raw = buildRawMessage(
+            to: message.senderEmail, subject: subject, body: body,
+            inReplyTo: message.messageIdHeader,
+            references: references.isEmpty ? nil : references
+        )
+        try await sendRaw(raw, threadId: message.threadId, accessToken: accessToken)
+    }
+
+    private nonisolated static func buildRawMessage(
+        to: String, subject: String, body: String, inReplyTo: String? = nil, references: String? = nil
+    ) -> String {
+        var headers = "To: \(to)\r\nSubject: \(subject)\r\nContent-Type: text/plain; charset=UTF-8\r\n"
+        if let inReplyTo { headers += "In-Reply-To: \(inReplyTo)\r\n" }
+        if let references { headers += "References: \(references)\r\n" }
+        return Data((headers + "\r\n" + body).utf8).base64URLEncoded()
+    }
+
+    private nonisolated static func sendRaw(_ raw: String, threadId: String?, accessToken: String) async throws {
+        struct Body: Encodable { let raw: String; let threadId: String? }
+        _ = try await post(
+            "\(base)/messages/send", accessToken: accessToken, json: Body(raw: raw, threadId: threadId))
+    }
+
     // MARK: - Single message
 
     private nonisolated static func fetchMessage(
-        id: String, account: Account, accessToken: String
+        id: String, account: Account, accessToken: String, folder: String
     ) async throws -> Message {
         let data = try await get("\(base)/messages/\(id)?format=full", accessToken: accessToken)
-        return try JSONDecoder().decode(RawMessage.self, from: data).toMessage(account: account)
+        return try JSONDecoder().decode(RawMessage.self, from: data).toMessage(account: account, folder: folder)
     }
 
     private nonisolated struct RawMessage: Decodable {
         let id: String
+        let threadId: String?
         let snippet: String?
         let internalDate: String?
         let labelIds: [String]?
@@ -81,7 +151,7 @@ enum GmailAPI {
         struct Header: Decodable { let name: String; let value: String }
         struct Body: Decodable { let data: String? }
 
-        func toMessage(account: Account) -> Message {
+        func toMessage(account: Account, folder: String) -> Message {
             let headers = payload?.headers ?? []
             func header(_ name: String) -> String {
                 headers.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.value ?? ""
@@ -97,6 +167,10 @@ enum GmailAPI {
                 id: UUID(stableFrom: id),
                 accountId: account.id,
                 provider: .gmail,
+                providerId: id,
+                threadId: threadId,
+                messageIdHeader: header("Message-ID").isEmpty ? nil : header("Message-ID"),
+                references: header("References").isEmpty ? nil : header("References"),
                 senderName: name,
                 senderEmail: email,
                 subject: header("Subject"),
@@ -106,9 +180,8 @@ enum GmailAPI {
                 body: Self.extractBody(payload) ?? (snippet ?? ""),
                 receivedAt: date,
                 isRead: !(labelIds?.contains("UNREAD") ?? false),
-                isArchived: false,
                 categoryId: nil,
-                folder: "inbox"
+                folder: folder
             )
         }
 
@@ -168,6 +241,37 @@ enum GmailAPI {
             throw GmailError.requestFailed(http.statusCode, String(data: data, encoding: .utf8) ?? "")
         }
         return data
+    }
+
+    private nonisolated static func post<T: Encodable>(
+        _ urlString: String, accessToken: String, json: T
+    ) async throws -> Data {
+        guard let url = URL(string: urlString) else {
+            throw GmailError.requestFailed(-1, "bad url: \(urlString)")
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(json)
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw GmailError.requestFailed(-1, "no HTTP response")
+        }
+        if http.statusCode == 401 { throw GmailError.unauthorized }
+        guard (200..<300).contains(http.statusCode) else {
+            throw GmailError.requestFailed(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+        }
+        return data
+    }
+}
+
+private nonisolated extension Data {
+    func base64URLEncoded() -> String {
+        base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 }
 

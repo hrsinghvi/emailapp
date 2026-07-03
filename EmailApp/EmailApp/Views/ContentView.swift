@@ -2,11 +2,10 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var vm = InboxViewModel()
-    @State private var showingCompose = false
 
     var body: some View {
         HStack(spacing: 12) {
-            SidebarView(vm: vm, showingCompose: $showingCompose)
+            SidebarView(vm: vm)
                 .frame(width: 240)
 
             VStack(spacing: 12) {
@@ -21,8 +20,16 @@ struct ContentView: View {
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(hex: "#191919"))
-        .sheet(isPresented: $showingCompose) {
-            ComposeView()
+        .sheet(item: $vm.composeContext) { context in
+            ComposeView(vm: vm, context: context)
+        }
+        .alert(
+            "Error",
+            isPresented: Binding(get: { vm.errorMessage != nil }, set: { if !$0 { vm.errorMessage = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(vm.errorMessage ?? "")
         }
     }
 }

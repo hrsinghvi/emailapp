@@ -14,9 +14,8 @@ enum Config {
     static var googleRedirectURI: String { "\(googleRedirectScheme):/oauth2redirect" }
 
     static let googleScopes = [
-        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.send",
-        "https://www.googleapis.com/auth/gmail.labels",
     ]
 
     static let azureClientID = "c2a8a2a4-df34-44d5-b7ec-43b8fb854502"
@@ -34,7 +33,7 @@ enum Config {
 
     static let azureScopes = [
         "https://graph.microsoft.com/User.Read",
-        "https://graph.microsoft.com/Mail.Read",
+        "https://graph.microsoft.com/Mail.ReadWrite",
         "https://graph.microsoft.com/Mail.Send",
         "offline_access",
         "openid",

@@ -40,7 +40,20 @@ enum GraphAPI {
     nonisolated static func fetchInbox(
         for account: Account, accessToken: String, limit: Int = 25
     ) async throws -> [Message] {
-        var comps = URLComponents(string: "\(base)/me/mailFolders/inbox/messages")!
+        try await fetchFolder(wellKnownName: "inbox", folder: "inbox", for: account, accessToken: accessToken, limit: limit)
+    }
+
+    /// Fetches Sent Items so the Sent folder in the sidebar has content.
+    nonisolated static func fetchSent(
+        for account: Account, accessToken: String, limit: Int = 25
+    ) async throws -> [Message] {
+        try await fetchFolder(wellKnownName: "sentitems", folder: "sent", for: account, accessToken: accessToken, limit: limit)
+    }
+
+    private nonisolated static func fetchFolder(
+        wellKnownName: String, folder: String, for account: Account, accessToken: String, limit: Int
+    ) async throws -> [Message] {
+        var comps = URLComponents(string: "\(base)/me/mailFolders/\(wellKnownName)/messages")!
         comps.queryItems = [
             .init(name: "$top", value: String(limit)),
             .init(name: "$orderby", value: "receivedDateTime desc"),
@@ -49,7 +62,39 @@ enum GraphAPI {
         struct ListResponse: Decodable { let value: [RawMessage] }
         let data = try await get(comps.url!.absoluteString, accessToken: accessToken)
         let messages = try JSONDecoder().decode(ListResponse.self, from: data).value
-        return messages.map { $0.toMessage(account: account) }
+        return messages.map { $0.toMessage(account: account, folder: folder) }
+    }
+
+    // MARK: - Mutations
+
+    nonisolated static func setRead(id: String, accessToken: String, read: Bool) async throws {
+        struct Body: Encodable { let isRead: Bool }
+        _ = try await patch("\(base)/me/messages/\(id)", accessToken: accessToken, json: Body(isRead: read))
+    }
+
+    /// Sends a brand-new message.
+    nonisolated static func send(to: String, subject: String, body: String, accessToken: String) async throws {
+        struct Recipient: Encodable { let emailAddress: Addr }
+        struct Addr: Encodable { let address: String }
+        struct Content: Encodable { let contentType: String; let content: String }
+        struct OutMessage: Encodable { let subject: String; let body: Content; let toRecipients: [Recipient] }
+        struct SendMailRequest: Encodable { let message: OutMessage; let saveToSentItems: Bool }
+        let payload = SendMailRequest(
+            message: OutMessage(
+                subject: subject,
+                body: Content(contentType: "Text", content: body),
+                toRecipients: [Recipient(emailAddress: Addr(address: to))]
+            ),
+            saveToSentItems: true
+        )
+        _ = try await post("\(base)/me/sendMail", accessToken: accessToken, json: payload)
+    }
+
+    /// Graph's /reply endpoint threads (References/In-Reply-To/conversationId) automatically.
+    nonisolated static func reply(to message: Message, body: String, accessToken: String) async throws {
+        struct Body: Encodable { let comment: String }
+        _ = try await post(
+            "\(base)/me/messages/\(message.providerId)/reply", accessToken: accessToken, json: Body(comment: body))
     }
 
     // MARK: - Wire model
@@ -67,7 +112,7 @@ enum GraphAPI {
         let receivedDateTime: String?
         let isRead: Bool?
 
-        func toMessage(account: Account) -> Message {
+        func toMessage(account: Account, folder: String) -> Message {
             let senderName = from?.emailAddress?.name ?? from?.emailAddress?.address ?? ""
             let senderEmail = from?.emailAddress?.address ?? ""
             let date = receivedDateTime.flatMap { GraphAPI.parseReceivedDate($0) } ?? Date()
@@ -82,6 +127,10 @@ enum GraphAPI {
                 id: UUID(stableFrom: id),
                 accountId: account.id,
                 provider: .outlook,
+                providerId: id,
+                threadId: nil,
+                messageIdHeader: nil,
+                references: nil,
                 senderName: senderName.isEmpty ? senderEmail : senderName,
                 senderEmail: senderEmail,
                 subject: subject ?? "",
@@ -89,9 +138,8 @@ enum GraphAPI {
                 body: plainBody,
                 receivedAt: date,
                 isRead: isRead ?? true,
-                isArchived: false,
                 categoryId: nil,
-                folder: "inbox"
+                folder: folder
             )
         }
     }
@@ -113,6 +161,40 @@ enum GraphAPI {
             throw GraphError.requestFailed(http.statusCode, String(data: data, encoding: .utf8) ?? "")
         }
         return data
+    }
+
+    private nonisolated static func send<T: Encodable>(
+        _ urlString: String, method: String, accessToken: String, json: T
+    ) async throws -> Data {
+        guard let url = URL(string: urlString) else {
+            throw GraphError.requestFailed(-1, "bad url: \(urlString)")
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = method
+        req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(json)
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw GraphError.requestFailed(-1, "no HTTP response")
+        }
+        if http.statusCode == 401 { throw GraphError.unauthorized }
+        guard (200..<300).contains(http.statusCode) else {
+            throw GraphError.requestFailed(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+        }
+        return data
+    }
+
+    private nonisolated static func post<T: Encodable>(
+        _ urlString: String, accessToken: String, json: T
+    ) async throws -> Data {
+        try await send(urlString, method: "POST", accessToken: accessToken, json: json)
+    }
+
+    private nonisolated static func patch<T: Encodable>(
+        _ urlString: String, accessToken: String, json: T
+    ) async throws -> Data {
+        try await send(urlString, method: "PATCH", accessToken: accessToken, json: json)
     }
 }
 

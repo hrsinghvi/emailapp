@@ -2,21 +2,19 @@ import SwiftUI
 
 struct SidebarView: View {
     @Bindable var vm: InboxViewModel
-    @Binding var showingCompose: Bool
     @State private var isConnectingGmail = false
     @State private var isConnectingOutlook = false
 
     private let folders: [(id: String, label: String, icon: String)] = [
         ("inbox", "Inbox", "tray"),
         ("sent", "Sent", "paperplane"),
-        ("archive", "Archive", "archivebox"),
         ("drafts", "Drafts", "doc")
     ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Button {
-                showingCompose = true
+                vm.composeContext = .new
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "pencil")
