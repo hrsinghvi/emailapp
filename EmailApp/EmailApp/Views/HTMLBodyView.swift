@@ -63,15 +63,29 @@ struct HTMLBodyView: NSViewRepresentable {
         init(_ parent: HTMLBodyView) { self.parent = parent }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            measureHeight(webView)
+            // Images/webfonts often finish loading just after the DOM
+            // itself does, reflowing the page a moment later — catch that
+            // instead of leaving the card visibly too short until it does.
+            for delay in [0.3, 1.0, 2.5] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak webView] in
+                    guard let webView else { return }
+                    self?.measureHeight(webView)
+                }
+            }
+        }
+
+        private func measureHeight(_ webView: WKWebView) {
             webView.evaluateJavaScript("document.documentElement.scrollHeight") { [weak self] result, _ in
                 guard let self else { return }
                 let measured: CGFloat?
                 if let d = result as? Double { measured = CGFloat(d) }
                 else if let n = result as? NSNumber { measured = CGFloat(truncating: n) }
                 else { measured = nil }
-                if let measured, measured > 0 {
-                    DispatchQueue.main.async { self.parent.height = measured }
-                }
+                // Ignore no-op/rounding-noise updates so a settled layout
+                // doesn't keep re-triggering the fade/resize animation.
+                guard let measured, measured > 0, abs(measured - self.parent.height) > 2 else { return }
+                DispatchQueue.main.async { self.parent.height = measured }
             }
         }
 

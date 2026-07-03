@@ -88,7 +88,7 @@ struct ReadingPaneView: View {
 private struct ExpandedMessageCard: View {
     let vm: InboxViewModel
     let message: Message
-    @State private var htmlHeight: CGFloat = 200
+    @State private var htmlHeight: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -134,8 +134,17 @@ private struct ExpandedMessageCard: View {
     @ViewBuilder
     private var bodyContent: some View {
         if let html = message.htmlBody {
-            HTMLBodyView(html: HTMLSanitizer.sanitize(html), height: $htmlHeight)
-                .frame(height: htmlHeight)
+            ZStack {
+                if htmlHeight == 0 {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(height: 120)
+                }
+                HTMLBodyView(html: HTMLSanitizer.sanitize(html), height: $htmlHeight)
+                    .frame(height: max(htmlHeight, 1))
+                    .opacity(htmlHeight == 0 ? 0 : 1)
+            }
+            .animation(.easeOut(duration: 0.25), value: htmlHeight)
         } else {
             Text(message.body)
                 .font(.body)
