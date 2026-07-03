@@ -19,14 +19,16 @@ struct ContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 12)
-        .padding(.top, 20)
+        .padding(.top, 34)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea(.container, edges: .top)
         .background(
             ZStack {
                 VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
                 Color(hex: "#191919").opacity(0.35)
                 WindowConfigurator()
             }
+            .ignoresSafeArea()
         )
         .task { await vm.restoreSession() }
         .task { await vm.startRealtimeUpdates() }

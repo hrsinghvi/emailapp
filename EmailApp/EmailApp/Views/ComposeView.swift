@@ -71,7 +71,13 @@ struct ComposeView: View {
         }
         .padding(20)
         .frame(width: 480, height: 420)
-        .background(Color(hex: "#191919"))
+        .background(
+            ZStack {
+                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+                Color(hex: "#191919").opacity(0.35)
+                WindowConfigurator()
+            }
+        )
         .onAppear(perform: prefill)
     }
 
