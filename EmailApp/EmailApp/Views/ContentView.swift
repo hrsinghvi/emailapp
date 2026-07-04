@@ -274,6 +274,19 @@ private struct ListToolbar: View {
 
     var body: some View {
         HStack(spacing: 22) {
+            // Checkbox goes first so its X position matches the row
+            // checkbox directly below it (both use the same leading
+            // padding) — vertically aligned rather than offset by refresh.
+            Button {
+                vm.toggleSelectAll()
+            } label: {
+                Image(systemName: allSelected ? "checkmark.square.fill" : "square")
+                    .font(.custom("DM Sans", size: 13))
+                    .foregroundStyle(allSelected ? Color.appAccent : .secondary)
+                    .iconButtonHitArea()
+            }
+            .buttonStyle(.plain)
+
             if vm.selectedThreadKeys.isEmpty {
                 Button {
                     guard !isRefreshing else { return }
@@ -291,19 +304,7 @@ private struct ListToolbar: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-            }
-
-            Button {
-                vm.toggleSelectAll()
-            } label: {
-                Image(systemName: allSelected ? "checkmark.square.fill" : "square")
-                    .font(.custom("DM Sans", size: 13))
-                    .foregroundStyle(allSelected ? Color.appAccent : .secondary)
-                    .iconButtonHitArea()
-            }
-            .buttonStyle(.plain)
-
-            if !vm.selectedThreadKeys.isEmpty {
+            } else {
                 Text("\(vm.selectedThreadKeys.count) selected")
                     .font(.appCaption)
                     .foregroundStyle(.secondary)
