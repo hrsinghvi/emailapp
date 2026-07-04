@@ -95,8 +95,16 @@ struct RecipientChipField: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.white.opacity(0.18)))
         .opacity(isDisabled ? 0.6 : 1)
+        // The FlowLayout only lays out chips + the inline text field at
+        // their own natural size, leaving empty space in the rest of the
+        // box with nothing to receive a click — this makes a tap anywhere
+        // in the box (not just directly on the field) focus it instead.
+        .contentShape(Rectangle())
+        .onTapGesture { if !isDisabled { isFieldFocused = true } }
         .background(
             GeometryReader { geo in
                 Color.clear.preference(key: FieldHeightPreferenceKey.self, value: geo.size.height)
