@@ -49,7 +49,6 @@ struct RecipientChipField: View {
     @State private var draftText = ""
     @State private var suggestions: [Contact] = []
     @State private var highlightedIndex = 0
-    @State private var searchTask: Task<Void, Never>?
     @FocusState private var isFieldFocused: Bool
 
     var body: some View {
@@ -163,24 +162,10 @@ struct RecipientChipField: View {
             commitRawEmail()
             return
         }
-        scheduleSearch(draftText)
-    }
-
-    private func scheduleSearch(_ query: String) {
-        searchTask?.cancel()
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else {
-            suggestions = []
-            return
-        }
-        searchTask = Task {
-            try? await Task.sleep(for: .milliseconds(200))
-            guard !Task.isCancelled else { return }
-            let results = await ContactsIndexService.search(prefix: trimmed)
-            guard !Task.isCancelled else { return }
-            suggestions = results
-            highlightedIndex = 0
-        }
+        // Synchronous, in-memory — no debounce needed, there's no network
+        // round-trip to wait out anymore.
+        suggestions = ContactsIndexService.search(prefix: newValue)
+        highlightedIndex = 0
     }
 
     private func commitDraftOrSelectHighlighted() {

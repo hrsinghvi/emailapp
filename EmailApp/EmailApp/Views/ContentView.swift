@@ -21,6 +21,13 @@ struct ContentView: View {
             // replaced, matching Gmail rather than a full-screen takeover.
             VStack(spacing: 10) {
                 TopBar(vm: vm)
+                    // Without this, the search dropdown (an overlay
+                    // attached inside TopBar) painted *behind* the toolbar
+                    // row below it — VStack siblings paint in document
+                    // order by default, and zIndex set only inside TopBar's
+                    // own subtree doesn't affect ordering against a later
+                    // sibling. This forces TopBar's overlay above it.
+                    .zIndex(1)
 
                 Group {
                     if let thread = vm.selectedThread {
@@ -86,6 +93,7 @@ struct ContentView: View {
         .task { await vm.restoreSession() }
         .task { await vm.startRealtimeUpdates() }
         .task { await vm.startMCPApprovalUpdates() }
+        .task { await ContactsIndexService.warmCache() }
         .overlay(alignment: .bottom) { PendingSendBannerStack(vm: vm) }
         .overlay(alignment: .bottomTrailing) {
             if let context = vm.composeContext {
@@ -130,14 +138,20 @@ private struct TopBar: View {
         ("From me", "from:me"),
     ]
 
+    /// ~6/9 of the previous 44pt-tall, full-width bar — shared with the
+    /// dropdown below so the two always line up exactly.
+    private let searchBarWidth: CGFloat = 300
+    private let searchBarHeight: CGFloat = 30
+
     var body: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
+                    .font(.appCaption)
                     .foregroundStyle(.secondary)
                 TextField("Search mail", text: $vm.searchText)
                     .textFieldStyle(.plain)
-                    .font(.custom("DM Sans", size: 12))
+                    .font(.appCaption)
                     .focused($isSearchFocused)
                     .onChange(of: vm.searchFocusTrigger) { _, _ in isSearchFocused = true }
                     .onSubmit { commitSearch(vm.searchText) }
@@ -149,18 +163,18 @@ private struct TopBar: View {
                     .foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 16)
-            .frame(height: 44)
-            .frame(maxWidth: .infinity)
-            .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 22))
+            .padding(.horizontal, 12)
+            .frame(width: searchBarWidth, height: searchBarHeight)
+            .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 15))
             .overlay(alignment: .topLeading) {
                 if isSearchFocused {
                     searchDropdown
-                        .offset(y: 48)
+                        .offset(y: searchBarHeight + 4)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
-            .zIndex(5)
+
+            Spacer()
 
             ConnectivityIndicator(vm: vm)
         }
@@ -174,18 +188,19 @@ private struct TopBar: View {
 
     private var searchDropdown: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+            FlowLayout(spacing: 6) {
                 ForEach(quickFilters, id: \.token) { filter in
                     Button {
                         applyQuickFilter(filter.token)
                     } label: {
                         Text(filter.label)
-                            .font(.appCaption.weight(.medium))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
+                            .font(.appCaption2.weight(.medium))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
                             .background(Capsule().fill(Color.appHover))
                     }
                     .buttonStyle(.plain)
+                    .fixedSize()
                 }
             }
 
@@ -200,8 +215,8 @@ private struct TopBar: View {
                 }
             }
         }
-        .padding(12)
-        .frame(width: 320, alignment: .leading)
+        .padding(10)
+        .frame(width: searchBarWidth, alignment: .leading)
         .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.appBorder))
         .shadow(color: .black.opacity(0.4), radius: 16, y: 6)
