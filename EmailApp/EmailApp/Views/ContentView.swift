@@ -153,46 +153,50 @@ private struct TopBar: View {
     @State private var searchBarWidth: CGFloat = 320
 
     var body: some View {
-        HStack(spacing: 10) {
+        GeometryReader { sectionGeo in
             HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("Search mail", text: $vm.searchText)
-                    .textFieldStyle(.plain)
-                    .font(.appCaption)
-                    .focused($isSearchFocused)
-                    .onChange(of: vm.searchFocusTrigger) { _, _ in isSearchFocused = true }
-                    .onSubmit { commitSearch(vm.searchText) }
-                if !vm.searchText.isEmpty {
-                    Button { vm.searchText = "" } label: {
-                        Image(systemName: "xmark.circle.fill").iconButtonHitArea(2)
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("Search mail", text: $vm.searchText)
+                        .textFieldStyle(.plain)
+                        .font(.appCaption)
+                        .focused($isSearchFocused)
+                        .onChange(of: vm.searchFocusTrigger) { _, _ in isSearchFocused = true }
+                        .onSubmit { commitSearch(vm.searchText) }
+                    if !vm.searchText.isEmpty {
+                        Button { vm.searchText = "" } label: {
+                            Image(systemName: "xmark.circle.fill").iconButtonHitArea(2)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
                 }
-            }
-            .padding(.horizontal, 16)
-            .frame(height: searchBarHeight)
-            .frame(maxWidth: .infinity)
-            .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 22))
-            .background(
-                GeometryReader { geo in
-                    Color.clear.preference(key: WidthPreferenceKey.self, value: geo.size.width)
+                .padding(.horizontal, 16)
+                .frame(width: sectionGeo.size.width * 0.5, height: searchBarHeight)
+                .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 22))
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(key: WidthPreferenceKey.self, value: geo.size.width)
+                    }
+                )
+                .onPreferenceChange(WidthPreferenceKey.self) { newWidth in
+                    if newWidth > 0 { searchBarWidth = newWidth }
                 }
-            )
-            .onPreferenceChange(WidthPreferenceKey.self) { newWidth in
-                if newWidth > 0 { searchBarWidth = newWidth }
-            }
-            .overlay(alignment: .topLeading) {
-                if isSearchFocused {
-                    searchDropdown
-                        .offset(y: searchBarHeight + 4)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                .overlay(alignment: .topLeading) {
+                    if isSearchFocused {
+                        searchDropdown
+                            .offset(y: searchBarHeight + 4)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
-            }
 
-            ConnectivityIndicator(vm: vm)
+                Spacer()
+
+                ConnectivityIndicator(vm: vm)
+            }
         }
+        .frame(height: searchBarHeight)
         .animation(.easeOut(duration: 0.16), value: isSearchFocused)
     }
 
