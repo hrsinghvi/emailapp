@@ -292,6 +292,7 @@ private struct LinkPromptView: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
                 Button("Insert") { onInsert(); dismiss() }
                     .disabled(url.isEmpty)
                     .keyboardShortcut(.defaultAction)

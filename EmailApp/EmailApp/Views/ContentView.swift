@@ -70,9 +70,18 @@ struct ContentView: View {
         .onKeyPress(.delete) { vm.archiveFocused(); return .handled }
         .onKeyPress(.deleteForward) { vm.archiveFocused(); return .handled }
         .onKeyPress(.escape) {
-            guard vm.isSettingsPresented else { return .ignored }
-            vm.isSettingsPresented = false
-            return .handled
+            // Whatever's currently on top dismisses first — Settings, then
+            // compose. Escape is the universal "close whatever just popped
+            // up" key throughout the app.
+            if vm.isSettingsPresented {
+                vm.isSettingsPresented = false
+                return .handled
+            }
+            if vm.composeContext != nil {
+                vm.composeContext = nil
+                return .handled
+            }
+            return .ignored
         }
         .task { await vm.restoreSession() }
         .task { await vm.startRealtimeUpdates() }
