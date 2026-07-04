@@ -86,6 +86,9 @@ final class InboxViewModel {
 
     var selectedFolder: String = "inbox"
     var providerFilter: Provider?
+    /// Gmail-style category tab — only meaningful (and only shown) for the
+    /// inbox; other folders show every category mixed together.
+    var categoryFilter: MessageCategory = .primary
     var searchText: String = ""
     var composeContext: ComposeContext?
     var errorMessage: String?
@@ -312,6 +315,7 @@ final class InboxViewModel {
         messages
             .filter { $0.folder == selectedFolder }
             .filter { providerFilter == nil || $0.provider == providerFilter }
+            .filter { selectedFolder != "inbox" || $0.category == categoryFilter }
             .filter { message in
                 guard !searchText.isEmpty else { return true }
                 let q = searchText.lowercased()
@@ -729,6 +733,7 @@ final class InboxViewModel {
         guard let message = messages.first(where: { $0.id == id }) else { return }
         selectedFolder = message.folder
         providerFilter = nil
+        categoryFilter = message.category
         searchText = ""
         guard let thread = filteredThreads.first(where: { $0.id == message.threadKey }) else { return }
         select(thread)

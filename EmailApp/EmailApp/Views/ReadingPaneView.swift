@@ -28,21 +28,37 @@ struct ReadingPaneView: View {
     }
 
     private func threadView(_ thread: MessageThread) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(thread.latest.subject)
-                    .font(.title2.weight(.semibold))
-                    .padding(.horizontal, 4)
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Button { vm.selectedThreadKey = nil } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(8)
+                        .background(Circle().fill(Color.appHover))
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
 
-                ForEach(thread.messages) { message in
-                    if vm.expandedMessageIds.contains(message.id) {
-                        ExpandedMessageCard(vm: vm, message: message)
-                    } else {
-                        collapsedRow(message)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(thread.latest.subject)
+                        .font(.title2.weight(.semibold))
+                        .padding(.horizontal, 4)
+
+                    ForEach(thread.messages) { message in
+                        if vm.expandedMessageIds.contains(message.id) {
+                            ExpandedMessageCard(vm: vm, message: message)
+                        } else {
+                            collapsedRow(message)
+                        }
                     }
                 }
+                .padding(20)
             }
-            .padding(20)
         }
     }
 

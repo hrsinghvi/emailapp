@@ -3,7 +3,6 @@ import SwiftUI
 
 struct MessageListView: View {
     @Bindable var vm: InboxViewModel
-    @FocusState private var isFocused: Bool
 
     var body: some View {
         VStack(spacing: 8) {
@@ -28,7 +27,6 @@ struct MessageListView: View {
                                 onToggleCheck: { vm.toggleSelection(thread) }
                             )
                             .onTapGesture {
-                                isFocused = true
                                 let flags = NSEvent.modifierFlags
                                 vm.handleRowClick(thread, shift: flags.contains(.shift), command: flags.contains(.command))
                             }
@@ -39,15 +37,6 @@ struct MessageListView: View {
             }
         }
         .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 12))
-        .focusable()
-        .focusEffectDisabled()
-        .focused($isFocused)
-        .onAppear { isFocused = true }
-        .onKeyPress(.upArrow) { vm.selectAdjacent(-1); return .handled }
-        .onKeyPress(.downArrow) { vm.selectAdjacent(1); return .handled }
-        .onKeyPress(.return) { vm.openSelected(); return .handled }
-        .onKeyPress(.delete) { vm.archiveFocused(); return .handled }
-        .onKeyPress(.deleteForward) { vm.archiveFocused(); return .handled }
     }
 }
 

@@ -38,6 +38,9 @@ struct Message: Identifiable, Hashable, Codable {
     /// single-message "thread".
     var threadKey: String { threadId ?? id.uuidString }
 
+    /// Gmail-style inbox category, derived from sender/subject heuristics.
+    var category: MessageCategory { MessageCategory.classify(senderEmail: senderEmail, subject: subject) }
+
     var senderInitials: String {
         senderName
             .split(separator: " ")

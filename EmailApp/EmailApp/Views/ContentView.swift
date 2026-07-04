@@ -2,24 +2,31 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var vm: InboxViewModel
+    @FocusState private var isContentFocused: Bool
 
     var body: some View {
         HStack(spacing: 12) {
             SidebarView(vm: vm)
                 .frame(width: 240)
 
-            VStack(spacing: 12) {
-                TopBar(vm: vm)
-                if vm.selectedFolder == "drafts" {
-                    DraftsListView(vm: vm)
+            Group {
+                if vm.selectedThread != nil {
+                    ReadingPaneView(vm: vm)
                 } else {
-                    MessageListView(vm: vm)
+                    VStack(spacing: 12) {
+                        TopBar(vm: vm)
+                        if vm.selectedFolder == "inbox" {
+                            CategoryTabBar(vm: vm)
+                        }
+                        if vm.selectedFolder == "drafts" {
+                            DraftsListView(vm: vm)
+                        } else {
+                            MessageListView(vm: vm)
+                        }
+                    }
                 }
             }
-            .frame(minWidth: 320, idealWidth: 400)
-
-            ReadingPaneView(vm: vm)
-                .frame(minWidth: 380)
+            .frame(minWidth: 320, maxWidth: .infinity)
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 12)
@@ -33,6 +40,15 @@ struct ContentView: View {
             }
             .ignoresSafeArea()
         )
+        .focusable()
+        .focusEffectDisabled()
+        .focused($isContentFocused)
+        .onAppear { isContentFocused = true }
+        .onKeyPress(.upArrow) { vm.selectAdjacent(-1); return .handled }
+        .onKeyPress(.downArrow) { vm.selectAdjacent(1); return .handled }
+        .onKeyPress(.return) { vm.openSelected(); return .handled }
+        .onKeyPress(.delete) { vm.archiveFocused(); return .handled }
+        .onKeyPress(.deleteForward) { vm.archiveFocused(); return .handled }
         .task { await vm.restoreSession() }
         .task { await vm.startRealtimeUpdates() }
         .overlay(alignment: .bottom) { PendingSendBannerStack(vm: vm) }
@@ -110,6 +126,39 @@ private struct ConnectivityIndicator: View {
                 .padding(.vertical, 6)
                 .background(Capsule().fill(Color.appHover))
         }
+    }
+}
+
+/// Gmail-style category tabs — only shown for the inbox. Classification is
+/// a sender/subject heuristic (`MessageCategory.classify`), not real ML.
+private struct CategoryTabBar: View {
+    @Bindable var vm: InboxViewModel
+
+    var body: some View {
+        HStack(spacing: 18) {
+            ForEach(MessageCategory.allCases, id: \.self) { category in
+                Button {
+                    vm.categoryFilter = category
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: category.icon)
+                        Text(category.label)
+                    }
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(vm.categoryFilter == category ? .primary : .secondary)
+                    .padding(.bottom, 8)
+                    .overlay(alignment: .bottom) {
+                        if vm.categoryFilter == category {
+                            Rectangle().fill(Color.appAccent).frame(height: 2)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 4)
+        .overlay(alignment: .bottom) { Divider().overlay(Color.appBorder) }
     }
 }
 
