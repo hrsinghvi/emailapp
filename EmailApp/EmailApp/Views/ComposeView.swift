@@ -24,6 +24,7 @@ struct ComposeView: View {
     @State private var hasSavedOnce = false
 
     @State private var editorController = RichTextEditorController()
+    @State private var escapeMonitor: Any?
 
     private var titleText: String {
         switch context {
@@ -151,13 +152,33 @@ struct ComposeView: View {
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.appBorder))
         .shadow(color: .black.opacity(0.4), radius: 24, y: 8)
         .onAppear(perform: prefill)
+        .onAppear {
+            // SwiftUI's .onKeyPress doesn't reliably see Escape when focus
+            // is inside the rich text editor's underlying NSTextView (it's
+            // its own first responder and can swallow the key before it
+            // ever reaches SwiftUI's responder chain) — a local NSEvent
+            // monitor intercepts it regardless of which control has focus.
+            // onClose() -> ComposeView disappears -> onDisappear's autosave
+            // already only saves a draft if something's actually been
+            // entered, so empty compose just closes with no leftover draft.
+            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                // Let the link-insert sheet handle its own Escape/Cancel
+                // instead of closing the whole compose window underneath it.
+                guard event.keyCode == 53, !showLinkPrompt else { return event }
+                onClose()
+                return nil
+            }
+        }
+        .onDisappear {
+            autosave()
+            if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+        }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(4))
                 autosave()
             }
         }
-        .onDisappear { autosave() }
         .sheet(isPresented: $showLinkPrompt) {
             LinkPromptView(text: $linkText, url: $linkURL) {
                 editorController.insertLink(text: linkText.isEmpty ? linkURL : linkText, url: linkURL)
@@ -221,12 +242,15 @@ struct ComposeView: View {
         return NSAttributedString(html: html) ?? NSAttributedString(string: "")
     }
 
+    private var isCompletelyEmpty: Bool {
+        toEmails.isEmpty && ccEmails.isEmpty && bccEmails.isEmpty && subject.isEmpty
+            && attributedBody.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty
+    }
+
     /// First edit creates the draft; every autosave after that fully
     /// replaces its saved contents so it always reflects what's on screen.
     private func autosave() {
-        let isEmpty = toEmails.isEmpty && ccEmails.isEmpty && bccEmails.isEmpty && subject.isEmpty
-            && attributedBody.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty
-        guard !isEmpty else { return }
+        guard !isCompletelyEmpty else { return }
         hasSavedOnce = true
         vm.saveDraft(
             Draft(
