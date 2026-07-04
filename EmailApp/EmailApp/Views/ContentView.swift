@@ -13,8 +13,12 @@ struct ContentView: View {
                 if vm.selectedThread != nil {
                     ReadingPaneView(vm: vm)
                 } else {
-                    VStack(spacing: 12) {
+                    VStack(spacing: 10) {
                         TopBar(vm: vm)
+                        ListToolbar(vm: vm)
+                        if vm.selectedFolder == "inbox" {
+                            CategoryTabBar(vm: vm)
+                        }
                         if vm.selectedFolder == "drafts" {
                             DraftsListView(vm: vm)
                         } else {
@@ -73,20 +77,98 @@ private struct TopBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 6) {
+            HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("Search", text: $vm.searchText)
+                TextField("Search mail", text: $vm.searchText)
                     .textFieldStyle(.plain)
+                    .font(.system(size: 14))
                     .focused($isSearchFocused)
                     .onChange(of: vm.searchFocusTrigger) { _, _ in isSearchFocused = true }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, 16)
+            .frame(height: 44)
+            .frame(maxWidth: .infinity)
+            .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 22))
 
             ConnectivityIndicator(vm: vm)
         }
+    }
+}
+
+/// Gmail-style slim toolbar above the tabs — the checkbox is always
+/// visible (not gated behind an active selection like `BulkActionBar`),
+/// and refresh re-runs the same fetch `restoreSession()` does at launch.
+private struct ListToolbar: View {
+    @Bindable var vm: InboxViewModel
+    @State private var isRefreshing = false
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Button {
+                vm.toggleSelectAll()
+            } label: {
+                Image(systemName: allSelected ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(allSelected ? Color.appAccent : .secondary)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                guard !isRefreshing else { return }
+                isRefreshing = true
+                Task {
+                    await vm.refreshAll()
+                    isRefreshing = false
+                }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                    .animation(isRefreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+
+            Spacer()
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var allSelected: Bool {
+        !vm.filteredThreads.isEmpty && Set(vm.filteredThreads.map(\.id)) == vm.selectedThreadKeys
+    }
+}
+
+/// Gmail-style category tabs — icon + label, active tab gets an accent
+/// underline. Classification is a sender/subject heuristic
+/// (`MessageCategory.classify`), not real ML.
+private struct CategoryTabBar: View {
+    @Bindable var vm: InboxViewModel
+
+    var body: some View {
+        HStack(spacing: 28) {
+            ForEach(MessageCategory.allCases, id: \.self) { category in
+                Button {
+                    vm.categoryFilter = category
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: category.icon)
+                        Text(category.label)
+                    }
+                    .font(.subheadline.weight(vm.categoryFilter == category ? .semibold : .regular))
+                    .foregroundStyle(vm.categoryFilter == category ? .primary : .secondary)
+                    .padding(.bottom, 10)
+                    .overlay(alignment: .bottom) {
+                        if vm.categoryFilter == category {
+                            Rectangle().fill(Color.appAccent).frame(height: 2)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 4)
+        .overlay(alignment: .bottom) { Divider().overlay(Color.appBorder) }
     }
 }
 

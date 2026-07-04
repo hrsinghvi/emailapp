@@ -692,6 +692,20 @@ final class InboxViewModel {
         }
     }
 
+    /// Manual re-fetch for every connected account — backs the toolbar's
+    /// refresh button. Realtime updates already push new mail in as it
+    /// arrives; this is for "no, check right now."
+    func refreshAll() async {
+        guard NetworkMonitor.shared.isOnline else { return }
+        for account in accounts {
+            do {
+                try await fetchAndMerge(account)
+            } catch {
+                AppLog.sync.error("Manual refresh failed for \(account.email): \(error.localizedDescription)")
+            }
+        }
+    }
+
     /// Subscribes to live inserts from the backend so new mail (delivered via
     /// Gmail/Graph webhooks) appears within seconds, without polling. Runs
     /// until cancelled — call from a long-lived `.task {}`.

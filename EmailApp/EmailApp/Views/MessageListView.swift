@@ -102,56 +102,104 @@ private struct ThreadRow: View {
     var body: some View {
         let message = thread.latest
 
-        HStack(spacing: 10) {
-            Button(action: onToggleCheck) {
-                Image(systemName: isChecked ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(isChecked ? Color.appAccent : .secondary)
+        HStack(alignment: .top, spacing: 12) {
+            HStack(spacing: 12) {
+                Button(action: onToggleCheck) {
+                    Image(systemName: isChecked ? "checkmark.square.fill" : "square")
+                        .foregroundStyle(isChecked ? Color.appAccent : .secondary)
+                }
+                .buttonStyle(.plain)
+                .frame(width: 16)
+                .opacity(isHovering || anySelectionActive ? 1 : 0)
+
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(message.provider.color)
+                    .frame(width: 3, height: 20)
+
+                Circle()
+                    .fill(thread.hasUnread ? message.provider.color : Color.clear)
+                    .frame(width: 7, height: 7)
             }
-            .buttonStyle(.plain)
-            .opacity(isHovering || anySelectionActive ? 1 : 0)
-            .frame(width: (isHovering || anySelectionActive) ? nil : 0)
+            .frame(width: 66, alignment: .leading)
+            .padding(.top, 2)
 
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(message.provider.color)
-                .frame(width: 3)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Text(message.senderName)
+                        .font(.subheadline.weight(thread.hasUnread ? .semibold : .regular))
+                        .lineLimit(1)
+                        .frame(width: 150, alignment: .leading)
 
-            Circle()
-                .fill(thread.hasUnread ? message.provider.color : Color.clear)
-                .frame(width: 7, height: 7)
+                    if thread.count > 1 {
+                        Text("\(thread.count)")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.appHover))
+                    }
 
-            Text(message.senderName)
-                .font(.subheadline.weight(thread.hasUnread ? .semibold : .regular))
-                .lineLimit(1)
-                .frame(width: 150, alignment: .leading)
+                    (
+                        Text(message.subject).font(.subheadline.weight(thread.hasUnread ? .semibold : .regular))
+                        + Text("  —  ").foregroundColor(.secondary)
+                        + Text(message.snippet).foregroundColor(.secondary)
+                    )
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
-            if thread.count > 1 {
-                Text("\(thread.count)")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(Capsule().fill(Color.appHover))
+                    Spacer(minLength: 8)
+
+                    Text(message.receivedAt, format: .relative(presentation: .numeric))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !message.attachments.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(message.attachments.prefix(3)) { attachment in
+                            AttachmentPill(attachment: attachment)
+                        }
+                    }
+                }
             }
-
-            (
-                Text(message.subject).font(.subheadline.weight(thread.hasUnread ? .semibold : .regular))
-                + Text("  —  ").foregroundColor(.secondary)
-                + Text(message.snippet).foregroundColor(.secondary)
-            )
-            .lineLimit(1)
-            .truncationMode(.tail)
-
-            Spacer(minLength: 8)
-
-            Text(message.receivedAt, format: .relative(presentation: .numeric))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
         .background(isOpen || isChecked ? Color.appHover : (isHovering ? Color.appHover.opacity(0.6) : .clear))
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .animation(.easeInOut(duration: 0.12), value: isHovering)
+    }
+}
+
+/// Small filename chip shown under a row when its message has attachments —
+/// Gmail shows the same thing inline in the message list, not just once
+/// you've opened the message.
+private struct AttachmentPill: View {
+    let attachment: Attachment
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: AttachmentIcon.systemName(forMimeType: attachment.mimeType))
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 16, height: 16)
+                .background(RoundedRectangle(cornerRadius: 4).fill(tint))
+            Text(attachment.filename)
+                .font(.caption2)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .frame(maxWidth: 170, alignment: .leading)
+        .background(Capsule().strokeBorder(Color.appBorder))
+    }
+
+    private var tint: Color {
+        if attachment.mimeType == "application/pdf" { return Color(hex: "#e5493f") }
+        if attachment.mimeType.hasPrefix("image/") { return Color(hex: "#5b9bd5") }
+        if attachment.mimeType.contains("sheet") || attachment.mimeType.contains("excel") { return Color(hex: "#5fb488") }
+        return Color(hex: "#8a8f98")
     }
 }
