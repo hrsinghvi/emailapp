@@ -754,6 +754,12 @@ final class InboxViewModel {
         return try await OAuthManager.shared.validAccessToken(for: account)
     }
 
+    /// The color indicator for a message — the sending account's
+    /// (customizable in Settings) color, not a hardcoded per-provider one.
+    func color(for message: Message) -> Color {
+        accounts.first(where: { $0.id == message.accountId })?.color ?? message.provider.color
+    }
+
     // MARK: - Attachments (received messages)
 
     /// Fetches attachment bytes on demand — never pulled in bulk with the list.

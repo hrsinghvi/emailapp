@@ -30,6 +30,15 @@ struct Account: Identifiable, Hashable {
         self.displayName = displayName
     }
 
+    /// User-customizable in Settings > Accounts — falls back to the
+    /// provider's default (Gmail red / Outlook blue) until overridden.
+    /// Every color indicator tied to this account (row accent bar, reading
+    /// pane, sidebar dot, Settings rows) reads through this, not
+    /// `provider.color` directly.
+    var color: Color {
+        AppSettings.shared.accountColors[email].map { Color(hex: $0) } ?? provider.color
+    }
+
     /// Neither OAuth provider hands back a display name from just the
     /// refresh flow here — humanize the address's local part ("hritvik.singhvi"
     /// -> "Hritvik Singhvi") for the sidebar header rather than showing the

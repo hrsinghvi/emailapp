@@ -211,7 +211,14 @@ private struct AccountsSettingsSection: View {
 
             ForEach(vm.accounts) { account in
                 HStack(spacing: 10) {
-                    Circle().fill(account.provider.color).frame(width: 8, height: 8)
+                    // Colors every indicator tied to this account: row
+                    // accent bar, reading pane, sidebar dot, this row.
+                    ColorPicker("", selection: Binding(
+                        get: { account.color },
+                        set: { settings.accountColors[account.email] = $0.toHex() }
+                    ))
+                    .labelsHidden()
+                    .frame(width: 20)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(account.email).font(.appSubheadline)
                         Text("Connected · \(account.provider == .gmail ? "Gmail" : "Outlook")")
@@ -300,7 +307,7 @@ private struct NotificationsSettingsSection: View {
             }
             ForEach(vm.accounts) { account in
                 HStack {
-                    Circle().fill(account.provider.color).frame(width: 8, height: 8)
+                    Circle().fill(account.color).frame(width: 8, height: 8)
                     Text(account.email).font(.appSubheadline)
                     Spacer()
                     Toggle("", isOn: Binding(
@@ -366,7 +373,7 @@ private struct ComposeSettingsSection: View {
             ForEach(vm.accounts) { account in
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Circle().fill(account.provider.color).frame(width: 8, height: 8)
+                        Circle().fill(account.color).frame(width: 8, height: 8)
                         Text(account.email).font(.appSubheadline)
                         Spacer()
                     }

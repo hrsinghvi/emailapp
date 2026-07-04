@@ -164,7 +164,7 @@ private struct ThreadRow: View {
                 bottomTrailingRadius: 6, topTrailingRadius: 6,
                 style: .continuous
             )
-            .fill(message.provider.color.opacity(thread.hasUnread ? 1 : 0.35))
+            .fill(vm.color(for: message).opacity(thread.hasUnread ? 1 : 0.35))
             .frame(width: 8)
             .frame(maxHeight: .infinity)
         }

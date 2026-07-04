@@ -43,6 +43,7 @@ final class AppSettings {
         static let undoSendDelay = "settings.undoSendDelay"
         static let defaultReplyBehavior = "settings.defaultReplyBehavior"
         static let signatures = "settings.signatures"
+        static let accountColors = "settings.accountColors"
         static let gesturesEnabled = "settings.gesturesEnabled"
         static let hasBackfilledMailHistory = "settings.hasBackfilledMailHistory"
         static let hasBackfilledCategories = "settings.hasBackfilledCategories"
@@ -93,6 +94,14 @@ final class AppSettings {
         didSet { defaults.set(signatures, forKey: Key.signatures) }
     }
 
+    /// Keyed by account email, hex string — overrides the default
+    /// per-provider color (Gmail red / Outlook blue) for every color
+    /// indicator tied to that account: the row accent bar, reading pane,
+    /// sidebar account dot, Settings account rows.
+    var accountColors: [String: String] {
+        didSet { defaults.set(accountColors, forKey: Key.accountColors) }
+    }
+
     var gesturesEnabled: Bool {
         didSet { defaults.set(gesturesEnabled, forKey: Key.gesturesEnabled) }
     }
@@ -119,6 +128,7 @@ final class AppSettings {
         undoSendDelay = defaults.object(forKey: Key.undoSendDelay) as? Double ?? 8
         defaultReplyBehavior = DefaultReplyBehavior(rawValue: defaults.string(forKey: Key.defaultReplyBehavior) ?? "") ?? .reply
         signatures = defaults.dictionary(forKey: Key.signatures) as? [String: String] ?? [:]
+        accountColors = defaults.dictionary(forKey: Key.accountColors) as? [String: String] ?? [:]
         gesturesEnabled = defaults.object(forKey: Key.gesturesEnabled) as? Bool ?? true
         hasBackfilledMailHistory = defaults.object(forKey: Key.hasBackfilledMailHistory) as? Bool ?? false
         hasBackfilledCategories = defaults.object(forKey: Key.hasBackfilledCategories) as? Bool ?? false

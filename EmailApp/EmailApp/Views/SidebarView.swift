@@ -214,12 +214,14 @@ private struct InboxNavItem: View {
             .buttonStyle(.plain)
 
             if isExpanded {
-                ProviderShortcut(label: "Gmail", color: Provider.gmail.color, isActive: isActive && vm.providerFilter == .gmail) {
+                let gmailColor = vm.accounts.first(where: { $0.provider == .gmail })?.color ?? Provider.gmail.color
+                let outlookColor = vm.accounts.first(where: { $0.provider == .outlook })?.color ?? Provider.outlook.color
+                ProviderShortcut(label: "Gmail", color: gmailColor, isActive: isActive && vm.providerFilter == .gmail) {
                     vm.selectedFolder = "inbox"
                     vm.categoryFilter = .primary
                     vm.providerFilter = .gmail
                 }
-                ProviderShortcut(label: "Outlook", color: Provider.outlook.color, isActive: isActive && vm.providerFilter == .outlook) {
+                ProviderShortcut(label: "Outlook", color: outlookColor, isActive: isActive && vm.providerFilter == .outlook) {
                     vm.selectedFolder = "inbox"
                     vm.categoryFilter = .primary
                     vm.providerFilter = .outlook
@@ -314,7 +316,7 @@ private struct ProfileFooterButton: View {
         Button { vm.isSettingsPresented = true } label: {
             HStack(spacing: 10) {
                 Circle()
-                    .fill(primaryAccount?.provider.color ?? Color.appHover)
+                    .fill(primaryAccount?.color ?? Color.appHover)
                     .frame(width: 32, height: 32)
                     .overlay(
                         Text(primaryAccount?.prettyLocalName.prefix(1) ?? "?")

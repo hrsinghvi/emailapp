@@ -53,10 +53,10 @@ struct ReadingPaneView: View {
     private func collapsedRow(_ message: Message) -> some View {
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(message.provider.color)
+                .fill(vm.color(for: message))
                 .frame(width: 3, height: 32)
             Circle()
-                .fill(message.provider.color)
+                .fill(vm.color(for: message))
                 .frame(width: 28, height: 28)
                 .overlay(
                     Text(message.senderInitials)
@@ -106,10 +106,10 @@ private struct ExpandedMessageCard: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(message.provider.color)
+                    .fill(vm.color(for: message))
                     .frame(width: 3, height: 44)
                 Circle()
-                    .fill(message.provider.color)
+                    .fill(vm.color(for: message))
                     .frame(width: 44, height: 44)
                     .overlay(
                         Text(message.senderInitials)
