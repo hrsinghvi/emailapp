@@ -7,10 +7,11 @@ struct SidebarView: View {
     @State private var isInboxExpanded = true
 
     /// Plain (non-category) folders shown below the colored Views rows,
-    /// in one continuous list — no section dividers.
-    private let mailFolders: [(id: String, label: String, icon: String)] = [
-        ("sent", "Sent", "paperplane"),
-        ("drafts", "Drafts", "doc")
+    /// in one continuous list — no section dividers. Each still gets its
+    /// own muted icon tint, matching the Views rows above them.
+    private let mailFolders: [(id: String, label: String, icon: String, tint: Color)] = [
+        ("sent", "Sent", "paperplane", Color(hex: "#5b9bd5").opacity(0.8)),
+        ("drafts", "Drafts", "doc", Color(hex: "#8a8f98").opacity(0.8))
     ]
 
     private var primaryAccount: Account? { vm.accounts.first }
@@ -26,7 +27,10 @@ struct SidebarView: View {
                     CategoryNavItem(vm: vm, category: category)
                 }
 
-                NavItem(label: "Starred", icon: "star", isActive: vm.selectedFolder == "starred") {
+                NavItem(
+                    label: "Starred", icon: "star", isActive: vm.selectedFolder == "starred",
+                    tint: Color(hex: "#e8c547").opacity(0.85)
+                ) {
                     vm.selectedFolder = "starred"
                 }
 
@@ -35,22 +39,35 @@ struct SidebarView: View {
                         label: folder.label,
                         icon: folder.icon,
                         isActive: vm.selectedFolder == folder.id,
+                        tint: folder.tint,
                         badge: folder.id == "drafts" && !vm.drafts.isEmpty ? "\(vm.drafts.count)" : nil
                     ) {
                         vm.selectedFolder = folder.id
                     }
                 }
 
-                NavItem(label: "Important", icon: "bookmark", isActive: vm.selectedFolder == "important") {
+                NavItem(
+                    label: "Important", icon: "bookmark", isActive: vm.selectedFolder == "important",
+                    tint: Color.appAccent.opacity(0.85)
+                ) {
                     vm.selectedFolder = "important"
                 }
-                NavItem(label: "Archive", icon: "archivebox", isActive: vm.selectedFolder == "archive") {
+                NavItem(
+                    label: "Archive", icon: "archivebox", isActive: vm.selectedFolder == "archive",
+                    tint: Color(hex: "#e2984e").opacity(0.8)
+                ) {
                     vm.selectedFolder = "archive"
                 }
-                NavItem(label: "Trash", icon: "trash", isActive: vm.selectedFolder == "trash") {
+                NavItem(
+                    label: "Trash", icon: "trash", isActive: vm.selectedFolder == "trash",
+                    tint: Color(hex: "#e5493f").opacity(0.8)
+                ) {
                     vm.selectedFolder = "trash"
                 }
-                NavItem(label: "All Mail", icon: "envelope", isActive: vm.selectedFolder == "all") {
+                NavItem(
+                    label: "All Mail", icon: "envelope", isActive: vm.selectedFolder == "all",
+                    tint: Color(hex: "#5fb488").opacity(0.8)
+                ) {
                     vm.selectedFolder = "all"
                 }
             }
@@ -88,29 +105,35 @@ struct SidebarView: View {
 
     /// Real account-connection management (distinct from `Provider`
     /// shortcuts on the Inbox row) — kept out of the flat nav list since
-    /// it's setup/utility, not a view you navigate into.
+    /// it's setup/utility, not a view you navigate into. Each button
+    /// disappears once that provider is already connected, instead of
+    /// permanently cluttering the bottom of the sidebar.
     private var connectRow: some View {
         VStack(alignment: .leading, spacing: 2) {
-            connectButton(
-                isConnecting: isConnectingGmail, label: "Connect Gmail",
-                action: {
-                    isConnectingGmail = true
-                    Task {
-                        await vm.loadGmail()
-                        isConnectingGmail = false
+            if !vm.accounts.contains(where: { $0.provider == .gmail }) {
+                connectButton(
+                    isConnecting: isConnectingGmail, label: "Connect Gmail",
+                    action: {
+                        isConnectingGmail = true
+                        Task {
+                            await vm.loadGmail()
+                            isConnectingGmail = false
+                        }
                     }
-                }
-            )
-            connectButton(
-                isConnecting: isConnectingOutlook, label: "Connect Outlook",
-                action: {
-                    isConnectingOutlook = true
-                    Task {
-                        await vm.loadOutlook()
-                        isConnectingOutlook = false
+                )
+            }
+            if !vm.accounts.contains(where: { $0.provider == .outlook }) {
+                connectButton(
+                    isConnecting: isConnectingOutlook, label: "Connect Outlook",
+                    action: {
+                        isConnectingOutlook = true
+                        Task {
+                            await vm.loadOutlook()
+                            isConnectingOutlook = false
+                        }
                     }
-                }
-            )
+                )
+            }
         }
     }
 
@@ -207,7 +230,9 @@ private struct InboxNavItem: View {
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 8).fill(isActive ? Color.appHover : .clear))
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
@@ -265,7 +290,9 @@ private struct CategoryNavItem: View {
             .foregroundStyle(.primary)
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 8).fill(isActive ? Color.appHover : .clear))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -289,7 +316,9 @@ private struct ProviderShortcut: View {
             .foregroundStyle(isActive ? .primary : .secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 8).fill(isActive ? Color.appHover : .clear))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -299,6 +328,7 @@ private struct NavItem: View {
     let label: String
     let icon: String
     let isActive: Bool
+    var tint: Color = .secondary
     var badge: String? = nil
     let action: () -> Void
 
@@ -306,9 +336,11 @@ private struct NavItem: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: icon)
+                    .foregroundStyle(tint)
                     .frame(width: 18)
                 Text(label)
                     .font(.appSubheadline)
+                    .foregroundStyle(isActive ? .primary : .secondary)
                 Spacer()
                 if let badge {
                     Text(badge)
@@ -319,13 +351,14 @@ private struct NavItem: View {
                         .background(Capsule().fill(Color.appHover))
                 }
             }
-            .foregroundStyle(isActive ? .primary : .secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(isActive ? Color.appHover : .clear)
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

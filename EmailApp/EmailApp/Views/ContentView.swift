@@ -33,7 +33,7 @@ struct ContentView: View {
             .frame(minWidth: 320, maxWidth: .infinity)
             .padding(.top, 34)
         }
-        .padding(.horizontal, 12)
+        .padding(.trailing, 12)
         .padding(.bottom, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.container, edges: .top)
