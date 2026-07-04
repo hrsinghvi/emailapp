@@ -36,14 +36,24 @@ struct Message: Identifiable, Hashable, Codable {
     /// markers server-side, just persisted in this app's own message cache.
     var isStarred: Bool = false
     var isImportant: Bool = false
+    /// Gmail's own inbox-tab category (from the message's CATEGORY_* label)
+    /// — nil for Outlook (no equivalent) and for realtime-webhook-delivered
+    /// rows (minimal payload, backfilled on the next full sync). `category`
+    /// below falls back to the sender/subject heuristic only when this is
+    /// nil, so Gmail mail lands in the same tab it does in actual Gmail.
+    var providerCategory: MessageCategory? = nil
 
     /// Grouping key for thread view: falls back to the message's own id so
     /// a message with no thread/conversation id still renders as a
     /// single-message "thread".
     var threadKey: String { threadId ?? id.uuidString }
 
-    /// Gmail-style inbox category, derived from sender/subject heuristics.
-    var category: MessageCategory { MessageCategory.classify(senderEmail: senderEmail, subject: subject) }
+    /// Prefers Gmail's real category label; only guesses via heuristic when
+    /// the provider doesn't supply one (Outlook, or a not-yet-backfilled
+    /// realtime row).
+    var category: MessageCategory {
+        providerCategory ?? MessageCategory.classify(senderEmail: senderEmail, subject: subject)
+    }
 
     var senderInitials: String {
         senderName

@@ -45,6 +45,7 @@ final class AppSettings {
         static let signatures = "settings.signatures"
         static let gesturesEnabled = "settings.gesturesEnabled"
         static let hasBackfilledMailHistory = "settings.hasBackfilledMailHistory"
+        static let hasBackfilledCategories = "settings.hasBackfilledCategories"
     }
 
     private let defaults = UserDefaults.standard
@@ -102,6 +103,12 @@ final class AppSettings {
         didSet { defaults.set(hasBackfilledMailHistory, forKey: Key.hasBackfilledMailHistory) }
     }
 
+    /// One-time re-categorization of Gmail mail synced before this app
+    /// started reading Gmail's real CATEGORY_* label instead of guessing.
+    var hasBackfilledCategories: Bool {
+        didSet { defaults.set(hasBackfilledCategories, forKey: Key.hasBackfilledCategories) }
+    }
+
     private init() {
         launchAtLogin = defaults.object(forKey: Key.launchAtLogin) as? Bool ?? false
         keepAwakeDuringSync = defaults.object(forKey: Key.keepAwakeDuringSync) as? Bool ?? false
@@ -114,6 +121,7 @@ final class AppSettings {
         signatures = defaults.dictionary(forKey: Key.signatures) as? [String: String] ?? [:]
         gesturesEnabled = defaults.object(forKey: Key.gesturesEnabled) as? Bool ?? true
         hasBackfilledMailHistory = defaults.object(forKey: Key.hasBackfilledMailHistory) as? Bool ?? false
+        hasBackfilledCategories = defaults.object(forKey: Key.hasBackfilledCategories) as? Bool ?? false
     }
 
     /// Registers/unregisters with `SMAppService` — the real macOS login-item

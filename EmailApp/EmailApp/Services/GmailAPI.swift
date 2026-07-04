@@ -244,6 +244,16 @@ enum GmailAPI {
         return try JSONDecoder().decode(RawMessage.self, from: data).toMessage(account: account, folder: folder)
     }
 
+    /// Labels only (no body/headers) — much cheaper than a full fetch, for
+    /// re-categorizing mail that was already synced before this app started
+    /// reading Gmail's real category label instead of guessing one.
+    nonisolated static func fetchCategory(id: String, accessToken: String) async throws -> MessageCategory? {
+        struct LabelsOnly: Decodable { let labelIds: [String]? }
+        let data = try await get("\(base)/messages/\(id)?format=minimal", accessToken: accessToken)
+        let labelIds = try JSONDecoder().decode(LabelsOnly.self, from: data).labelIds
+        return RawMessage.category(fromLabels: labelIds)
+    }
+
     private nonisolated struct RawMessage: Decodable {
         let id: String
         let threadId: String?
@@ -293,8 +303,22 @@ enum GmailAPI {
                 folder: folder,
                 toRecipients: Self.parseAddressList(header("To")),
                 ccRecipients: Self.parseAddressList(header("Cc")),
-                attachments: Self.extractAttachments(payload)
+                attachments: Self.extractAttachments(payload),
+                providerCategory: Self.category(fromLabels: labelIds)
             )
+        }
+
+        /// Gmail's own inbox-tab classification, straight from the
+        /// message's labels — matches what the Gmail web/app UI shows
+        /// exactly, instead of this app re-guessing via a local heuristic.
+        fileprivate static func category(fromLabels labelIds: [String]?) -> MessageCategory? {
+            guard let labelIds else { return nil }
+            if labelIds.contains("CATEGORY_PERSONAL") { return .primary }
+            if labelIds.contains("CATEGORY_SOCIAL") { return .social }
+            if labelIds.contains("CATEGORY_PROMOTIONS") { return .promotions }
+            if labelIds.contains("CATEGORY_UPDATES") { return .updates }
+            if labelIds.contains("CATEGORY_FORUMS") { return .forums }
+            return nil
         }
 
         /// Walks the MIME tree for the raw (unstripped) text/html part, if any

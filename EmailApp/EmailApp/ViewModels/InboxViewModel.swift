@@ -834,6 +834,7 @@ final class InboxViewModel {
         }
         startSyncTimerIfNeeded()
         await performOneTimeHistoryBackfillIfNeeded()
+        await performOneTimeCategoryBackfillIfNeeded()
     }
 
     /// Runs once ever (per install): pulls a much deeper history than the
@@ -865,6 +866,59 @@ final class InboxViewModel {
             } catch {
                 AppLog.sync.error("History backfill failed for \(account.email): \(error.localizedDescription)")
             }
+        }
+    }
+
+    /// Runs once ever: Gmail mail synced before this app started reading
+    /// Gmail's real CATEGORY_* label was filed by a local sender/subject
+    /// heuristic instead, which disagrees with Gmail often enough to be a
+    /// real problem (e.g. Indeed job alerts guessed as Primary when Gmail
+    /// itself puts them in Updates). Re-fetches just the label — not the
+    /// whole message — for every already-synced Gmail message and patches
+    /// its category in place, so existing mail lands in the same tab
+    /// Gmail's own UI shows it in, not just newly-synced mail going forward.
+    private func performOneTimeCategoryBackfillIfNeeded() async {
+        guard !AppSettings.shared.hasBackfilledCategories else { return }
+        guard NetworkMonitor.shared.isOnline else { return }
+        AppSettings.shared.hasBackfilledCategories = true
+
+        for account in accounts where account.provider == .gmail {
+            guard let token = try? await OAuthManager.shared.validAccessToken(for: account) else { continue }
+            let targets = messages.filter { $0.accountId == account.id && $0.provider == .gmail }
+            guard !targets.isEmpty else { continue }
+
+            let results = await withTaskGroup(of: (UUID, MessageCategory?).self) { group -> [UUID: MessageCategory] in
+                var iterator = targets.makeIterator()
+                let maxConcurrent = 8
+                func addNext() {
+                    guard let message = iterator.next() else { return }
+                    group.addTask {
+                        let category = try? await GmailAPI.fetchCategory(id: message.providerId, accessToken: token)
+                        return (message.id, category ?? nil)
+                    }
+                }
+                for _ in 0..<min(maxConcurrent, targets.count) { addNext() }
+                var resolved: [UUID: MessageCategory] = [:]
+                while let (id, category) = await group.next() {
+                    if let category { resolved[id] = category }
+                    addNext()
+                }
+                return resolved
+            }
+
+            guard !results.isEmpty else { continue }
+            // Build the patched array first, then assign once — mutating
+            // `messages` per-index in this loop would re-trigger the
+            // (O(n)) filteredThreads recompute on every single one of
+            // potentially thousands of messages instead of once.
+            var updated = messages
+            for index in updated.indices {
+                if let category = results[updated[index].id] {
+                    updated[index].providerCategory = category
+                }
+            }
+            messages = updated
+            MessageCacheStore.save(messages)
         }
     }
 
