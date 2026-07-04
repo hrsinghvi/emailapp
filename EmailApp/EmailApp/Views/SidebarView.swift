@@ -204,6 +204,7 @@ private struct InboxNavItem: View {
             Button {
                 vm.selectedFolder = "inbox"
                 vm.categoryFilter = .primary
+                vm.providerFilter = nil
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: MessageCategory.primary.icon)
