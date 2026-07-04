@@ -839,7 +839,7 @@ final class InboxViewModel {
         // visible instantly and works fully offline — the in-memory
         // `messages` array alone doesn't survive a relaunch with no network.
         if messages.isEmpty {
-            messages = MessageCacheStore.load()
+            messages = await MessageCacheStore.load()
         }
         PowerAssertionService.beginSyncIfEnabled()
         defer { PowerAssertionService.endSync() }

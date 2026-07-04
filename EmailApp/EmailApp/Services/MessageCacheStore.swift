@@ -1,28 +1,30 @@
 import Foundation
 import SQLite3
 
-/// Persists every fetched message to disk so previously-synchronized mail
-/// stays fully readable across a relaunch with no network at all.
-///
-/// Backed by SQLite instead of a single JSON blob — the old version
-/// re-encoded and rewrote the *entire* mailbox to one file on every save,
-/// and decoded the entire file on every launch. Both costs grew without
-/// bound as the mailbox grew, which is exactly what made launches slow
-/// after a few thousand messages. SQLite gives incremental per-row writes
-/// (`INSERT OR REPLACE`, not a full-file rewrite) and a bounded `load()` —
-/// only the most recent N messages are decoded into memory at launch
-/// regardless of how much mail has ever been synced.
-nonisolated enum MessageCacheStore {
-    private static let recentLoadLimit = 1500
+/// All actual SQLite work, serialized through actor isolation. `save()` used
+/// to spawn an independent `Task.detached` per call with no coordination
+/// between them — with a dozen call sites (star, read, archive, merge,
+/// backfills, ...) firing in quick succession, two of those detached tasks
+/// could genuinely run on different threads at the same moment, both
+/// executing BEGIN/COMMIT against the same raw sqlite3 connection
+/// concurrently. SQLite connections aren't safe for that; it corrupted the
+/// connection's internal page-cache bookkeeping and crashed the app
+/// (SIGABRT deep in libsqlite3's commit path — a heap corruption from two
+/// threads freeing the same buffer). An actor's mailbox means only one of
+/// these ever actually touches `db` at a time, no matter how many calls
+/// come in back to back.
+private actor MessageCacheStorage {
+    static let shared = MessageCacheStorage()
 
-    private static let dbURL: URL = {
+    private let recentLoadLimit = 1500
+    private let db: OpaquePointer?
+
+    private init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = base.appendingPathComponent("EmailApp", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("messages.sqlite")
-    }()
+        let dbURL = dir.appendingPathComponent("messages.sqlite")
 
-    private static let db: OpaquePointer? = {
         var handle: OpaquePointer?
         sqlite3_open(dbURL.path, &handle)
         sqlite3_exec(handle, "PRAGMA journal_mode=WAL;", nil, nil, nil)
@@ -38,13 +40,13 @@ nonisolated enum MessageCacheStore {
             """,
             nil, nil, nil
         )
-        return handle
-    }()
+        db = handle
+    }
 
     /// Loads only the most recent `recentLoadLimit` messages — bounded
     /// regardless of total mailbox size, so launch time doesn't grow
     /// forever the longer this app is used.
-    static func load() -> [Message] {
+    func load() -> [Message] {
         guard let db else { return [] }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
@@ -66,36 +68,48 @@ nonisolated enum MessageCacheStore {
 
     /// Upserts each message as its own row in one transaction — cheap
     /// regardless of total mailbox size, unlike rewriting one giant file.
-    /// Every call site passes the *whole* in-memory array (a single star
-    /// toggle re-upserts 1000+ unchanged rows too) — harmless for
-    /// correctness, but real work, so it runs off the main thread. The UI
-    /// already updated optimistically before this is called; nothing is
-    /// waiting on it to finish.
-    static func save(_ messages: [Message]) {
-        guard !messages.isEmpty else { return }
-        Task.detached(priority: .utility) {
-            guard let db else { return }
-            let encoder = JSONEncoder()
-            sqlite3_exec(db, "BEGIN TRANSACTION;", nil, nil, nil)
-            var statement: OpaquePointer?
-            sqlite3_prepare_v2(
-                db, "INSERT OR REPLACE INTO messages (id, received_at, json) VALUES (?, ?, ?);", -1, &statement, nil)
-            for message in messages {
-                guard let json = try? encoder.encode(message), let jsonString = String(data: json, encoding: .utf8) else { continue }
-                sqlite3_reset(statement)
-                sqlite3_bind_text(statement, 1, message.id.uuidString, -1, SQLITE_TRANSIENT)
-                sqlite3_bind_double(statement, 2, message.receivedAt.timeIntervalSince1970)
-                sqlite3_bind_text(statement, 3, jsonString, -1, SQLITE_TRANSIENT)
-                sqlite3_step(statement)
-            }
-            sqlite3_finalize(statement)
-            sqlite3_exec(db, "COMMIT;", nil, nil, nil)
+    func save(_ messages: [Message]) {
+        guard let db, !messages.isEmpty else { return }
+        let encoder = JSONEncoder()
+        sqlite3_exec(db, "BEGIN TRANSACTION;", nil, nil, nil)
+        var statement: OpaquePointer?
+        sqlite3_prepare_v2(
+            db, "INSERT OR REPLACE INTO messages (id, received_at, json) VALUES (?, ?, ?);", -1, &statement, nil)
+        for message in messages {
+            guard let json = try? encoder.encode(message), let jsonString = String(data: json, encoding: .utf8) else { continue }
+            sqlite3_reset(statement)
+            sqlite3_bind_text(statement, 1, message.id.uuidString, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_double(statement, 2, message.receivedAt.timeIntervalSince1970)
+            sqlite3_bind_text(statement, 3, jsonString, -1, SQLITE_TRANSIENT)
+            sqlite3_step(statement)
         }
+        sqlite3_finalize(statement)
+        sqlite3_exec(db, "COMMIT;", nil, nil, nil)
+    }
+
+    func clear() {
+        guard let db else { return }
+        sqlite3_exec(db, "DELETE FROM messages;", nil, nil, nil)
+    }
+}
+
+/// Persists every fetched message to disk so previously-synchronized mail
+/// stays fully readable across a relaunch with no network at all. See
+/// `MessageCacheStorage` above for why this is actor-isolated underneath.
+enum MessageCacheStore {
+    static func load() async -> [Message] {
+        await MessageCacheStorage.shared.load()
+    }
+
+    /// Fire-and-forget from every call site (star/read/archive toggles,
+    /// merge, etc. aren't `async` themselves) — the actor serializes the
+    /// real work, so overlapping calls queue instead of racing.
+    static func save(_ messages: [Message]) {
+        Task { await MessageCacheStorage.shared.save(messages) }
     }
 
     static func clear() {
-        guard let db else { return }
-        sqlite3_exec(db, "DELETE FROM messages;", nil, nil, nil)
+        Task { await MessageCacheStorage.shared.clear() }
     }
 }
 
