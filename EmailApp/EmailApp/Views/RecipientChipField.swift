@@ -1,5 +1,12 @@
 import SwiftUI
 
+private struct FieldHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 36
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 /// Simple wrapping flow layout — chips wrap to a new line instead of
 /// overflowing or forcing horizontal scroll, like Mail.app's To field.
 struct FlowLayout: Layout {
@@ -49,52 +56,64 @@ struct RecipientChipField: View {
     @State private var draftText = ""
     @State private var suggestions: [Contact] = []
     @State private var highlightedIndex = 0
+    @State private var fieldHeight: CGFloat = 36
     @FocusState private var isFieldFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            FlowLayout(spacing: 6) {
-                ForEach(emails, id: \.self) { email in
-                    chip(email)
-                }
-                TextField(emails.isEmpty ? placeholder : "", text: $draftText)
-                    .textFieldStyle(.plain)
-                    .font(.appSubheadline)
-                    .frame(minWidth: 100)
-                    .focused($isFieldFocused)
-                    .disabled(isDisabled)
-                    .onSubmit { commitDraftOrSelectHighlighted() }
-                    .onChange(of: draftText) { _, newValue in handleTextChange(newValue) }
-                    .onKeyPress(.downArrow) {
-                        guard !suggestions.isEmpty else { return .ignored }
-                        highlightedIndex = (highlightedIndex + 1) % suggestions.count
-                        return .handled
-                    }
-                    .onKeyPress(.upArrow) {
-                        guard !suggestions.isEmpty else { return .ignored }
-                        highlightedIndex = (highlightedIndex - 1 + suggestions.count) % suggestions.count
-                        return .handled
-                    }
-                    .onKeyPress(.escape) {
-                        guard !suggestions.isEmpty else { return .ignored }
-                        suggestions = []
-                        return .handled
-                    }
-                    .onKeyPress(.delete) {
-                        guard draftText.isEmpty, !emails.isEmpty else { return .ignored }
-                        emails.removeLast()
-                        return .handled
-                    }
+        FlowLayout(spacing: 6) {
+            ForEach(emails, id: \.self) { email in
+                chip(email)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 8))
-            .opacity(isDisabled ? 0.6 : 1)
-
+            TextField(emails.isEmpty ? placeholder : "", text: $draftText)
+                .textFieldStyle(.plain)
+                .font(.appSubheadline)
+                .frame(minWidth: 100)
+                .focused($isFieldFocused)
+                .disabled(isDisabled)
+                .onSubmit { commitDraftOrSelectHighlighted() }
+                .onChange(of: draftText) { _, newValue in handleTextChange(newValue) }
+                .onKeyPress(.downArrow) {
+                    guard !suggestions.isEmpty else { return .ignored }
+                    highlightedIndex = (highlightedIndex + 1) % suggestions.count
+                    return .handled
+                }
+                .onKeyPress(.upArrow) {
+                    guard !suggestions.isEmpty else { return .ignored }
+                    highlightedIndex = (highlightedIndex - 1 + suggestions.count) % suggestions.count
+                    return .handled
+                }
+                .onKeyPress(.escape) {
+                    guard !suggestions.isEmpty else { return .ignored }
+                    suggestions = []
+                    return .handled
+                }
+                .onKeyPress(.delete) {
+                    guard draftText.isEmpty, !emails.isEmpty else { return .ignored }
+                    emails.removeLast()
+                    return .handled
+                }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 8))
+        .opacity(isDisabled ? 0.6 : 1)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: FieldHeightPreferenceKey.self, value: geo.size.height)
+            }
+        )
+        .onPreferenceChange(FieldHeightPreferenceKey.self) { fieldHeight = $0 }
+        // A floating overlay instead of a sibling in the VStack — the
+        // dropdown appears on top of Subject/the editor below it instead
+        // of pushing them down the way inline content would.
+        .overlay(alignment: .topLeading) {
             if !suggestions.isEmpty {
                 dropdown
+                    .offset(y: fieldHeight + 4)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .animation(.easeOut(duration: 0.15), value: suggestions.isEmpty)
     }
 
     private func chip(_ email: String) -> some View {

@@ -138,16 +138,16 @@ private struct TopBar: View {
         ("From me", "from:me"),
     ]
 
-    /// ~6/9 of the previous 44pt-tall, full-width bar — shared with the
-    /// dropdown below so the two always line up exactly.
+    /// ~6/9 of the previous full-width bar — width only, height is back to
+    /// the original 44. Shared with the dropdown below so the two always
+    /// line up exactly.
     private let searchBarWidth: CGFloat = 300
-    private let searchBarHeight: CGFloat = 30
+    private let searchBarHeight: CGFloat = 44
 
     var body: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
-                    .font(.appCaption)
                     .foregroundStyle(.secondary)
                 TextField("Search mail", text: $vm.searchText)
                     .textFieldStyle(.plain)
@@ -163,9 +163,9 @@ private struct TopBar: View {
                     .foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 16)
             .frame(width: searchBarWidth, height: searchBarHeight)
-            .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 15))
+            .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 22))
             .overlay(alignment: .topLeading) {
                 if isSearchFocused {
                     searchDropdown

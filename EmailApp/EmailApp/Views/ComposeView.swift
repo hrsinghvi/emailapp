@@ -67,11 +67,18 @@ struct ComposeView: View {
                 .buttonStyle(.plain)
             }
 
+            // Each field's suggestion dropdown floats via .overlay — needs
+            // a zIndex here (at the sibling level in this VStack) or it
+            // paints behind whichever field comes after it, same issue the
+            // search bar's dropdown had against the toolbar below it.
             RecipientChipField(placeholder: "To", emails: $toEmails, isDisabled: toIsFixed)
+                .zIndex(3)
 
             if showCcBcc {
                 RecipientChipField(placeholder: "Cc", emails: $ccEmails)
+                    .zIndex(2)
                 RecipientChipField(placeholder: "Bcc", emails: $bccEmails)
+                    .zIndex(1)
             } else {
                 Button("Add Cc/Bcc") { showCcBcc = true }
                     .buttonStyle(.plain)
