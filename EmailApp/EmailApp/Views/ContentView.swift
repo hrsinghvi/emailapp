@@ -160,7 +160,7 @@ private struct TopBar: View {
                         .foregroundStyle(.secondary)
                     TextField("Search mail", text: $vm.searchText)
                         .textFieldStyle(.plain)
-                        .font(.appCaption)
+                        .font(.appSubheadline)
                         .focused($isSearchFocused)
                         .onChange(of: vm.searchFocusTrigger) { _, _ in isSearchFocused = true }
                         .onSubmit { commitSearch(vm.searchText) }
@@ -205,9 +205,9 @@ private struct TopBar: View {
                         applyQuickFilter(filter.token)
                     } label: {
                         Text(filter.label)
-                            .font(.appCaption2.weight(.medium))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
+                            .font(.appCaption.weight(.medium))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 6)
                             .background(Capsule().fill(Color.appHover))
                     }
                     .buttonStyle(.plain)
