@@ -99,31 +99,40 @@ private struct ThreadRow: View {
     let onToggleCheck: () -> Void
     @State private var isHovering = false
 
+    /// Fixed regardless of hover/selection/attachment state, so the row
+    /// never visually shifts — the checkbox fades in/out in place rather
+    /// than changing width.
+    private let indicatorClusterWidth: CGFloat = 20
+    private let checkboxClusterWidth: CGFloat = 28
+    private let rowHorizontalPadding: CGFloat = 16
+
     var body: some View {
         let message = thread.latest
 
-        HStack(alignment: .top, spacing: 12) {
-            HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
+                // Provider color bar + unread dot — the true leading edge
+                // of the row, ahead of the checkbox.
+                HStack(spacing: 8) {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(message.provider.color)
+                        .frame(width: 3, height: 20)
+                    Circle()
+                        .fill(thread.hasUnread ? message.provider.color : Color.clear)
+                        .frame(width: 7, height: 7)
+                }
+                .frame(width: indicatorClusterWidth, alignment: .leading)
+                .padding(.top, 2)
+
                 Button(action: onToggleCheck) {
                     Image(systemName: isChecked ? "checkmark.square.fill" : "square")
                         .foregroundStyle(isChecked ? Color.appAccent : .secondary)
                 }
                 .buttonStyle(.plain)
-                .frame(width: 16)
+                .frame(width: checkboxClusterWidth, alignment: .leading)
                 .opacity(isHovering || anySelectionActive ? 1 : 0)
+                .padding(.top, 2)
 
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(message.provider.color)
-                    .frame(width: 3, height: 20)
-
-                Circle()
-                    .fill(thread.hasUnread ? message.provider.color : Color.clear)
-                    .frame(width: 7, height: 7)
-            }
-            .frame(width: 66, alignment: .leading)
-            .padding(.top, 2)
-
-            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
                     Text(message.senderName)
                         .font(.subheadline.weight(thread.hasUnread ? .semibold : .regular))
@@ -153,17 +162,21 @@ private struct ThreadRow: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
+            }
 
-                if !message.attachments.isEmpty {
-                    HStack(spacing: 8) {
-                        ForEach(message.attachments.prefix(3)) { attachment in
-                            AttachmentPill(attachment: attachment)
-                        }
+            if !message.attachments.isEmpty {
+                HStack(spacing: 8) {
+                    // Gmail tucks the attachment chip close to the row's
+                    // left margin, right under the checkbox — not indented
+                    // all the way out to the sender-name column.
+                    Color.clear.frame(width: indicatorClusterWidth + 12)
+                    ForEach(message.attachments.prefix(3)) { attachment in
+                        AttachmentPill(attachment: attachment)
                     }
                 }
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, rowHorizontalPadding)
         .padding(.vertical, 14)
         .background(isOpen || isChecked ? Color.appHover : (isHovering ? Color.appHover.opacity(0.6) : .clear))
         .contentShape(Rectangle())

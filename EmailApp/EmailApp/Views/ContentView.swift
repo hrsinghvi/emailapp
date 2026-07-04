@@ -148,7 +148,7 @@ private struct CategoryTabBar: View {
     @Bindable var vm: InboxViewModel
 
     var body: some View {
-        HStack(spacing: 64) {
+        HStack(spacing: 96) {
             ForEach(MessageCategory.allCases, id: \.self) { category in
                 Button {
                     vm.categoryFilter = category
