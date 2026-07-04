@@ -102,7 +102,7 @@ struct SidebarView: View {
             .padding(.vertical, 10)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.92)))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pointerPlain)
     }
 
     /// Real account-connection management (distinct from `Provider`
@@ -158,7 +158,7 @@ struct SidebarView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pointerPlain)
         .disabled(isConnecting)
     }
 }
@@ -211,7 +211,7 @@ private struct InboxNavItem: View {
                 .animation(.easeOut(duration: 0.18), value: isActive)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pointerPlain)
 
             if isExpanded {
                 let gmailColor = vm.accounts.first(where: { $0.provider == .gmail })?.color ?? Provider.gmail.color
@@ -274,7 +274,7 @@ private struct CategoryNavItem: View {
                 .animation(.easeOut(duration: 0.18), value: isActive)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pointerPlain)
     }
 }
 
@@ -301,7 +301,7 @@ private struct ProviderShortcut: View {
                 .animation(.easeOut(duration: 0.18), value: isActive)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pointerPlain)
     }
 }
 
@@ -344,7 +344,7 @@ private struct ProfileFooterButton: View {
             .background(RoundedRectangle(cornerRadius: 8).fill(isHovering ? Color.appHover : .clear))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pointerPlain)
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.15), value: isHovering)
         .padding(.top, 10)
@@ -388,6 +388,6 @@ private struct NavItem: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pointerPlain)
     }
 }

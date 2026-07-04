@@ -36,7 +36,7 @@ struct AttachmentCardView: View {
                             .font(.custom("Inter", size: 13))
                             .iconButtonHitArea(4)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pointerPlain)
                     .padding(3)
                 }
             }

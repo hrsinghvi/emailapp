@@ -136,7 +136,7 @@ struct RecipientChipField: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 8, weight: .bold))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pointerPlain)
                 .foregroundStyle(.secondary)
             }
         }
@@ -176,6 +176,7 @@ struct RecipientChipField: View {
                 )
                 .contentShape(Rectangle())
                 .onTapGesture { selectContact(contact) }
+                .pointerOnHover()
             }
         }
         .padding(4)

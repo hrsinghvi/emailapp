@@ -172,7 +172,7 @@ private struct TopBar: View {
                         Button { vm.searchText = "" } label: {
                             Image(systemName: "xmark.circle.fill").iconButtonHitArea(2)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pointerPlain)
                         .foregroundStyle(.secondary)
                     }
                 }
@@ -214,7 +214,7 @@ private struct TopBar: View {
                             .padding(.vertical, 6)
                             .background(Capsule().fill(Color.appHover))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pointerPlain)
                     .fixedSize()
                 }
             }
@@ -272,7 +272,7 @@ private struct RecentSearchRow: View {
             .background(RoundedRectangle(cornerRadius: 6).fill(isHovering ? Color.appHover : .clear))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pointerPlain)
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovering)
     }
@@ -304,7 +304,7 @@ private struct ListToolbar: View {
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pointerPlain)
 
             if vm.selectedThreadKeys.isEmpty {
                 Button {
@@ -321,7 +321,7 @@ private struct ListToolbar: View {
                         .animation(isRefreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: isRefreshing)
                         .iconButtonHitArea()
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pointerPlain)
                 .foregroundStyle(.secondary)
             } else {
                 Text("\(vm.selectedThreadKeys.count) selected")
@@ -340,14 +340,14 @@ private struct ListToolbar: View {
                     Button { vm.goToPreviousPage() } label: {
                         Image(systemName: "chevron.left").iconButtonHitArea()
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pointerPlain)
                     .foregroundStyle(vm.listPageIndex > 0 ? .secondary : Color.secondary.opacity(0.3))
                     .disabled(vm.listPageIndex == 0)
 
                     Button { vm.goToNextPage() } label: {
                         Image(systemName: "chevron.right").iconButtonHitArea()
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pointerPlain)
                     .foregroundStyle(range.end < range.total ? .secondary : Color.secondary.opacity(0.3))
                     .disabled(range.end >= range.total)
                 }
@@ -360,7 +360,7 @@ private struct ListToolbar: View {
                 Button { vm.selectedThreadKeys.removeAll() } label: {
                     Image(systemName: "xmark").iconButtonHitArea()
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pointerPlain)
                 .foregroundStyle(.secondary)
             }
         }
@@ -382,7 +382,7 @@ private struct ListToolbar: View {
         Button(action: action) {
             Label(title, systemImage: icon).font(.appCaption.weight(.medium))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pointerPlain)
         .foregroundStyle(.secondary)
     }
 }
@@ -399,7 +399,7 @@ private struct DetailToolbar: View {
             Button { vm.selectedThreadKey = nil } label: {
                 Image(systemName: "chevron.left").iconButtonHitArea()
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pointerPlain)
             .foregroundStyle(.secondary)
 
             Divider().frame(height: 16).overlay(Color.appBorder)
@@ -407,13 +407,13 @@ private struct DetailToolbar: View {
             Button { vm.archiveThread(thread) } label: {
                 Image(systemName: "archivebox").iconButtonHitArea()
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pointerPlain)
             .foregroundStyle(.secondary)
 
             Button { vm.deleteThread(thread) } label: {
                 Image(systemName: "trash").iconButtonHitArea()
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pointerPlain)
             .foregroundStyle(.secondary)
 
             Divider().frame(height: 16).overlay(Color.appBorder)
@@ -421,7 +421,7 @@ private struct DetailToolbar: View {
             Button { vm.markThreadUnread(thread) } label: {
                 Image(systemName: "envelope.badge").iconButtonHitArea()
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pointerPlain)
             .foregroundStyle(.secondary)
 
             Spacer()

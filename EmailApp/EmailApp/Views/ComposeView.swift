@@ -65,7 +65,7 @@ struct ComposeView: View {
                         .foregroundStyle(.secondary)
                         .iconButtonHitArea()
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pointerPlain)
             }
 
             // Each field's suggestion dropdown floats via .overlay — needs
@@ -82,7 +82,7 @@ struct ComposeView: View {
                     .zIndex(1)
             } else {
                 Button("Add Cc/Bcc") { showCcBcc = true }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pointerPlain)
                     .font(.appCaption)
                     .foregroundStyle(.secondary)
             }
@@ -126,11 +126,11 @@ struct ComposeView: View {
                         .padding(8)
                         .background(Circle().fill(Color.appHover))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pointerPlain)
 
                 Spacer()
                 Button("Cancel") { onClose() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pointerPlain)
                     .foregroundStyle(.secondary)
                 Button {
                     send()
@@ -142,7 +142,7 @@ struct ComposeView: View {
                         .padding(.vertical, 8)
                         .background(Capsule().fill(Color.appAccent.opacity(0.9)))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pointerPlain)
                 .disabled(toEmails.isEmpty || subject.isEmpty)
             }
         }

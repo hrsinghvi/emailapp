@@ -24,6 +24,7 @@ struct MessageListView: View {
                                 let flags = NSEvent.modifierFlags
                                 vm.handleRowClick(thread, shift: flags.contains(.shift), command: flags.contains(.command))
                             }
+                            .pointerOnHover()
                         }
                         .transition(.opacity.combined(with: .move(edge: .leading)))
                         Divider().overlay(Color.appBorder)
@@ -81,7 +82,7 @@ private struct ThreadRow: View {
                         .frame(width: checkboxClusterWidth, height: 22)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pointerPlain)
                 .frame(width: checkboxClusterWidth, alignment: .leading)
                 .padding(.top, 2)
 
@@ -93,7 +94,7 @@ private struct ThreadRow: View {
                         .frame(width: starClusterWidth, height: 22)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pointerPlain)
                 .frame(width: starClusterWidth, alignment: .leading)
                 .padding(.top, 2)
                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: message.isStarred)
@@ -105,7 +106,7 @@ private struct ThreadRow: View {
                         .frame(width: importantClusterWidth, height: 22)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pointerPlain)
                 .frame(width: importantClusterWidth, alignment: .leading)
                 .padding(.top, 2)
 

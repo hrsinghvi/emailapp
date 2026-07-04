@@ -61,7 +61,7 @@ struct SettingsView: View {
                     .padding(8)
                     .background(Circle().fill(Color.appHover))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pointerPlain)
             .padding(12)
         }
         .shadow(color: .black.opacity(0.5), radius: 32, y: 12)
@@ -86,7 +86,7 @@ struct SettingsView: View {
                     .background(RoundedRectangle(cornerRadius: 8).fill(selection == section ? Color.appHover : .clear))
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pointerPlain)
             }
             Spacer()
         }
@@ -236,7 +236,7 @@ private struct AccountsSettingsSection: View {
                     .font(.appCaption)
 
                     Button("Disconnect") { pendingDisconnect = account }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pointerPlain)
                         .font(.appCaption.weight(.medium))
                         .foregroundStyle(.red)
                 }
@@ -280,7 +280,7 @@ private struct AccountsSettingsSection: View {
             .padding(.vertical, 7)
             .background(RoundedRectangle(cornerRadius: 8).fill(Color.appHover))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pointerPlain)
         .disabled(isConnecting)
     }
 }
@@ -454,7 +454,7 @@ private struct AdvancedSettingsSection: View {
                         didClear = false
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pointerPlain)
                 .font(.appCaption.weight(.medium))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
@@ -482,7 +482,7 @@ private struct AboutSettingsSection: View {
                     NSWorkspace.shared.open(url)
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pointerPlain)
             .font(.appCaption.weight(.medium))
             .foregroundStyle(Color.appAccent)
             .padding(.top, 8)
@@ -523,7 +523,7 @@ private struct MCPSettingsSectionView: View {
                 Text(loadError ?? "Couldn't load MCP settings.")
                     .font(.appCaption).foregroundStyle(.secondary)
                 Button("Retry") { Task { await load() } }
-                    .buttonStyle(.plain).font(.appCaption.weight(.medium)).foregroundStyle(Color.appAccent)
+                    .buttonStyle(.pointerPlain).font(.appCaption.weight(.medium)).foregroundStyle(Color.appAccent)
             }
         }
         .task { await load() }
@@ -607,14 +607,14 @@ private struct MCPSettingsSectionView: View {
                     .padding(.horizontal, 8).padding(.vertical, 5)
                     .background(RoundedRectangle(cornerRadius: 6).fill(Color.appSurface))
                 Button(isShowingToken ? "Hide" : "Reveal") { isShowingToken.toggle() }
-                    .buttonStyle(.plain).font(.appCaption.weight(.medium)).foregroundStyle(Color.appAccent)
+                    .buttonStyle(.pointerPlain).font(.appCaption.weight(.medium)).foregroundStyle(Color.appAccent)
                 Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(settings.mcpBearerToken, forType: .string)
                 } label: {
                     Image(systemName: "doc.on.doc").iconButtonHitArea()
                 }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .buttonStyle(.pointerPlain).foregroundStyle(.secondary)
                 Spacer()
                 Button(justRegenerated ? "Regenerated" : (isRegenerating ? "Regenerating…" : "Regenerate")) {
                     guard !isRegenerating else { return }
@@ -629,7 +629,7 @@ private struct MCPSettingsSectionView: View {
                         isRegenerating = false
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pointerPlain)
                 .font(.appCaption.weight(.medium))
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(RoundedRectangle(cornerRadius: 6).fill(Color.appHover))
@@ -655,9 +655,9 @@ private struct MCPSettingsSectionView: View {
                     }
                     Spacer()
                     Button("Reject") { Task { await vm.rejectPendingMCPAction(action) } }
-                        .buttonStyle(.plain).font(.appCaption.weight(.medium)).foregroundStyle(.red)
+                        .buttonStyle(.pointerPlain).font(.appCaption.weight(.medium)).foregroundStyle(.red)
                     Button("Approve") { Task { await vm.approvePendingMCPAction(action) } }
-                        .buttonStyle(.plain).font(.appCaption.weight(.semibold)).foregroundStyle(Color.appAccent)
+                        .buttonStyle(.pointerPlain).font(.appCaption.weight(.semibold)).foregroundStyle(Color.appAccent)
                 }
                 .padding(.vertical, 6)
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -690,7 +690,7 @@ private struct MCPSettingsSectionView: View {
                 Text("Recent tool calls").font(.appCaption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
                 Button("Refresh") { Task { callLog = (try? await MCPSettingsService.fetchCallLog()) ?? callLog } }
-                    .buttonStyle(.plain).font(.appCaption2).foregroundStyle(Color.appAccent)
+                    .buttonStyle(.pointerPlain).font(.appCaption2).foregroundStyle(Color.appAccent)
             }
             if callLog.isEmpty {
                 Text("No calls yet.").font(.appCaption).foregroundStyle(.secondary)

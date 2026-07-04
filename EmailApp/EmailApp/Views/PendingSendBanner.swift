@@ -27,7 +27,7 @@ private struct PendingSendBanner: View {
             Text("Sending… (\(remaining)s)")
                 .font(.appSubheadline)
             Button("Undo") { vm.undoSend(pending.id) }
-                .buttonStyle(.plain)
+                .buttonStyle(.pointerPlain)
                 .font(.appSubheadline.weight(.semibold))
                 .foregroundStyle(Color.appAccent)
         }

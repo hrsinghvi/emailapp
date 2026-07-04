@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// A per-instance `@State` needs a real modifier type, not a plain function —
 /// each icon button using `iconButtonHitArea()` gets its own hover state.
@@ -11,7 +12,10 @@ private struct IconHoverHitArea: ViewModifier {
             .padding(padding)
             .background(Circle().fill(isHovering ? Color.appHover : .clear))
             .contentShape(Rectangle())
-            .onHover { isHovering = $0 }
+            .onHover { hovering in
+                isHovering = hovering
+                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pointingHand.pop() }
+            }
             .animation(.easeOut(duration: 0.15), value: isHovering)
     }
 }
@@ -24,4 +28,26 @@ extension View {
     func iconButtonHitArea(_ padding: CGFloat = 6) -> some View {
         modifier(IconHoverHitArea(padding: padding))
     }
+
+    /// Anything clickable that isn't a `Button` (a whole row driven by
+    /// `.onTapGesture`, for instance) — swaps to the pointing-hand cursor
+    /// on hover, same as a real link/button, instead of the plain arrow.
+    func pointerOnHover() -> some View {
+        onHover { hovering in
+            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pointingHand.pop() }
+        }
+    }
+}
+
+/// Drop-in replacement for `.buttonStyle(.pointerPlain)` — identical rendering (no
+/// button chrome added), plus the pointing-hand cursor on hover that macOS's
+/// buttons don't show by default but this app wants everywhere clickable.
+struct PointerButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.pointerOnHover()
+    }
+}
+
+extension ButtonStyle where Self == PointerButtonStyle {
+    static var pointerPlain: PointerButtonStyle { PointerButtonStyle() }
 }

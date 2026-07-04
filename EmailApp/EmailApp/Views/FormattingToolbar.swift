@@ -74,7 +74,7 @@ struct FormattingToolbar: View {
                 .font(.custom("Inter", size: 10))
                 .frame(width: 22, height: 22)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pointerPlain)
         .foregroundStyle(.secondary)
     }
 }

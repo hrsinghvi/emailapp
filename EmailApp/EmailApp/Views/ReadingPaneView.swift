@@ -83,6 +83,7 @@ struct ReadingPaneView: View {
         .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
         .contentShape(Rectangle())
         .onTapGesture { vm.toggleExpand(message) }
+        .pointerOnHover()
     }
 }
 
@@ -130,6 +131,7 @@ private struct ExpandedMessageCard: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { vm.toggleExpand(message) }
+            .pointerOnHover()
 
             bodyContent
 
@@ -177,6 +179,7 @@ private struct ExpandedMessageCard: View {
                         systemIconName: AttachmentIcon.systemName(forMimeType: attachment.mimeType)
                     )
                     .onTapGesture { saveAttachment(attachment) }
+                    .pointerOnHover()
                 }
             }
         }
@@ -245,6 +248,6 @@ private struct ActionPill: View {
                 Capsule().fill(filled ? tint.opacity(0.18) : Color.appHover)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pointerPlain)
     }
 }
