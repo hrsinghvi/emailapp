@@ -28,8 +28,7 @@ struct ContentView: View {
         .ignoresSafeArea(.container, edges: .top)
         .background(
             ZStack {
-                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-                Color(hex: "#191919").opacity(0.35)
+                Color.appBackground
                 WindowConfigurator()
             }
             .ignoresSafeArea()
@@ -37,8 +36,12 @@ struct ContentView: View {
         .task { await vm.restoreSession() }
         .task { await vm.startRealtimeUpdates() }
         .overlay(alignment: .bottom) { PendingSendBannerStack(vm: vm) }
-        .sheet(item: $vm.composeContext) { context in
-            ComposeView(vm: vm, context: context)
+        .overlay(alignment: .bottomTrailing) {
+            if let context = vm.composeContext {
+                ComposeView(vm: vm, context: context, onClose: { vm.composeContext = nil })
+                    .padding(20)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
         .alert(
             "Error",
@@ -67,7 +70,7 @@ private struct TopBar: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 8))
 
             FilterChip(title: "All", tint: .white, isActive: vm.providerFilter == nil) {
                 vm.providerFilter = nil
@@ -105,7 +108,7 @@ private struct ConnectivityIndicator: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(Capsule().fill(Color.white.opacity(0.06)))
+                .background(Capsule().fill(Color.appHover))
         }
     }
 }
@@ -124,7 +127,7 @@ private struct FilterChip: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(
-                    Capsule().fill(isActive ? tint.opacity(0.18) : Color.white.opacity(0.06))
+                    Capsule().fill(isActive ? tint.opacity(0.18) : Color.appHover)
                 )
         }
         .buttonStyle(.plain)

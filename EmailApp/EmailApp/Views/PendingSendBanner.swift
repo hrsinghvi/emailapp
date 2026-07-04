@@ -29,11 +29,12 @@ private struct PendingSendBanner: View {
             Button("Undo") { vm.undoSend(pending.id) }
                 .buttonStyle(.plain)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color(hex: "#b58ee0"))
+                .foregroundStyle(Color.appAccent)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.regularMaterial, in: Capsule())
+        .background(Color.appSurfaceRaised, in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.appBorder))
         .onAppear { remaining = max(0, Int(pending.scheduledAt.timeIntervalSinceNow.rounded(.up))) }
         .task {
             while remaining > 0 {

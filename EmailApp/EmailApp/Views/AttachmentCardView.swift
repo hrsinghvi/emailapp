@@ -25,7 +25,7 @@ struct AttachmentCardView: View {
                 }
                 .frame(width: 84, height: 60)
                 .clipped()
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06)))
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.appHover))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 if let onRemove {
@@ -51,7 +51,7 @@ struct AttachmentCardView: View {
         }
         .frame(width: 92)
         .padding(8)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
     }
 }
 

@@ -3,9 +3,11 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ComposeView: View {
-    @Environment(\.dismiss) private var dismiss
     let vm: InboxViewModel
     let context: InboxViewModel.ComposeContext
+    /// Floats as a non-modal panel (Gmail-style), not a `.sheet` — so there's
+    /// no `\.dismiss` environment value to close it with.
+    let onClose: () -> Void
 
     @State private var draftId = UUID()
     @State private var origin: DraftOrigin = .new
@@ -48,8 +50,17 @@ struct ComposeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(titleText)
-                .font(.headline)
+            HStack {
+                Text(titleText)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
 
             field("To", text: $to)
                 .disabled(toIsFixed)
@@ -70,7 +81,7 @@ struct ComposeView: View {
 
             RichTextEditor(attributedText: $attributedBody, controller: editorController)
                 .frame(minHeight: 180)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
 
             if !attachments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -96,12 +107,12 @@ struct ComposeView: View {
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
                         .padding(8)
-                        .background(Circle().fill(Color.white.opacity(0.07)))
+                        .background(Circle().fill(Color.appHover))
                 }
                 .buttonStyle(.plain)
 
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { onClose() }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                 Button {
@@ -112,21 +123,17 @@ struct ComposeView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(Capsule().fill(Color(hex: "#b58ee0").opacity(0.9)))
+                        .background(Capsule().fill(Color.appAccent.opacity(0.9)))
                 }
                 .buttonStyle(.plain)
                 .disabled(to.isEmpty || subject.isEmpty)
             }
         }
-        .padding(20)
-        .frame(width: 560, height: 560)
-        .background(
-            ZStack {
-                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-                Color(hex: "#191919").opacity(0.35)
-                WindowConfigurator()
-            }
-        )
+        .padding(16)
+        .frame(width: 420, height: 480)
+        .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.appBorder))
+        .shadow(color: .black.opacity(0.4), radius: 24, y: 8)
         .onAppear(perform: prefill)
         .task {
             while !Task.isCancelled {
@@ -230,7 +237,7 @@ struct ComposeView: View {
             to: to, cc: cc, bcc: bcc, subject: subject,
             bodyHTML: attributedBody.htmlString(), attachments: attachments
         )
-        dismiss()
+        onClose()
     }
 
     private func field(_ placeholder: String, text: Binding<String>) -> some View {
@@ -238,7 +245,7 @@ struct ComposeView: View {
             .textFieldStyle(.plain)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

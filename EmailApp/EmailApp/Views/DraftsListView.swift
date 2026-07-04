@@ -25,7 +25,7 @@ struct DraftsListView: View {
             }
             .padding(8)
         }
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 12))
     }
 }
 

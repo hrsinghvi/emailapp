@@ -11,3 +11,15 @@ extension Color {
         self.init(red: r, green: g, blue: b)
     }
 }
+
+/// Flat Notion-Mail/Gmail-inspired dark palette — replaces the old
+/// frosted-glass materials with opaque fills so nothing behind the window
+/// shows or blurs through.
+extension Color {
+    static let appBackground = Color(hex: "#191919")
+    static let appSurface = Color(hex: "#212121")
+    static let appSurfaceRaised = Color(hex: "#252525")
+    static let appBorder = Color.white.opacity(0.08)
+    static let appHover = Color.white.opacity(0.06)
+    static let appAccent = Color(hex: "#a78bfa")
+}

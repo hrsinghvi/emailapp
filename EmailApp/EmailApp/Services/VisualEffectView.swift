@@ -1,30 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Real macOS vibrancy: blurs whatever's behind the window (desktop, other
-/// windows), not just sibling SwiftUI content. `.ultraThinMaterial` alone
-/// only blurs what's drawn behind it in the same window — over a flat opaque
-/// fill that's indistinguishable from no material at all.
-struct VisualEffectView: NSViewRepresentable {
-    var material: NSVisualEffectView.Material = .underWindowBackground
-    var blendingMode: NSVisualEffectView.BlendingMode = .behindWindow
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = blendingMode
-        view.state = .active
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = material
-        nsView.blendingMode = blendingMode
-    }
-}
-
-/// `.behindWindow` blending only shows through if the window itself isn't
-/// opaque. Grabs the hosting NSWindow once and flips the flags that block it.
+/// Forces the window to a solid opaque fill (no vibrancy/blur behind it) and
+/// disables macOS's automatic window-tabbing strip.
 struct WindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
@@ -38,8 +16,8 @@ struct WindowConfigurator: NSViewRepresentable {
 
     private func configure(_ view: NSView) {
         guard let window = view.window else { return }
-        window.isOpaque = false
-        window.backgroundColor = .clear
+        window.isOpaque = true
+        window.backgroundColor = NSColor(Color.appBackground)
         // Single-window app — the native tab bar ("+ / EmailApp" strip)
         // only appears because macOS's automatic window tabbing defaults
         // it in; this app has no use for it.

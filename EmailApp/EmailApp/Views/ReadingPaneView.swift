@@ -13,7 +13,7 @@ struct ReadingPaneView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var emptyState: some View {
@@ -76,7 +76,7 @@ struct ReadingPaneView: View {
             }
         }
         .padding(10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
         .contentShape(Rectangle())
         .onTapGesture { vm.toggleExpand(message) }
     }
@@ -136,7 +136,7 @@ private struct ExpandedMessageCard: View {
             actionBar
         }
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 12))
     }
 
     @ViewBuilder
@@ -215,7 +215,7 @@ private struct ExpandedMessageCard: View {
                 vm.archive(message)
             }
             Spacer()
-            ActionPill(title: "Ask Claude", icon: "sparkles", tint: Color(hex: "#b58ee0"), filled: true) {}
+            ActionPill(title: "Ask Claude", icon: "sparkles", tint: Color.appAccent, filled: true) {}
         }
     }
 }
@@ -238,7 +238,7 @@ private struct ActionPill: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(
-                Capsule().fill(filled ? tint.opacity(0.18) : Color.white.opacity(0.07))
+                Capsule().fill(filled ? tint.opacity(0.18) : Color.appHover)
             )
         }
         .buttonStyle(.plain)

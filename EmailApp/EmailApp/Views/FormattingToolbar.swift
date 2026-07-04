@@ -65,7 +65,7 @@ struct FormattingToolbar: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func toolButton(_ systemImage: String, action: @escaping () -> Void) -> some View {

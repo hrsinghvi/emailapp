@@ -14,7 +14,7 @@ struct MessageListView: View {
             }
 
             ScrollView {
-                LazyVStack(spacing: 4) {
+                LazyVStack(spacing: 0) {
                     ForEach(vm.filteredThreads) { thread in
                         SwipeableRow(
                             onSwipeRight: { vm.archiveThread(thread) },
@@ -33,12 +33,12 @@ struct MessageListView: View {
                                 vm.handleRowClick(thread, shift: flags.contains(.shift), command: flags.contains(.command))
                             }
                         }
+                        Divider().overlay(Color.appBorder)
                     }
                 }
-                .padding(8)
             }
         }
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 12))
         .focusable()
         .focusEffectDisabled()
         .focused($isFocused)
@@ -60,7 +60,7 @@ private struct BulkActionBar: View {
                 vm.toggleSelectAll()
             } label: {
                 Image(systemName: allSelected ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(allSelected ? Color(hex: "#b58ee0") : .secondary)
+                    .foregroundStyle(allSelected ? Color.appAccent : .secondary)
             }
             .buttonStyle(.plain)
 
@@ -85,7 +85,7 @@ private struct BulkActionBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var allSelected: Bool {
@@ -116,52 +116,51 @@ private struct ThreadRow: View {
         HStack(spacing: 10) {
             Button(action: onToggleCheck) {
                 Image(systemName: isChecked ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(isChecked ? Color(hex: "#b58ee0") : .secondary)
+                    .foregroundStyle(isChecked ? Color.appAccent : .secondary)
             }
             .buttonStyle(.plain)
             .opacity(isHovering || anySelectionActive ? 1 : 0)
             .frame(width: (isHovering || anySelectionActive) ? nil : 0)
 
-            RoundedRectangle(cornerRadius: 2)
+            RoundedRectangle(cornerRadius: 1.5)
                 .fill(message.provider.color)
                 .frame(width: 3)
 
             Circle()
-                .fill(thread.hasUnread ? Color(hex: "#5b9bd5") : Color.clear)
+                .fill(thread.hasUnread ? message.provider.color : Color.clear)
                 .frame(width: 7, height: 7)
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack {
-                    Text(message.senderName)
-                        .font(.subheadline.weight(.medium))
-                        .lineLimit(1)
-                    if thread.count > 1 {
-                        Text("\(thread.count)")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(Color.white.opacity(0.1)))
-                    }
-                    Spacer()
-                    Text(message.receivedAt, format: .relative(presentation: .numeric))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Text(message.subject)
-                    .font(.subheadline)
-                    .lineLimit(1)
-                Text(message.snippet)
-                    .font(.caption)
+            Text(message.senderName)
+                .font(.subheadline.weight(thread.hasUnread ? .semibold : .regular))
+                .lineLimit(1)
+                .frame(width: 150, alignment: .leading)
+
+            if thread.count > 1 {
+                Text("\(thread.count)")
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(Color.appHover))
             }
+
+            (
+                Text(message.subject).font(.subheadline.weight(thread.hasUnread ? .semibold : .regular))
+                + Text("  —  ").foregroundColor(.secondary)
+                + Text(message.snippet).foregroundColor(.secondary)
+            )
+            .lineLimit(1)
+            .truncationMode(.tail)
+
+            Spacer(minLength: 8)
+
+            Text(message.receivedAt, format: .relative(presentation: .numeric))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
-        .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(isOpen || isChecked ? Color.white.opacity(0.07) : .clear)
-        )
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .background(isOpen || isChecked ? Color.appHover : (isHovering ? Color.appHover.opacity(0.6) : .clear))
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .animation(.easeInOut(duration: 0.12), value: isHovering)

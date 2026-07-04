@@ -8,7 +8,9 @@ struct SidebarView: View {
     private let folders: [(id: String, label: String, icon: String)] = [
         ("inbox", "Inbox", "tray"),
         ("sent", "Sent", "paperplane"),
-        ("drafts", "Drafts", "doc")
+        ("drafts", "Drafts", "doc"),
+        ("archive", "Archive", "archivebox"),
+        ("trash", "Trash", "trash")
     ]
 
     var body: some View {
@@ -17,14 +19,16 @@ struct SidebarView: View {
                 vm.composeContext = .new
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "pencil")
+                    Image(systemName: "square.and.pencil")
                     Text("Compose")
+                    Spacer()
                 }
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(Capsule().fill(Color(hex: "#b58ee0").opacity(0.9)))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.appSurfaceRaised))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.appBorder))
             }
             .buttonStyle(.plain)
 
@@ -41,7 +45,8 @@ struct SidebarView: View {
                 }
             }
 
-            SectionLabel("Accounts")
+            Spacer()
+
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(vm.accounts) { account in
                     HStack(spacing: 8) {
@@ -57,60 +62,52 @@ struct SidebarView: View {
                     .padding(.vertical, 6)
                 }
 
-                Button {
-                    isConnectingGmail = true
-                    Task {
-                        await vm.loadGmail()
-                        isConnectingGmail = false
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        if isConnectingGmail {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "plus.circle")
+                connectButton(
+                    isConnecting: isConnectingGmail, label: "Connect Gmail",
+                    action: {
+                        isConnectingGmail = true
+                        Task {
+                            await vm.loadGmail()
+                            isConnectingGmail = false
                         }
-                        Text(isConnectingGmail ? "Connecting…" : "Connect Gmail")
-                            .font(.caption)
                     }
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                }
-                .buttonStyle(.plain)
-                .disabled(isConnectingGmail)
-
-                Button {
-                    isConnectingOutlook = true
-                    Task {
-                        await vm.loadOutlook()
-                        isConnectingOutlook = false
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        if isConnectingOutlook {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "plus.circle")
+                )
+                connectButton(
+                    isConnecting: isConnectingOutlook, label: "Connect Outlook",
+                    action: {
+                        isConnectingOutlook = true
+                        Task {
+                            await vm.loadOutlook()
+                            isConnectingOutlook = false
                         }
-                        Text(isConnectingOutlook ? "Connecting…" : "Connect Outlook")
-                            .font(.caption)
                     }
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                }
-                .buttonStyle(.plain)
-                .disabled(isConnectingOutlook)
+                )
             }
-
-            Spacer()
+            .padding(.top, 8)
+            .overlay(alignment: .top) { Divider().overlay(Color.appBorder) }
         }
         .padding(14)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .background(Color.appSurface)
+    }
+
+    private func connectButton(isConnecting: Bool, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                if isConnecting {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "plus.circle")
+                }
+                Text(isConnecting ? "Connecting…" : label)
+                    .font(.caption)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+        .disabled(isConnecting)
     }
 }
 
@@ -135,7 +132,7 @@ private struct NavItem: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
-                        .background(Capsule().fill(Color.white.opacity(0.1)))
+                        .background(Capsule().fill(Color.appHover))
                 }
             }
             .foregroundStyle(isActive ? .primary : .secondary)
@@ -143,21 +140,9 @@ private struct NavItem: View {
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isActive ? Color.white.opacity(0.10) : .clear)
+                    .fill(isActive ? Color.appHover : .clear)
             )
         }
         .buttonStyle(.plain)
-    }
-}
-
-private struct SectionLabel: View {
-    let text: String
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text.uppercased())
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(.tertiary)
-            .padding(.horizontal, 8)
     }
 }
