@@ -41,7 +41,11 @@ struct ComposeView: View {
         }
     }
 
+    /// A fresh reply/reply-all locks "To" to the original sender — but once
+    /// it's saved as a draft and reopened, it's the user's own in-progress
+    /// message and every field (recipient included) should be editable.
     private var toIsFixed: Bool {
+        if case .draft = context { return false }
         switch origin {
         case .reply, .replyAll: return true
         case .new, .forward: return false
@@ -129,8 +133,8 @@ struct ComposeView: View {
                 .disabled(to.isEmpty || subject.isEmpty)
             }
         }
-        .padding(16)
-        .frame(width: 420, height: 480)
+        .padding(20)
+        .frame(width: 680, height: 720)
         .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.appBorder))
         .shadow(color: .black.opacity(0.4), radius: 24, y: 8)

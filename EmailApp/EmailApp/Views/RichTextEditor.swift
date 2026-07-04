@@ -19,10 +19,16 @@ struct RichTextEditor: NSViewRepresentable {
         textView.isAutomaticLinkDetectionEnabled = true
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.font = .systemFont(ofSize: 14)
-        textView.textColor = .textColor
+        // `.textColor` is a dynamic color that resolves off the view's own
+        // NSAppearance — this app is forced dark-only via SwiftUI's
+        // `.preferredColorScheme`, which the hosted NSTextView doesn't
+        // inherit, so it was resolving to black. Force dark appearance
+        // directly instead of relying on a dynamic color.
+        textView.appearance = NSAppearance(named: .darkAqua)
+        textView.textColor = .white
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: 8, height: 8)
-        textView.typingAttributes = [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.textColor]
+        textView.typingAttributes = [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.white]
         textView.textStorage?.setAttributedString(attributedText)
 
         let scrollView = NSScrollView()
