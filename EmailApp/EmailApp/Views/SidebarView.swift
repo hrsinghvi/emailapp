@@ -160,7 +160,7 @@ struct SidebarView: View {
 
             Spacer(minLength: 4)
 
-            SettingsLink {
+            Button { vm.isSettingsPresented = true } label: {
                 Image(systemName: "gearshape")
                     .foregroundStyle(.secondary)
             }

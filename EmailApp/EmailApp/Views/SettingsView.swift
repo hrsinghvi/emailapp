@@ -37,6 +37,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     let vm: InboxViewModel
+    let onClose: () -> Void
     @State private var selection: SettingsSection = .general
 
     var body: some View {
@@ -52,6 +53,20 @@ struct SettingsView: View {
         }
         .frame(width: 720, height: 540)
         .background(Color.appBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.appBorder))
+        .overlay(alignment: .topTrailing) {
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.appCaption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(8)
+                    .background(Circle().fill(Color.appHover))
+            }
+            .buttonStyle(.plain)
+            .padding(12)
+        }
+        .shadow(color: .black.opacity(0.5), radius: 32, y: 12)
         .animation(.easeOut(duration: 0.18), value: selection)
     }
 

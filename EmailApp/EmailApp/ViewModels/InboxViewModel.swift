@@ -91,6 +91,9 @@ final class InboxViewModel {
     var categoryFilter: MessageCategory = .primary { didSet { listPageIndex = 0 } }
     var searchText: String = "" { didSet { listPageIndex = 0 } }
     var composeContext: ComposeContext?
+    /// Settings is an in-window dimmed modal (Claude-desktop style), not a
+    /// separate NSWindow — this is the only state it needs.
+    var isSettingsPresented = false
     var errorMessage: String?
     /// Bumped to request the search field take keyboard focus (Cmd+K).
     var searchFocusTrigger = 0

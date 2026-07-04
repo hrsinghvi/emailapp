@@ -34,6 +34,13 @@ struct EmailAppApp: App {
                 Button("New Message") { vm.composeContext = .new }
                     .keyboardShortcut("n", modifiers: .command)
             }
+            // Settings is an in-window dimmed modal (not a separate
+            // NSWindow via a `Settings` scene), so Cmd+, needs wiring here
+            // instead of coming for free.
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { vm.isSettingsPresented = true }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
             CommandMenu("Message") {
                 // Cmd+R triggers whichever action Settings > Compose >
                 // "Default reply behavior" names; Cmd+Shift+R always does
@@ -75,13 +82,6 @@ struct EmailAppApp: App {
                 Button("Outlook") { vm.providerFilter = .outlook }
                     .keyboardShortcut("3", modifiers: .command)
             }
-        }
-
-        // A `Settings` scene is what actually wires up Cmd+, on macOS —
-        // SwiftUI handles the shortcut and menu item automatically, no
-        // manual keyboardShortcut needed.
-        Settings {
-            SettingsView(vm: vm)
         }
     }
 }

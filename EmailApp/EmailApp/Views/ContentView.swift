@@ -69,6 +69,19 @@ struct ContentView: View {
             }
         }
         .animation(.spring(response: 0.32, dampingFraction: 1), value: vm.composeContext?.id)
+        .overlay {
+            if vm.isSettingsPresented {
+                ZStack {
+                    Color.black.opacity(0.5)
+                        .ignoresSafeArea()
+                        .onTapGesture { vm.isSettingsPresented = false }
+                        .transition(.opacity)
+                    SettingsView(vm: vm, onClose: { vm.isSettingsPresented = false })
+                        .transition(.scale(scale: 0.96).combined(with: .opacity))
+                }
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: vm.isSettingsPresented)
         .alert(
             "Error",
             isPresented: Binding(get: { vm.errorMessage != nil }, set: { if !$0 { vm.errorMessage = nil } })
