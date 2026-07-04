@@ -146,7 +146,11 @@ private struct TopBar: View {
     ]
 
     private let searchBarHeight: CGFloat = 44
-    @State private var searchBarWidth: CGFloat = 0
+    // Real width comes from the PreferenceKey below once laid out; this is
+    // just a sane default so the dropdown never renders at width 0 on the
+    // very first frame (that collapsed its background to nothing and let
+    // the chip row overflow past it, unclipped).
+    @State private var searchBarWidth: CGFloat = 320
 
     var body: some View {
         HStack(spacing: 10) {
@@ -176,7 +180,9 @@ private struct TopBar: View {
                     Color.clear.preference(key: WidthPreferenceKey.self, value: geo.size.width)
                 }
             )
-            .onPreferenceChange(WidthPreferenceKey.self) { searchBarWidth = $0 }
+            .onPreferenceChange(WidthPreferenceKey.self) { newWidth in
+                if newWidth > 0 { searchBarWidth = newWidth }
+            }
             .overlay(alignment: .topLeading) {
                 if isSearchFocused {
                     searchDropdown
