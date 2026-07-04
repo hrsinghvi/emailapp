@@ -191,13 +191,17 @@ private struct ThreadRow: View {
         .background(isOpen || isChecked ? Color.appHover : (isHovering ? Color.appHover.opacity(0.6) : .clear))
         .contentShape(Rectangle())
         .overlay(alignment: .leading) {
-            // Provider color "flag" — pokes out past the row's own left
-            // edge; the parent list is clipped so only the right half of
-            // this ellipse shows, like a tab sticking out from behind it.
-            Ellipse()
-                .fill(message.provider.color.opacity(thread.hasUnread ? 1 : 0.35))
-                .frame(width: 10, height: 26)
-                .offset(x: -5)
+            // Provider color "flag" — flat on the left/top/bottom, spans
+            // the row's full height edge-to-edge, rounded only where it
+            // bulges into the row on the right.
+            UnevenRoundedRectangle(
+                topLeadingRadius: 0, bottomLeadingRadius: 0,
+                bottomTrailingRadius: 6, topTrailingRadius: 6,
+                style: .continuous
+            )
+            .fill(message.provider.color.opacity(thread.hasUnread ? 1 : 0.35))
+            .frame(width: 8)
+            .frame(maxHeight: .infinity)
         }
         .onHover { isHovering = $0 }
         .animation(.easeInOut(duration: 0.12), value: isHovering)
