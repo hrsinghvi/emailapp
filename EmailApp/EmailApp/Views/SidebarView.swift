@@ -138,38 +138,7 @@ struct SidebarView: View {
     }
 
     private var footer: some View {
-        Button { vm.isSettingsPresented = true } label: {
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(primaryAccount?.provider.color ?? Color.appHover)
-                    .frame(width: 32, height: 32)
-                    .overlay(
-                        Text(primaryAccount?.prettyLocalName.prefix(1) ?? "?")
-                            .font(.appSubheadline.weight(.semibold))
-                            .foregroundStyle(.white)
-                    )
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(primaryAccount?.prettyLocalName ?? "No account")
-                        .font(.appCaption.weight(.semibold))
-                        .lineLimit(1)
-                    Text(primaryAccount?.email ?? "Connect below")
-                        .font(.appCaption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 4)
-
-                Image(systemName: "gearshape")
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 4)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(.top, 10)
-        .overlay(alignment: .top) { Divider().overlay(Color.appBorder) }
+        ProfileFooterButton(vm: vm, primaryAccount: primaryAccount)
     }
 
     private func connectButton(isConnecting: Bool, label: String, action: @escaping () -> Void) -> some View {
@@ -329,6 +298,53 @@ private struct ProviderShortcut: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Its own struct (not a computed property) so the hover state is stable
+/// per-instance instead of being recreated on every SidebarView re-render.
+private struct ProfileFooterButton: View {
+    let vm: InboxViewModel
+    let primaryAccount: Account?
+    @State private var isHovering = false
+
+    var body: some View {
+        Button { vm.isSettingsPresented = true } label: {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(primaryAccount?.provider.color ?? Color.appHover)
+                    .frame(width: 32, height: 32)
+                    .overlay(
+                        Text(primaryAccount?.prettyLocalName.prefix(1) ?? "?")
+                            .font(.appSubheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                    )
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(primaryAccount?.prettyLocalName ?? "No account")
+                        .font(.appCaption.weight(.semibold))
+                        .lineLimit(1)
+                    Text(primaryAccount?.email ?? "Connect below")
+                        .font(.appCaption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 4)
+
+                Image(systemName: "gearshape")
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 8).fill(isHovering ? Color.appHover : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: isHovering)
+        .padding(.top, 10)
+        .overlay(alignment: .top) { Divider().overlay(Color.appBorder) }
     }
 }
 

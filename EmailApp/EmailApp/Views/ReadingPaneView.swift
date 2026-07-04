@@ -29,20 +29,6 @@ struct ReadingPaneView: View {
 
     private func threadView(_ thread: MessageThread) -> some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Button { vm.selectedThreadKey = nil } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.appSubheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(8)
-                        .background(Circle().fill(Color.appHover))
-                }
-                .buttonStyle(.plain)
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(thread.latest.subject)

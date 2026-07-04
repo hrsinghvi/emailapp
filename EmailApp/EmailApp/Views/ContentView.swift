@@ -16,27 +16,39 @@ struct ContentView: View {
                 .frame(maxHeight: .infinity)
                 .ignoresSafeArea(.container, edges: [.top, .bottom])
 
-            Group {
-                if vm.selectedThread != nil {
-                    ReadingPaneView(vm: vm)
-                        .transition(.opacity.combined(with: .move(edge: .trailing)))
-                } else {
-                    VStack(spacing: 10) {
-                        TopBar(vm: vm)
+            // Only the toolbar row + body swap when a thread opens — the
+            // search bar stays put instead of the whole pane being
+            // replaced, matching Gmail rather than a full-screen takeover.
+            VStack(spacing: 10) {
+                TopBar(vm: vm)
+
+                Group {
+                    if let thread = vm.selectedThread {
+                        DetailToolbar(vm: vm, thread: thread)
+                    } else {
                         ListToolbar(vm: vm)
-                        if vm.selectedFolder == "drafts" {
-                            DraftsListView(vm: vm)
-                        } else {
-                            MessageListView(vm: vm)
-                        }
                     }
-                    .transition(.opacity)
                 }
+                .transition(.opacity)
+                .animation(.easeOut(duration: 0.18), value: vm.selectedThread?.id)
+
+                Group {
+                    if vm.selectedThread != nil {
+                        ReadingPaneView(vm: vm)
+                            .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    } else if vm.selectedFolder == "drafts" {
+                        DraftsListView(vm: vm)
+                            .transition(.opacity)
+                    } else {
+                        MessageListView(vm: vm)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.22), value: vm.selectedThread?.id)
             }
             .frame(minWidth: 320, maxWidth: .infinity)
             .padding(.top, 34)
             .padding(.bottom, 12)
-            .animation(.easeOut(duration: 0.22), value: vm.selectedThread?.id)
         }
         .padding(.trailing, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -218,6 +230,50 @@ private struct ListToolbar: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
+    }
+}
+
+/// Replaces `ListToolbar` in the same row the moment a thread opens —
+/// Gmail-style: back, archive, trash, mark unread. Acts on the whole open
+/// conversation, same as swiping a collapsed row in the list.
+private struct DetailToolbar: View {
+    @Bindable var vm: InboxViewModel
+    let thread: MessageThread
+
+    var body: some View {
+        HStack(spacing: 18) {
+            Button { vm.selectedThreadKey = nil } label: {
+                Image(systemName: "chevron.left").iconButtonHitArea()
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+
+            Divider().frame(height: 16).overlay(Color.appBorder)
+
+            Button { vm.archiveThread(thread) } label: {
+                Image(systemName: "archivebox").iconButtonHitArea()
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+
+            Button { vm.deleteThread(thread) } label: {
+                Image(systemName: "trash").iconButtonHitArea()
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+
+            Divider().frame(height: 16).overlay(Color.appBorder)
+
+            Button { vm.markThreadUnread(thread) } label: {
+                Image(systemName: "envelope.badge").iconButtonHitArea()
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+
+            Spacer()
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 10)
     }
 }
 

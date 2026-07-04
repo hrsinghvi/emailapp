@@ -554,6 +554,12 @@ final class InboxViewModel {
         for message in thread.messages { markUnread(message) }
     }
 
+    /// Every message in a thread — the detail toolbar's trash icon acts on
+    /// the whole open conversation, matching `archiveThread`.
+    func deleteThread(_ thread: MessageThread) {
+        for message in thread.messages { delete(message) }
+    }
+
     private func markUnread(_ message: Message) {
         guard message.isRead else { return }
         Task { await setRead(message, read: false) }
