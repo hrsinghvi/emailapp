@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftUI
+import os
 
 /// A collapsed thread row groups every `Message` sharing a `threadKey`
 /// (Gmail threadId / Outlook conversationId), sorted oldest-first so the
@@ -192,6 +193,7 @@ final class InboxViewModel {
             // Falls back to a resumable draft rather than silently dropping
             // the content the user wrote.
             saveDraft(pending.asDraft)
+            AppLog.send.error("send failed for pending \(id): \(error.localizedDescription)")
             errorMessage = "Send failed, saved as a draft: \(error.localizedDescription)"
         }
     }
@@ -241,6 +243,7 @@ final class InboxViewModel {
                     // forever isn't useful.
                     offlineQueue.removeAll { $0.id == envelope.id }
                     OfflineActionQueueStore.save(offlineQueue)
+                    AppLog.offline.error("queued action \(envelope.id) failed: \(error.localizedDescription)")
                     errorMessage = "A queued action failed: \(error.localizedDescription)"
                 } else {
                     return
@@ -415,6 +418,7 @@ final class InboxViewModel {
             }
             messages[index].isRead = previous
             MessageCacheStore.save(messages)
+            AppLog.sync.error("setRead failed for \(message.id): \(error.localizedDescription)")
             errorMessage = "Couldn't update read status: \(error.localizedDescription)"
         }
     }
@@ -458,6 +462,7 @@ final class InboxViewModel {
                     messages[idx].folder = previousFolder
                     MessageCacheStore.save(messages)
                 }
+                AppLog.sync.error("archive failed for \(message.id): \(error.localizedDescription)")
                 errorMessage = "Couldn't archive: \(error.localizedDescription)"
             }
         }
@@ -509,6 +514,7 @@ final class InboxViewModel {
                     messages[idx].folder = previousFolder
                     MessageCacheStore.save(messages)
                 }
+                AppLog.sync.error("delete failed for \(message.id): \(error.localizedDescription)")
                 errorMessage = "Couldn't delete: \(error.localizedDescription)"
             }
         }
@@ -644,7 +650,7 @@ final class InboxViewModel {
             let account = try await OAuthManager.shared.signInWithGoogle()
             try await fetchAndMerge(account)
         } catch {
-            print("Gmail load failed: \(error.localizedDescription)")
+            AppLog.sync.error("Gmail load failed: \(error.localizedDescription)")
         }
     }
 
@@ -655,7 +661,7 @@ final class InboxViewModel {
             let account = try await OAuthManager.shared.signInWithMicrosoft()
             try await fetchAndMerge(account)
         } catch {
-            print("Outlook load failed: \(error.localizedDescription)")
+            AppLog.sync.error("Outlook load failed: \(error.localizedDescription)")
         }
     }
 
@@ -672,7 +678,7 @@ final class InboxViewModel {
             do {
                 try await fetchAndMerge(account)
             } catch {
-                print("Silent restore failed for \(account.email): \(error.localizedDescription)")
+                AppLog.auth.error("Silent restore failed for \(account.email): \(error.localizedDescription)")
             }
         }
     }

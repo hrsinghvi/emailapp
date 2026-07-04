@@ -134,7 +134,7 @@ function graphAttachments(attachments: MailAttachment[] = []) {
 
 export async function send(
   accessToken: string,
-  params: { to: string[]; subject: string; body: string; attachments?: MailAttachment[] }
+  params: { to: string[]; subject: string; body: string; isHtml?: boolean; attachments?: MailAttachment[] }
 ): Promise<void> {
   const res = await fetch(`${BASE}/me/sendMail`, {
     method: "POST",
@@ -142,7 +142,7 @@ export async function send(
     body: JSON.stringify({
       message: {
         subject: params.subject,
-        body: { contentType: "Text", content: params.body },
+        body: { contentType: params.isHtml ? "HTML" : "Text", content: params.body },
         toRecipients: params.to.map((address) => ({ emailAddress: { address } })),
         attachments: params.attachments?.length ? graphAttachments(params.attachments) : undefined,
       },

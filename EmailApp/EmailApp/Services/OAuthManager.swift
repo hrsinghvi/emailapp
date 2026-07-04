@@ -2,6 +2,7 @@ import AppKit
 import AuthenticationServices
 import CryptoKit
 import Foundation
+import os
 
 /// Real Google OAuth via ASWebAuthenticationSession + PKCE (no client secret).
 /// MainActor: the auth session must be presented from the main thread.
@@ -112,15 +113,19 @@ final class OAuthManager: NSObject {
         } catch {
             // Sign-in itself succeeded and the app works fine on direct API
             // calls either way — only live push updates depend on this.
-            print("Backend registration failed for \(email), live updates won't start: \(error.localizedDescription)")
+            AppLog.auth.error("Backend registration failed for \(email), live updates wont start: \(error.localizedDescription)")
         }
-        return Account(id: UUID(), provider: provider, email: email, displayName: email)
+        return Account(provider: provider, email: email, displayName: email)
     }
 
     /// Enumerates every Keychain-stored account from a prior session and
     /// silently refreshes any expired access token, so launch doesn't force
-    /// re-consent. An account whose refresh token has been revoked (or fails
-    /// to refresh) is just skipped rather than surfaced as an error.
+    /// re-consent. An account is only skipped if there's no Keychain entry
+    /// to restore from at all — a failed refresh while offline still
+    /// surfaces the account (with its stale token) so cached mail for it
+    /// stays visible and reply/send can queue; `fetchAndMerge` will retry
+    /// the refresh once back online instead of the account silently
+    /// vanishing from the whole session until relaunch.
     func restoreAccounts() async -> [Account] {
         guard let keys = try? KeychainService.allAccounts() else { return [] }
         var restored: [Account] = []
@@ -131,13 +136,21 @@ final class OAuthManager: NSObject {
             let email = String(key[key.index(after: colon)...])
             guard let tokens = try? KeychainService.load(account: key) else { continue }
             if tokens.isExpired {
-                guard (try? await refresh(tokens, provider: provider, keychainKey: key)) != nil else { continue }
+                if let refreshed = try? await refresh(tokens, provider: provider, keychainKey: key) {
+                    try? await BackendAPI.registerAccount(provider: provider, email: email, refreshToken: refreshed.refreshToken)
+                } else if !NetworkMonitor.shared.isOnline {
+                    restored.append(Account(provider: provider, email: email, displayName: email))
+                    continue
+                } else {
+                    continue
+                }
+            } else {
+                // Idempotent (backend upserts) — keeps accounts connected before
+                // Phase 5 (or on a fresh install restoring from Keychain) synced
+                // to the backend without a manual reconnect.
+                try? await BackendAPI.registerAccount(provider: provider, email: email, refreshToken: tokens.refreshToken)
             }
-            // Idempotent (backend upserts) — keeps accounts connected before
-            // Phase 5 (or on a fresh install restoring from Keychain) synced
-            // to the backend without a manual reconnect.
-            try? await BackendAPI.registerAccount(provider: provider, email: email, refreshToken: tokens.refreshToken)
-            restored.append(Account(id: UUID(), provider: provider, email: email, displayName: email))
+            restored.append(Account(provider: provider, email: email, displayName: email))
         }
         return restored
     }

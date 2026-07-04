@@ -160,11 +160,12 @@ export function registerTools(server: McpServer): void {
         to: z.array(z.string().email()).min(1),
         subject: z.string(),
         body: z.string(),
+        is_html: z.boolean().optional().describe("Set true if body is HTML rather than plain text"),
         account: z.string().email().describe("Which connected account to send from"),
         attachments: z.array(attachmentSchema).optional(),
       },
     },
-    async ({ to, subject, body, account, attachments }) => {
+    async ({ to, subject, body, is_html, account, attachments }) => {
       try {
         const acc = await findAccountByEmail(account);
         const accessToken = await accessTokenFor(acc);
@@ -174,9 +175,9 @@ export function registerTools(server: McpServer): void {
           contentBase64: a.content_base64,
         }));
         if (acc.provider === "gmail") {
-          await gmail.send(accessToken, { to: to.join(", "), subject, body, attachments: mailAttachments });
+          await gmail.send(accessToken, { to: to.join(", "), subject, body, isHtml: is_html, attachments: mailAttachments });
         } else {
-          await graph.send(accessToken, { to, subject, body, attachments: mailAttachments });
+          await graph.send(accessToken, { to, subject, body, isHtml: is_html, attachments: mailAttachments });
         }
         return textResult({ ok: true });
       } catch (err) {
@@ -192,10 +193,11 @@ export function registerTools(server: McpServer): void {
       inputSchema: {
         message_id: messageIdSchema,
         body: z.string(),
+        is_html: z.boolean().optional().describe("Set true if body is HTML rather than plain text"),
         attachments: z.array(attachmentSchema).optional(),
       },
     },
-    async ({ message_id, body, attachments }) => {
+    async ({ message_id, body, is_html, attachments }) => {
       try {
         const row = await findMessageRow(message_id);
         const account = await findAccountById(row.account_id);
@@ -210,6 +212,7 @@ export function registerTools(server: McpServer): void {
             to: row.sender_email,
             subject: row.subject,
             body,
+            isHtml: is_html,
             threadId: row.thread_id,
             messageIdHeader: row.message_id_header,
             referencesHeader: row.references_header,

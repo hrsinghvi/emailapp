@@ -171,7 +171,7 @@ export interface MailAttachment {
 
 export async function send(
   accessToken: string,
-  params: { to: string; subject: string; body: string; attachments?: MailAttachment[] }
+  params: { to: string; subject: string; body: string; isHtml?: boolean; attachments?: MailAttachment[] }
 ): Promise<void> {
   const raw = buildRawMessage(params);
   await sendRaw(accessToken, raw, null);
@@ -183,6 +183,7 @@ export async function reply(
     to: string;
     subject: string;
     body: string;
+    isHtml?: boolean;
     threadId: string | null;
     messageIdHeader: string | null;
     referencesHeader: string | null;
@@ -196,6 +197,7 @@ export async function reply(
     to: params.to,
     subject,
     body: params.body,
+    isHtml: params.isHtml,
     inReplyTo: params.messageIdHeader ?? undefined,
     references: references || undefined,
     attachments: params.attachments,
@@ -207,13 +209,15 @@ function buildRawMessage(params: {
   to: string;
   subject: string;
   body: string;
+  isHtml?: boolean;
   inReplyTo?: string;
   references?: string;
   attachments?: MailAttachment[];
 }): string {
+  const bodyContentType = params.isHtml ? "text/html" : "text/plain";
   const attachments = params.attachments ?? [];
   if (attachments.length === 0) {
-    let headers = `To: ${params.to}\r\nSubject: ${params.subject}\r\nContent-Type: text/plain; charset=UTF-8\r\n`;
+    let headers = `To: ${params.to}\r\nSubject: ${params.subject}\r\nContent-Type: ${bodyContentType}; charset=UTF-8\r\n`;
     if (params.inReplyTo) headers += `In-Reply-To: ${params.inReplyTo}\r\n`;
     if (params.references) headers += `References: ${params.references}\r\n`;
     return base64UrlEncode(`${headers}\r\n${params.body}`);
@@ -225,7 +229,7 @@ function buildRawMessage(params: {
   if (params.inReplyTo) headers += `In-Reply-To: ${params.inReplyTo}\r\n`;
   if (params.references) headers += `References: ${params.references}\r\n`;
 
-  let mime = `--${boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${params.body}\r\n`;
+  let mime = `--${boundary}\r\nContent-Type: ${bodyContentType}; charset=UTF-8\r\n\r\n${params.body}\r\n`;
   for (const attachment of attachments) {
     const b64 = Buffer.from(attachment.contentBase64, "base64").toString("base64").replace(/(.{76})/g, "$1\r\n");
     mime += `--${boundary}\r\n`;
