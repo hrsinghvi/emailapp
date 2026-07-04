@@ -19,7 +19,7 @@ struct ReadingPaneView: View {
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "envelope.open")
-                .font(.custom("DM Sans", size: 38))
+                .font(.custom("Inter", size: 38))
                 .foregroundStyle(.tertiary)
             Text("Select a message")
                 .font(.appHeadline)

@@ -295,7 +295,7 @@ private struct ListToolbar: View {
                 vm.toggleSelectAll()
             } label: {
                 Image(systemName: allSelected ? "checkmark.square.fill" : "square")
-                    .font(.custom("DM Sans", size: 13))
+                    .font(.custom("Inter", size: 13))
                     .foregroundStyle(allSelected ? Color.appAccent : .secondary)
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
@@ -312,7 +312,7 @@ private struct ListToolbar: View {
                     }
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                        .font(.custom("DM Sans", size: 13))
+                        .font(.custom("Inter", size: 13))
                         .rotationEffect(.degrees(isRefreshing ? 360 : 0))
                         .animation(isRefreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: isRefreshing)
                         .iconButtonHitArea()
