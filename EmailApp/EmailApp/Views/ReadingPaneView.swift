@@ -19,10 +19,10 @@ struct ReadingPaneView: View {
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "envelope.open")
-                .font(.system(size: 40))
+                .font(.custom("DM Sans", size: 41))
                 .foregroundStyle(.tertiary)
             Text("Select a message")
-                .font(.headline)
+                .font(.appHeadline)
                 .foregroundStyle(.secondary)
         }
     }
@@ -32,7 +32,7 @@ struct ReadingPaneView: View {
             HStack(spacing: 12) {
                 Button { vm.selectedThreadKey = nil } label: {
                     Image(systemName: "chevron.left")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.appSubheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .padding(8)
                         .background(Circle().fill(Color.appHover))
@@ -46,7 +46,7 @@ struct ReadingPaneView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(thread.latest.subject)
-                        .font(.title2.weight(.semibold))
+                        .font(.appTitle2.weight(.semibold))
                         .padding(.horizontal, 4)
 
                     ForEach(thread.messages) { message in
@@ -72,21 +72,21 @@ struct ReadingPaneView: View {
                 .frame(width: 28, height: 28)
                 .overlay(
                     Text(message.senderInitials)
-                        .font(.caption2.weight(.semibold))
+                        .font(.appCaption2.weight(.semibold))
                         .foregroundStyle(.white)
                 )
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text(message.senderName)
-                        .font(.subheadline.weight(message.isRead ? .regular : .semibold))
+                        .font(.appSubheadline.weight(message.isRead ? .regular : .semibold))
                         .lineLimit(1)
                     Spacer()
                     Text(message.receivedAt, format: .dateTime.month().day().hour().minute())
-                        .font(.caption2)
+                        .font(.appCaption2)
                         .foregroundStyle(.secondary)
                 }
                 Text(message.snippet)
-                    .font(.caption)
+                    .font(.appCaption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -125,19 +125,19 @@ private struct ExpandedMessageCard: View {
                     .frame(width: 44, height: 44)
                     .overlay(
                         Text(message.senderInitials)
-                            .font(.headline)
+                            .font(.appHeadline)
                             .foregroundStyle(.white)
                     )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(message.senderName)
-                        .font(.headline)
+                        .font(.appHeadline)
                     Text(message.senderEmail)
-                        .font(.caption)
+                        .font(.appCaption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text(message.receivedAt, format: .dateTime.month().day().hour().minute())
-                    .font(.caption)
+                    .font(.appCaption)
                     .foregroundStyle(.secondary)
             }
             .contentShape(Rectangle())
@@ -171,7 +171,7 @@ private struct ExpandedMessageCard: View {
             .animation(.easeOut(duration: 0.25), value: htmlHeight)
         } else {
             Text(message.body)
-                .font(.body)
+                .font(.appBody)
                 .foregroundStyle(.primary.opacity(0.85))
                 .lineSpacing(5)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -249,7 +249,7 @@ private struct ActionPill: View {
                 Image(systemName: icon)
                 Text(title)
             }
-            .font(.subheadline.weight(.medium))
+            .font(.appSubheadline.weight(.medium))
             .foregroundStyle(filled ? tint : .primary)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)

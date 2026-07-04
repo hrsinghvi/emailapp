@@ -19,7 +19,7 @@ struct AttachmentCardView: View {
                             .aspectRatio(contentMode: .fill)
                     } else {
                         Image(systemName: systemIconName)
-                            .font(.system(size: 26))
+                            .font(.custom("DM Sans", size: 27))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -33,7 +33,7 @@ struct AttachmentCardView: View {
                         Image(systemName: "xmark.circle.fill")
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(.white, Color.black.opacity(0.65))
-                            .font(.system(size: 15))
+                            .font(.custom("DM Sans", size: 16))
                     }
                     .buttonStyle(.plain)
                     .padding(3)
@@ -41,11 +41,11 @@ struct AttachmentCardView: View {
             }
             VStack(spacing: 1) {
                 Text(filename)
-                    .font(.caption2.weight(.medium))
+                    .font(.appCaption2.weight(.medium))
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(String(format: "%.1f MB", max(sizeMB, 0.01)))
-                    .font(.caption2)
+                    .font(.appCaption2)
                     .foregroundStyle(.secondary)
             }
         }

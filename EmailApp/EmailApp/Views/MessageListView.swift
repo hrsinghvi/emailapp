@@ -14,16 +14,16 @@ struct MessageListView: View {
 
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(vm.filteredThreads) { thread in
+                    ForEach(vm.pagedThreads) { thread in
                         SwipeableRow(
                             onSwipeRight: { vm.archiveThread(thread) },
                             onSwipeLeft: { vm.markThreadUnread(thread) }
                         ) {
                             ThreadRow(
+                                vm: vm,
                                 thread: thread,
                                 isOpen: vm.selectedThreadKey == thread.id,
                                 isChecked: vm.selectedThreadKeys.contains(thread.id),
-                                anySelectionActive: !vm.selectedThreadKeys.isEmpty,
                                 onToggleCheck: { vm.toggleSelection(thread) }
                             )
                             .onTapGesture {
@@ -37,6 +37,7 @@ struct MessageListView: View {
             }
         }
         .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -54,7 +55,7 @@ private struct BulkActionBar: View {
             .buttonStyle(.plain)
 
             Text("\(vm.selectedThreadKeys.count) selected")
-                .font(.caption)
+                .font(.appCaption)
                 .foregroundStyle(.secondary)
 
             Spacer()
@@ -84,7 +85,7 @@ private struct BulkActionBar: View {
     private func bulkButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: icon)
-                .font(.caption.weight(.medium))
+                .font(.appCaption.weight(.medium))
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
@@ -92,37 +93,34 @@ private struct BulkActionBar: View {
 }
 
 private struct ThreadRow: View {
+    let vm: InboxViewModel
     let thread: MessageThread
     let isOpen: Bool
     let isChecked: Bool
-    let anySelectionActive: Bool
     let onToggleCheck: () -> Void
     @State private var isHovering = false
 
     /// Fixed regardless of hover/selection/attachment state, so the row
-    /// never visually shifts — the checkbox fades in/out in place rather
-    /// than changing width.
-    private let indicatorClusterWidth: CGFloat = 20
-    private let checkboxClusterWidth: CGFloat = 28
+    /// never visually shifts.
+    private let leadingInset: CGFloat = 14
+    private let checkboxClusterWidth: CGFloat = 22
+    private let starClusterWidth: CGFloat = 22
+    private let importantClusterWidth: CGFloat = 22
     private let rowHorizontalPadding: CGFloat = 16
+
+    /// Sum of the 4 fixed leading elements (spacer/checkbox/star/important)
+    /// plus the 4 row-spacing gaps between them, so the attachment row
+    /// below can align under the subject text precisely.
+    private var contentIndent: CGFloat {
+        leadingInset + checkboxClusterWidth + starClusterWidth + importantClusterWidth + 4 * 10
+    }
 
     var body: some View {
         let message = thread.latest
 
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 12) {
-                // Provider color bar + unread dot — the true leading edge
-                // of the row, ahead of the checkbox.
-                HStack(spacing: 8) {
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(message.provider.color)
-                        .frame(width: 3, height: 20)
-                    Circle()
-                        .fill(thread.hasUnread ? message.provider.color : Color.clear)
-                        .frame(width: 7, height: 7)
-                }
-                .frame(width: indicatorClusterWidth, alignment: .leading)
-                .padding(.top, 2)
+            HStack(alignment: .top, spacing: 10) {
+                Color.clear.frame(width: leadingInset)
 
                 Button(action: onToggleCheck) {
                     Image(systemName: isChecked ? "checkmark.square.fill" : "square")
@@ -130,46 +128,58 @@ private struct ThreadRow: View {
                 }
                 .buttonStyle(.plain)
                 .frame(width: checkboxClusterWidth, alignment: .leading)
-                .opacity(isHovering || anySelectionActive ? 1 : 0)
                 .padding(.top, 2)
 
-                HStack(spacing: 10) {
-                    Text(message.senderName)
-                        .font(.subheadline.weight(thread.hasUnread ? .semibold : .regular))
-                        .lineLimit(1)
-                        .frame(width: 150, alignment: .leading)
-
-                    if thread.count > 1 {
-                        Text("\(thread.count)")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(Color.appHover))
-                    }
-
-                    (
-                        Text(message.subject).font(.subheadline.weight(thread.hasUnread ? .semibold : .regular))
-                        + Text("  —  ").foregroundColor(.secondary)
-                        + Text(message.snippet).foregroundColor(.secondary)
-                    )
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                    Spacer(minLength: 8)
-
-                    Text(message.receivedAt, format: .relative(presentation: .numeric))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                Button { vm.toggleStarred(message) } label: {
+                    Image(systemName: message.isStarred ? "star.fill" : "star")
+                        .foregroundStyle(message.isStarred ? .yellow : .secondary)
                 }
+                .buttonStyle(.plain)
+                .frame(width: starClusterWidth, alignment: .leading)
+                .padding(.top, 2)
+
+                Button { vm.toggleImportant(message) } label: {
+                    Image(systemName: message.isImportant ? "bookmark.fill" : "bookmark")
+                        .foregroundStyle(message.isImportant ? Color.appAccent : .secondary)
+                }
+                .buttonStyle(.plain)
+                .frame(width: importantClusterWidth, alignment: .leading)
+                .padding(.top, 2)
+
+                Text(message.senderName)
+                    .font(.appSubheadline.weight(thread.hasUnread ? .semibold : .regular))
+                    .lineLimit(1)
+                    .frame(width: 150, alignment: .leading)
+
+                if thread.count > 1 {
+                    Text("\(thread.count)")
+                        .font(.appCaption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.appHover))
+                }
+
+                (
+                    Text(message.subject).font(.appSubheadline.weight(thread.hasUnread ? .semibold : .regular))
+                    + Text("  —  ").foregroundColor(.secondary)
+                    + Text(message.snippet).foregroundColor(.secondary)
+                )
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+                Spacer(minLength: 8)
+
+                Text(message.receivedAt, format: .relative(presentation: .numeric))
+                    .font(.appCaption2)
+                    .foregroundStyle(.secondary)
             }
 
             if !message.attachments.isEmpty {
                 HStack(spacing: 8) {
                     // Aligned under the subject/snippet text, not the
-                    // sender column: indicator + checkbox clusters + the
-                    // fixed sender-name width, plus the gaps between them.
-                    Color.clear.frame(width: indicatorClusterWidth + 12 + checkboxClusterWidth + 12 + 150 + 10)
+                    // sender column.
+                    Color.clear.frame(width: contentIndent + 150 + 10)
                     ForEach(message.attachments.prefix(3)) { attachment in
                         AttachmentPill(attachment: attachment)
                     }
@@ -180,6 +190,15 @@ private struct ThreadRow: View {
         .padding(.vertical, 14)
         .background(isOpen || isChecked ? Color.appHover : (isHovering ? Color.appHover.opacity(0.6) : .clear))
         .contentShape(Rectangle())
+        .overlay(alignment: .leading) {
+            // Provider color "flag" — pokes out past the row's own left
+            // edge; the parent list is clipped so only the right half of
+            // this ellipse shows, like a tab sticking out from behind it.
+            Ellipse()
+                .fill(message.provider.color.opacity(thread.hasUnread ? 1 : 0.35))
+                .frame(width: 10, height: 26)
+                .offset(x: -5)
+        }
         .onHover { isHovering = $0 }
         .animation(.easeInOut(duration: 0.12), value: isHovering)
     }
@@ -194,12 +213,12 @@ private struct AttachmentPill: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: AttachmentIcon.systemName(forMimeType: attachment.mimeType))
-                .font(.system(size: 9, weight: .bold))
+                .font(.custom("DM Sans", size: 10).weight(.bold))
                 .foregroundStyle(.white)
                 .frame(width: 16, height: 16)
                 .background(RoundedRectangle(cornerRadius: 4).fill(tint))
             Text(attachment.filename)
-                .font(.caption2)
+                .font(.appCaption2)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }

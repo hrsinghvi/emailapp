@@ -25,10 +25,10 @@ private struct PendingSendBanner: View {
             ProgressView()
                 .controlSize(.small)
             Text("Sending… (\(remaining)s)")
-                .font(.subheadline)
+                .font(.appSubheadline)
             Button("Undo") { vm.undoSend(pending.id) }
                 .buttonStyle(.plain)
-                .font(.subheadline.weight(.semibold))
+                .font(.appSubheadline.weight(.semibold))
                 .foregroundStyle(Color.appAccent)
         }
         .padding(.horizontal, 16)

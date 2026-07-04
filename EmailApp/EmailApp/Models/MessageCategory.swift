@@ -18,21 +18,23 @@ enum MessageCategory: String, CaseIterable, Codable {
 
     var icon: String {
         switch self {
-        case .primary: return "tray.fill"
-        case .social: return "bubble.left.fill"
-        case .promotions: return "tag.fill"
-        case .updates: return "bell.fill"
-        case .forums: return "bubble.left.and.bubble.right.fill"
+        case .primary: return "tray"
+        case .social: return "bubble.left"
+        case .promotions: return "tag"
+        case .updates: return "bell"
+        case .forums: return "bubble.left.and.bubble.right"
         }
     }
 
+    /// Muted, not fully-saturated — outline icons read better dimmed than
+    /// at full opacity against the dark sidebar.
     var tint: Color {
         switch self {
-        case .primary: return Color(hex: "#e0796b")
-        case .social: return Color(hex: "#5b9bd5")
-        case .promotions: return Color.appAccent
-        case .updates: return Color(hex: "#e2984e")
-        case .forums: return Color(hex: "#5fb488")
+        case .primary: return Color(hex: "#e0796b").opacity(0.8)
+        case .social: return Color(hex: "#5b9bd5").opacity(0.8)
+        case .promotions: return Color.appAccent.opacity(0.8)
+        case .updates: return Color(hex: "#e2984e").opacity(0.8)
+        case .forums: return Color(hex: "#5fb488").opacity(0.8)
         }
     }
 

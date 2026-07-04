@@ -12,11 +12,16 @@ struct EmailAppApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var vm = InboxViewModel()
 
+    init() {
+        AppFontRegistration.registerOnce()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView(vm: vm)
                 .frame(minWidth: 1100, minHeight: 700)
                 .preferredColorScheme(.dark)
+                .environment(\.font, .appBody)
                 .onAppear { appDelegate.vm = vm }
                 .onChange(of: vm.totalUnreadCount) { _, count in
                     NSApplication.shared.dockTile.badgeLabel = count > 0 ? "\(count)" : nil

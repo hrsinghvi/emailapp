@@ -18,7 +18,7 @@ struct DraftsListView: View {
                 }
                 if vm.drafts.isEmpty {
                     Text("No drafts")
-                        .font(.subheadline)
+                        .font(.appSubheadline)
                         .foregroundStyle(.secondary)
                         .padding(.top, 40)
                 }
@@ -41,18 +41,18 @@ private struct DraftRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(draft.to.isEmpty ? "No recipient" : draft.to)
-                        .font(.subheadline.weight(.medium))
+                        .font(.appSubheadline.weight(.medium))
                         .lineLimit(1)
                     Spacer()
                     Text(draft.lastModified, format: .relative(presentation: .numeric))
-                        .font(.caption2)
+                        .font(.appCaption2)
                         .foregroundStyle(.secondary)
                 }
                 Text(draft.subject.isEmpty ? "(No subject)" : draft.subject)
-                    .font(.subheadline)
+                    .font(.appSubheadline)
                     .lineLimit(1)
                 Text(draft.snippet)
-                    .font(.caption)
+                    .font(.appCaption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

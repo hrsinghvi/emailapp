@@ -6,8 +6,14 @@ struct ContentView: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            // Extends flush to the window's top edge (behind the traffic
+            // lights) instead of respecting the same top inset as the rest
+            // of the content — its own internal padding pushes the nav
+            // items down clear of the traffic lights instead.
             SidebarView(vm: vm)
                 .frame(width: 240)
+                .frame(maxHeight: .infinity)
+                .ignoresSafeArea(.container, edges: .top)
 
             Group {
                 if vm.selectedThread != nil {
@@ -16,9 +22,6 @@ struct ContentView: View {
                     VStack(spacing: 10) {
                         TopBar(vm: vm)
                         ListToolbar(vm: vm)
-                        if vm.selectedFolder == "inbox" {
-                            CategoryTabBar(vm: vm)
-                        }
                         if vm.selectedFolder == "drafts" {
                             DraftsListView(vm: vm)
                         } else {
@@ -28,10 +31,10 @@ struct ContentView: View {
                 }
             }
             .frame(minWidth: 320, maxWidth: .infinity)
+            .padding(.top, 34)
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 12)
-        .padding(.top, 34)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.container, edges: .top)
         .background(
@@ -82,7 +85,7 @@ private struct TopBar: View {
                     .foregroundStyle(.secondary)
                 TextField("Search mail", text: $vm.searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 14))
+                    .font(.custom("DM Sans", size: 15))
                     .focused($isSearchFocused)
                     .onChange(of: vm.searchFocusTrigger) { _, _ in isSearchFocused = true }
             }
@@ -109,7 +112,7 @@ private struct ListToolbar: View {
                 vm.toggleSelectAll()
             } label: {
                 Image(systemName: allSelected ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 16))
+                    .font(.custom("DM Sans", size: 17))
                     .foregroundStyle(allSelected ? Color.appAccent : .secondary)
             }
             .buttonStyle(.plain)
@@ -123,7 +126,7 @@ private struct ListToolbar: View {
                 }
             } label: {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 15))
+                    .font(.custom("DM Sans", size: 16))
                     .rotationEffect(.degrees(isRefreshing ? 360 : 0))
                     .animation(isRefreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: isRefreshing)
             }
@@ -131,48 +134,35 @@ private struct ListToolbar: View {
             .foregroundStyle(.secondary)
 
             Spacer()
+
+            if range.total > 0 {
+                Text("\(range.start + 1)–\(range.end) of \(range.total)")
+                    .font(.appCaption)
+                    .foregroundStyle(.secondary)
+
+                Button { vm.goToPreviousPage() } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(vm.listPageIndex > 0 ? .secondary : Color.secondary.opacity(0.3))
+                .disabled(vm.listPageIndex == 0)
+
+                Button { vm.goToNextPage() } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(range.end < range.total ? .secondary : Color.secondary.opacity(0.3))
+                .disabled(range.end >= range.total)
+            }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 10)
     }
 
+    private var range: (start: Int, end: Int, total: Int) { vm.listPageRange }
+
     private var allSelected: Bool {
         !vm.filteredThreads.isEmpty && Set(vm.filteredThreads.map(\.id)) == vm.selectedThreadKeys
-    }
-}
-
-/// Gmail-style category tabs — icon + label, active tab gets an accent
-/// underline. Classification is a sender/subject heuristic
-/// (`MessageCategory.classify`), not real ML.
-private struct CategoryTabBar: View {
-    @Bindable var vm: InboxViewModel
-
-    var body: some View {
-        HStack(spacing: 96) {
-            ForEach(MessageCategory.allCases, id: \.self) { category in
-                Button {
-                    vm.categoryFilter = category
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: category.icon)
-                            .font(.system(size: 16))
-                        Text(category.label)
-                            .font(.system(size: 15, weight: vm.categoryFilter == category ? .semibold : .regular))
-                    }
-                    .foregroundStyle(vm.categoryFilter == category ? .primary : .secondary)
-                    .padding(.vertical, 14)
-                    .overlay(alignment: .bottom) {
-                        if vm.categoryFilter == category {
-                            Rectangle().fill(Color.appAccent).frame(height: 2)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 4)
-        .overlay(alignment: .bottom) { Divider().overlay(Color.appBorder) }
     }
 }
 
@@ -186,14 +176,14 @@ private struct ConnectivityIndicator: View {
     var body: some View {
         if !network.isOnline {
             Label("Offline", systemImage: "wifi.slash")
-                .font(.caption.weight(.medium))
+                .font(.appCaption.weight(.medium))
                 .foregroundStyle(.orange)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(Capsule().fill(Color.orange.opacity(0.15)))
         } else if !vm.offlineQueue.isEmpty {
             Label("Syncing \(vm.offlineQueue.count)…", systemImage: "arrow.triangle.2.circlepath")
-                .font(.caption.weight(.medium))
+                .font(.appCaption.weight(.medium))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)

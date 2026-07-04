@@ -52,11 +52,11 @@ struct ComposeView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(titleText)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.appSubheadline.weight(.semibold))
                 Spacer()
                 Button(action: onClose) {
                     Image(systemName: "xmark")
-                        .font(.caption.weight(.semibold))
+                        .font(.appCaption.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -71,7 +71,7 @@ struct ComposeView: View {
             } else {
                 Button("Add Cc/Bcc") { showCcBcc = true }
                     .buttonStyle(.plain)
-                    .font(.caption)
+                    .font(.appCaption)
                     .foregroundStyle(.secondary)
             }
 
@@ -104,7 +104,7 @@ struct ComposeView: View {
                     pickAttachments()
                 } label: {
                     Image(systemName: "paperclip")
-                        .font(.subheadline.weight(.medium))
+                        .font(.appSubheadline.weight(.medium))
                         .foregroundStyle(.secondary)
                         .padding(8)
                         .background(Circle().fill(Color.appHover))
@@ -119,7 +119,7 @@ struct ComposeView: View {
                     send()
                 } label: {
                     Text("Send")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.appSubheadline.weight(.semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
@@ -257,7 +257,7 @@ private struct LinkPromptView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Insert Link").font(.headline)
+            Text("Insert Link").font(.appHeadline)
             TextField("Text", text: $text).textFieldStyle(.roundedBorder)
             TextField("URL", text: $url).textFieldStyle(.roundedBorder)
             HStack {

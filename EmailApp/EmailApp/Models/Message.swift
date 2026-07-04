@@ -32,6 +32,10 @@ struct Message: Identifiable, Hashable, Codable {
     var toRecipients: [String] = []
     var ccRecipients: [String] = []
     var attachments: [Attachment] = []
+    /// Local-only flags — not synced to Gmail/Outlook star or importance
+    /// markers server-side, just persisted in this app's own message cache.
+    var isStarred: Bool = false
+    var isImportant: Bool = false
 
     /// Grouping key for thread view: falls back to the message's own id so
     /// a message with no thread/conversation id still renders as a

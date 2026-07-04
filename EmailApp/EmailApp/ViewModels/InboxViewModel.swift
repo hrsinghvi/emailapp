@@ -84,16 +84,20 @@ final class InboxViewModel {
     var expandedMessageIds: Set<UUID> = []
     var focusedMessageId: UUID?
 
-    var selectedFolder: String = "inbox"
-    var providerFilter: Provider?
+    var selectedFolder: String = "inbox" { didSet { listPageIndex = 0 } }
+    var providerFilter: Provider? { didSet { listPageIndex = 0 } }
     /// Gmail-style category tab — only meaningful (and only shown) for the
     /// inbox; other folders show every category mixed together.
-    var categoryFilter: MessageCategory = .primary
-    var searchText: String = ""
+    var categoryFilter: MessageCategory = .primary { didSet { listPageIndex = 0 } }
+    var searchText: String = "" { didSet { listPageIndex = 0 } }
     var composeContext: ComposeContext?
     var errorMessage: String?
     /// Bumped to request the search field take keyboard focus (Cmd+K).
     var searchFocusTrigger = 0
+
+    /// Gmail-style "1-50 of N" pagination for the message list.
+    var listPageIndex: Int = 0
+    let listPageSize = 50
 
     var drafts: [Draft] = []
     var pendingSends: [PendingSend] = []
@@ -302,6 +306,35 @@ final class InboxViewModel {
         .sorted { $0.latest.receivedAt > $1.latest.receivedAt }
     }
 
+    /// "1-50 of N" — clamped so switching to a shorter filtered set never
+    /// leaves the page pointed past the end.
+    var listPageRange: (start: Int, end: Int, total: Int) {
+        let total = filteredThreads.count
+        guard total > 0 else { return (0, 0, 0) }
+        let maxPage = (total - 1) / listPageSize
+        let page = min(listPageIndex, maxPage)
+        let start = page * listPageSize
+        let end = min(start + listPageSize, total)
+        return (start, end, total)
+    }
+
+    var pagedThreads: [MessageThread] {
+        let range = listPageRange
+        guard range.start < range.end else { return [] }
+        return Array(filteredThreads[range.start..<range.end])
+    }
+
+    func goToNextPage() {
+        let range = listPageRange
+        guard range.end < range.total else { return }
+        listPageIndex += 1
+    }
+
+    func goToPreviousPage() {
+        guard listPageIndex > 0 else { return }
+        listPageIndex -= 1
+    }
+
     var selectedThread: MessageThread? {
         guard let key = selectedThreadKey else { return nil }
         return filteredThreads.first { $0.id == key }
@@ -318,7 +351,14 @@ final class InboxViewModel {
 
     private var filteredMessages: [Message] {
         messages
-            .filter { selectedFolder == "all" ? $0.folder != "trash" : $0.folder == selectedFolder }
+            .filter { message in
+                switch selectedFolder {
+                case "all": return message.folder != "trash"
+                case "starred": return message.isStarred
+                case "important": return message.isImportant
+                default: return message.folder == selectedFolder
+                }
+            }
             .filter { providerFilter == nil || $0.provider == providerFilter }
             .filter { selectedFolder != "inbox" || $0.category == categoryFilter }
             .filter { message in
@@ -399,6 +439,20 @@ final class InboxViewModel {
     func toggleReadFocused() {
         guard let message = focusedMessage else { return }
         toggleReadStatus(message)
+    }
+
+    /// Local-only — see the doc comment on `Message.isStarred`.
+    func toggleStarred(_ message: Message) {
+        guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
+        messages[index].isStarred.toggle()
+        MessageCacheStore.save(messages)
+    }
+
+    /// Local-only — see the doc comment on `Message.isImportant`.
+    func toggleImportant(_ message: Message) {
+        guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
+        messages[index].isImportant.toggle()
+        MessageCacheStore.save(messages)
     }
 
     /// Optimistic update. Offline: queued and kept as-is (offline actions

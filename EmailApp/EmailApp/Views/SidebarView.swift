@@ -4,38 +4,32 @@ struct SidebarView: View {
     @Bindable var vm: InboxViewModel
     @State private var isConnectingGmail = false
     @State private var isConnectingOutlook = false
-    @State private var isInboxExpanded = false
+    @State private var isInboxExpanded = true
 
+    /// Plain (non-category) folders shown below the colored Views rows,
+    /// in one continuous list — no section dividers.
     private let mailFolders: [(id: String, label: String, icon: String)] = [
-        ("all", "All Mail", "tray.2"),
         ("sent", "Sent", "paperplane"),
-        ("drafts", "Drafts", "doc"),
-        ("archive", "Archive", "archivebox"),
-        ("trash", "Trash", "trash")
+        ("drafts", "Drafts", "doc")
     ]
 
     private var primaryAccount: Account? { vm.accounts.first }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
+            composeButton
                 .padding(.bottom, 14)
 
-            SearchRow(vm: vm)
-                .padding(.bottom, 14)
-
-            SectionLabel("Views")
             VStack(alignment: .leading, spacing: 2) {
                 InboxNavItem(vm: vm, isExpanded: $isInboxExpanded)
                 ForEach([MessageCategory.social, .promotions, .updates, .forums], id: \.self) { category in
                     CategoryNavItem(vm: vm, category: category)
                 }
-            }
-            .padding(.top, 6)
-            .padding(.bottom, 14)
 
-            SectionLabel("Mail")
-            VStack(alignment: .leading, spacing: 2) {
+                NavItem(label: "Starred", icon: "star", isActive: vm.selectedFolder == "starred") {
+                    vm.selectedFolder = "starred"
+                }
+
                 ForEach(mailFolders, id: \.id) { folder in
                     NavItem(
                         label: folder.label,
@@ -46,89 +40,109 @@ struct SidebarView: View {
                         vm.selectedFolder = folder.id
                     }
                 }
+
+                NavItem(label: "Important", icon: "bookmark", isActive: vm.selectedFolder == "important") {
+                    vm.selectedFolder = "important"
+                }
+                NavItem(label: "Archive", icon: "archivebox", isActive: vm.selectedFolder == "archive") {
+                    vm.selectedFolder = "archive"
+                }
+                NavItem(label: "Trash", icon: "trash", isActive: vm.selectedFolder == "trash") {
+                    vm.selectedFolder = "trash"
+                }
+                NavItem(label: "All Mail", icon: "envelope", isActive: vm.selectedFolder == "all") {
+                    vm.selectedFolder = "all"
+                }
             }
-            .padding(.top, 6)
 
             Spacer()
 
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(vm.accounts) { account in
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(account.provider.color)
-                            .frame(width: 8, height: 8)
-                        Text(account.email)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                }
+            connectRow
+                .padding(.bottom, 8)
 
-                connectButton(
-                    isConnecting: isConnectingGmail, label: "Connect Gmail",
-                    action: {
-                        isConnectingGmail = true
-                        Task {
-                            await vm.loadGmail()
-                            isConnectingGmail = false
-                        }
-                    }
-                )
-                connectButton(
-                    isConnecting: isConnectingOutlook, label: "Connect Outlook",
-                    action: {
-                        isConnectingOutlook = true
-                        Task {
-                            await vm.loadOutlook()
-                            isConnectingOutlook = false
-                        }
-                    }
-                )
-            }
-            .padding(.top, 8)
-            .overlay(alignment: .top) { Divider().overlay(Color.appBorder) }
+            footer
         }
         .padding(14)
+        .padding(.top, 34)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Color.appSurface)
     }
 
-    private var header: some View {
+    private var composeButton: some View {
+        Button {
+            vm.composeContext = .new
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "square.and.pencil")
+                Text("Compose")
+                Spacer()
+            }
+            .font(.appSubheadline.weight(.semibold))
+            .foregroundStyle(Color.appBackground)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.92)))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Real account-connection management (distinct from `Provider`
+    /// shortcuts on the Inbox row) — kept out of the flat nav list since
+    /// it's setup/utility, not a view you navigate into.
+    private var connectRow: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            connectButton(
+                isConnecting: isConnectingGmail, label: "Connect Gmail",
+                action: {
+                    isConnectingGmail = true
+                    Task {
+                        await vm.loadGmail()
+                        isConnectingGmail = false
+                    }
+                }
+            )
+            connectButton(
+                isConnecting: isConnectingOutlook, label: "Connect Outlook",
+                action: {
+                    isConnectingOutlook = true
+                    Task {
+                        await vm.loadOutlook()
+                        isConnectingOutlook = false
+                    }
+                }
+            )
+        }
+    }
+
+    private var footer: some View {
         HStack(spacing: 10) {
             Circle()
                 .fill(primaryAccount?.provider.color ?? Color.appHover)
                 .frame(width: 32, height: 32)
                 .overlay(
                     Text(primaryAccount?.prettyLocalName.prefix(1) ?? "?")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.appSubheadline.weight(.semibold))
                         .foregroundStyle(.white)
                 )
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(primaryAccount?.prettyLocalName ?? "No account")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.appCaption.weight(.semibold))
                     .lineLimit(1)
-                Text(primaryAccount?.email ?? "Connect an account below")
-                    .font(.caption2)
+                Text(primaryAccount?.email ?? "Connect below")
+                    .font(.appCaption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
 
             Spacer(minLength: 4)
 
-            Button {
-                vm.composeContext = .new
-            } label: {
-                Image(systemName: "square.and.pencil")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .padding(6)
-                    .background(Circle().fill(Color.appHover))
-            }
-            .buttonStyle(.plain)
+            // No settings screen exists yet — this doesn't do anything.
+            Image(systemName: "gearshape")
+                .foregroundStyle(.secondary)
         }
+        .padding(.top, 10)
+        .overlay(alignment: .top) { Divider().overlay(Color.appBorder) }
     }
 
     private func connectButton(isConnecting: Bool, label: String, action: @escaping () -> Void) -> some View {
@@ -140,7 +154,7 @@ struct SidebarView: View {
                     Image(systemName: "plus.circle")
                 }
                 Text(isConnecting ? "Connecting…" : label)
-                    .font(.caption)
+                    .font(.appCaption)
             }
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
@@ -148,43 +162,6 @@ struct SidebarView: View {
         }
         .buttonStyle(.plain)
         .disabled(isConnecting)
-    }
-}
-
-/// Tapping this focuses the existing search field in the top bar (same
-/// trigger Cmd+K already uses) rather than duplicating a second search
-/// implementation in the sidebar.
-private struct SearchRow: View {
-    let vm: InboxViewModel
-
-    var body: some View {
-        Button {
-            vm.searchFocusTrigger += 1
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .frame(width: 18)
-                Text("Search")
-                    .font(.subheadline)
-                Spacer()
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct SectionLabel: View {
-    let text: String
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text.uppercased())
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(.tertiary)
-            .padding(.horizontal, 8)
     }
 }
 
@@ -210,15 +187,18 @@ private struct InboxNavItem: View {
                         .foregroundStyle(MessageCategory.primary.tint)
                         .frame(width: 18)
                     Text("Inbox")
-                        .font(.subheadline.weight(.medium))
+                        .font(.appSubheadline.weight(.medium))
                     Spacer()
                     if let unreadBadge {
                         Text(unreadBadge)
-                            .font(.caption2.weight(.semibold))
+                            .font(.appCaption2.weight(.semibold))
                             .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.appHover))
                     }
                     Image(systemName: "chevron.up")
-                        .font(.caption2.weight(.semibold))
+                        .font(.appCaption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(isExpanded ? 0 : 180))
                         .contentShape(Rectangle())
@@ -271,12 +251,15 @@ private struct CategoryNavItem: View {
                     .foregroundStyle(category.tint)
                     .frame(width: 18)
                 Text(category.label)
-                    .font(.subheadline.weight(.medium))
+                    .font(.appSubheadline.weight(.medium))
                 Spacer()
                 if let badge {
                     Text(badge)
-                        .font(.caption2.weight(.semibold))
+                        .font(.appCaption2.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.appHover))
                 }
             }
             .foregroundStyle(.primary)
@@ -300,7 +283,7 @@ private struct ProviderShortcut: View {
                 Circle().fill(color).frame(width: 6, height: 6)
                     .padding(.leading, 18)
                 Text(label)
-                    .font(.subheadline)
+                    .font(.appSubheadline)
                 Spacer()
             }
             .foregroundStyle(isActive ? .primary : .secondary)
@@ -325,11 +308,11 @@ private struct NavItem: View {
                 Image(systemName: icon)
                     .frame(width: 18)
                 Text(label)
-                    .font(.subheadline)
+                    .font(.appSubheadline)
                 Spacer()
                 if let badge {
                     Text(badge)
-                        .font(.caption2.weight(.semibold))
+                        .font(.appCaption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
