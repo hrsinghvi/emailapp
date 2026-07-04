@@ -17,14 +17,14 @@ enum AppFontRegistration {
 }
 
 /// DM Sans equivalents of the system text styles used throughout the app,
-/// one point size larger than their default (subheadline 15->16, etc).
+/// matching their default system point sizes (subheadline 15, etc).
 /// `.weight()` still chains onto these normally.
 extension Font {
-    static let appLargeTitle = Font.custom("DM Sans", size: 35)
-    static let appTitle2 = Font.custom("DM Sans", size: 23)
-    static let appHeadline = Font.custom("DM Sans", size: 18).weight(.semibold)
-    static let appBody = Font.custom("DM Sans", size: 18)
-    static let appSubheadline = Font.custom("DM Sans", size: 16)
-    static let appCaption = Font.custom("DM Sans", size: 13)
-    static let appCaption2 = Font.custom("DM Sans", size: 12)
+    static let appLargeTitle = Font.custom("DM Sans", size: 34)
+    static let appTitle2 = Font.custom("DM Sans", size: 22)
+    static let appHeadline = Font.custom("DM Sans", size: 17).weight(.semibold)
+    static let appBody = Font.custom("DM Sans", size: 17)
+    static let appSubheadline = Font.custom("DM Sans", size: 15)
+    static let appCaption = Font.custom("DM Sans", size: 12)
+    static let appCaption2 = Font.custom("DM Sans", size: 11)
 }

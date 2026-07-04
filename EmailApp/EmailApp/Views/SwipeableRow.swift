@@ -64,7 +64,7 @@ struct SwipeableRow<Content: View>: View {
         ZStack {
             RoundedRectangle(cornerRadius: 10).fill(color.opacity(0.85))
             Image(systemName: icon)
-                .font(.custom("DM Sans", size: 15).weight(.medium))
+                .font(.custom("DM Sans", size: 14).weight(.medium))
                 .foregroundStyle(.white)
                 .opacity(width > 28 ? 1 : 0)
         }

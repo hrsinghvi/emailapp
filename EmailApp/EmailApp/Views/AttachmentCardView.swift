@@ -19,7 +19,7 @@ struct AttachmentCardView: View {
                             .aspectRatio(contentMode: .fill)
                     } else {
                         Image(systemName: systemIconName)
-                            .font(.custom("DM Sans", size: 27))
+                            .font(.custom("DM Sans", size: 26))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -33,7 +33,7 @@ struct AttachmentCardView: View {
                         Image(systemName: "xmark.circle.fill")
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(.white, Color.black.opacity(0.65))
-                            .font(.custom("DM Sans", size: 16))
+                            .font(.custom("DM Sans", size: 15))
                     }
                     .buttonStyle(.plain)
                     .padding(3)

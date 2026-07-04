@@ -86,7 +86,7 @@ private struct TopBar: View {
                     .foregroundStyle(.secondary)
                 TextField("Search mail", text: $vm.searchText)
                     .textFieldStyle(.plain)
-                    .font(.custom("DM Sans", size: 15))
+                    .font(.custom("DM Sans", size: 14))
                     .focused($isSearchFocused)
                     .onChange(of: vm.searchFocusTrigger) { _, _ in isSearchFocused = true }
             }
@@ -113,7 +113,7 @@ private struct ListToolbar: View {
                 vm.toggleSelectAll()
             } label: {
                 Image(systemName: allSelected ? "checkmark.square.fill" : "square")
-                    .font(.custom("DM Sans", size: 17))
+                    .font(.custom("DM Sans", size: 15))
                     .foregroundStyle(allSelected ? Color.appAccent : .secondary)
             }
             .buttonStyle(.plain)
@@ -127,7 +127,7 @@ private struct ListToolbar: View {
                 }
             } label: {
                 Image(systemName: "arrow.clockwise")
-                    .font(.custom("DM Sans", size: 16))
+                    .font(.custom("DM Sans", size: 15))
                     .rotationEffect(.degrees(isRefreshing ? 360 : 0))
                     .animation(isRefreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: isRefreshing)
             }
