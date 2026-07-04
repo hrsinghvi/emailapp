@@ -18,6 +18,8 @@ struct SidebarView: View {
 
     private var primaryAccount: Account? { vm.accounts.first }
 
+    private func badge(_ count: Int) -> String? { count > 0 ? "\(count)" : nil }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             composeButton
@@ -31,7 +33,8 @@ struct SidebarView: View {
 
                 NavItem(
                     label: "Starred", icon: "star", isActive: vm.selectedFolder == "starred",
-                    tint: Color(hex: "#e8c547").opacity(0.85)
+                    tint: Color(hex: "#e8c547").opacity(0.85),
+                    badge: badge(vm.messageCount(forFolder: "starred"))
                 ) {
                     vm.selectedFolder = "starred"
                 }
@@ -42,7 +45,7 @@ struct SidebarView: View {
                         icon: folder.icon,
                         isActive: vm.selectedFolder == folder.id,
                         tint: folder.tint,
-                        badge: folder.id == "drafts" && !vm.drafts.isEmpty ? "\(vm.drafts.count)" : nil
+                        badge: folder.id == "drafts" ? badge(vm.drafts.count) : badge(vm.messageCount(forFolder: folder.id))
                     ) {
                         vm.selectedFolder = folder.id
                     }
@@ -50,25 +53,29 @@ struct SidebarView: View {
 
                 NavItem(
                     label: "Important", icon: "bookmark", isActive: vm.selectedFolder == "important",
-                    tint: Color(hex: "#e2678f").opacity(0.85)
+                    tint: Color(hex: "#e2678f").opacity(0.85),
+                    badge: badge(vm.messageCount(forFolder: "important"))
                 ) {
                     vm.selectedFolder = "important"
                 }
                 NavItem(
                     label: "Archive", icon: "archivebox", isActive: vm.selectedFolder == "archive",
-                    tint: Color(hex: "#a8c14e").opacity(0.8)
+                    tint: Color(hex: "#a8c14e").opacity(0.8),
+                    badge: badge(vm.messageCount(forFolder: "archive"))
                 ) {
                     vm.selectedFolder = "archive"
                 }
                 NavItem(
                     label: "Trash", icon: "trash", isActive: vm.selectedFolder == "trash",
-                    tint: Color(hex: "#7b8fe0").opacity(0.8)
+                    tint: Color(hex: "#7b8fe0").opacity(0.8),
+                    badge: badge(vm.messageCount(forFolder: "trash"))
                 ) {
                     vm.selectedFolder = "trash"
                 }
                 NavItem(
                     label: "All Mail", icon: "envelope", isActive: vm.selectedFolder == "all",
-                    tint: Color(hex: "#c766c9").opacity(0.8)
+                    tint: Color(hex: "#c766c9").opacity(0.8),
+                    badge: badge(vm.messageCount(forFolder: "all"))
                 ) {
                     vm.selectedFolder = "all"
                 }

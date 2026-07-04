@@ -128,6 +128,18 @@ final class InboxViewModel {
         messages.filter { $0.folder == "inbox" && !$0.isRead && $0.category == category }.count
     }
 
+    /// Backs the sidebar's Starred/Sent/Important/Archive/Trash/All Mail
+    /// badges — total count in that folder, not just unread (matching how
+    /// Starred in particular is conventionally shown).
+    func messageCount(forFolder folder: String) -> Int {
+        switch folder {
+        case "all": return messages.filter { $0.folder != "trash" }.count
+        case "starred": return messages.filter { $0.isStarred }.count
+        case "important": return messages.filter { $0.isImportant }.count
+        default: return messages.filter { $0.folder == folder }.count
+        }
+    }
+
     init() {
         accounts = []
         messages = []
