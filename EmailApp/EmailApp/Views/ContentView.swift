@@ -104,11 +104,12 @@ private struct ListToolbar: View {
     @State private var isRefreshing = false
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 22) {
             Button {
                 vm.toggleSelectAll()
             } label: {
                 Image(systemName: allSelected ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 16))
                     .foregroundStyle(allSelected ? Color.appAccent : .secondary)
             }
             .buttonStyle(.plain)
@@ -122,6 +123,7 @@ private struct ListToolbar: View {
                 }
             } label: {
                 Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 15))
                     .rotationEffect(.degrees(isRefreshing ? 360 : 0))
                     .animation(isRefreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: isRefreshing)
             }
@@ -130,7 +132,8 @@ private struct ListToolbar: View {
 
             Spacer()
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 10)
     }
 
     private var allSelected: Bool {
@@ -145,18 +148,19 @@ private struct CategoryTabBar: View {
     @Bindable var vm: InboxViewModel
 
     var body: some View {
-        HStack(spacing: 28) {
+        HStack(spacing: 40) {
             ForEach(MessageCategory.allCases, id: \.self) { category in
                 Button {
                     vm.categoryFilter = category
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 10) {
                         Image(systemName: category.icon)
+                            .font(.system(size: 16))
                         Text(category.label)
+                            .font(.system(size: 15, weight: vm.categoryFilter == category ? .semibold : .regular))
                     }
-                    .font(.subheadline.weight(vm.categoryFilter == category ? .semibold : .regular))
                     .foregroundStyle(vm.categoryFilter == category ? .primary : .secondary)
-                    .padding(.bottom, 10)
+                    .padding(.vertical, 14)
                     .overlay(alignment: .bottom) {
                         if vm.categoryFilter == category {
                             Rectangle().fill(Color.appAccent).frame(height: 2)
