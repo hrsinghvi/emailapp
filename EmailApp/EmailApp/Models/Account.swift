@@ -29,6 +29,18 @@ struct Account: Identifiable, Hashable {
         self.email = email
         self.displayName = displayName
     }
+
+    /// Neither OAuth provider hands back a display name from just the
+    /// refresh flow here — humanize the address's local part ("hritvik.singhvi"
+    /// -> "Hritvik Singhvi") for the sidebar header rather than showing the
+    /// raw email twice.
+    var prettyLocalName: String {
+        let localPart = email.split(separator: "@").first.map(String.init) ?? email
+        return localPart
+            .split(whereSeparator: { $0 == "." || $0 == "_" || $0 == "-" })
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+    }
 }
 
 private nonisolated extension UUID {

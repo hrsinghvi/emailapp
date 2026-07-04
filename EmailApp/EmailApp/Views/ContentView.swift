@@ -15,9 +15,6 @@ struct ContentView: View {
                 } else {
                     VStack(spacing: 12) {
                         TopBar(vm: vm)
-                        if vm.selectedFolder == "inbox" {
-                            CategoryTabBar(vm: vm)
-                        }
                         if vm.selectedFolder == "drafts" {
                             DraftsListView(vm: vm)
                         } else {
@@ -116,39 +113,6 @@ private struct ConnectivityIndicator: View {
                 .padding(.vertical, 6)
                 .background(Capsule().fill(Color.appHover))
         }
-    }
-}
-
-/// Gmail-style category tabs — only shown for the inbox. Classification is
-/// a sender/subject heuristic (`MessageCategory.classify`), not real ML.
-private struct CategoryTabBar: View {
-    @Bindable var vm: InboxViewModel
-
-    var body: some View {
-        HStack(spacing: 18) {
-            ForEach(MessageCategory.allCases, id: \.self) { category in
-                Button {
-                    vm.categoryFilter = category
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: category.icon)
-                        Text(category.label)
-                    }
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(vm.categoryFilter == category ? .primary : .secondary)
-                    .padding(.bottom, 8)
-                    .overlay(alignment: .bottom) {
-                        if vm.categoryFilter == category {
-                            Rectangle().fill(Color.appAccent).frame(height: 2)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 4)
-        .overlay(alignment: .bottom) { Divider().overlay(Color.appBorder) }
     }
 }
 

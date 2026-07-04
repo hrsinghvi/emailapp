@@ -106,6 +106,11 @@ final class InboxViewModel {
         messages.filter { $0.folder == "inbox" && !$0.isRead }.count
     }
 
+    /// Backs the sidebar's per-category ("Views") badge counts.
+    func unreadCount(for category: MessageCategory) -> Int {
+        messages.filter { $0.folder == "inbox" && !$0.isRead && $0.category == category }.count
+    }
+
     init() {
         accounts = []
         messages = []
@@ -313,7 +318,7 @@ final class InboxViewModel {
 
     private var filteredMessages: [Message] {
         messages
-            .filter { $0.folder == selectedFolder }
+            .filter { selectedFolder == "all" ? $0.folder != "trash" : $0.folder == selectedFolder }
             .filter { providerFilter == nil || $0.provider == providerFilter }
             .filter { selectedFolder != "inbox" || $0.category == categoryFilter }
             .filter { message in

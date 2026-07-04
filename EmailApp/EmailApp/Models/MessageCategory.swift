@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 /// Gmail-style inbox categories. There's no ML classifier backing this (Gmail's
 /// is server-side and proprietary) — this is a sender/subject heuristic, same
@@ -18,11 +18,21 @@ enum MessageCategory: String, CaseIterable, Codable {
 
     var icon: String {
         switch self {
-        case .primary: return "tray"
-        case .social: return "person.2"
-        case .promotions: return "tag"
-        case .updates: return "bell"
-        case .forums: return "bubble.left.and.bubble.right"
+        case .primary: return "tray.fill"
+        case .social: return "bubble.left.fill"
+        case .promotions: return "tag.fill"
+        case .updates: return "bell.fill"
+        case .forums: return "bubble.left.and.bubble.right.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .primary: return Color(hex: "#e0796b")
+        case .social: return Color(hex: "#5b9bd5")
+        case .promotions: return Color.appAccent
+        case .updates: return Color(hex: "#e2984e")
+        case .forums: return Color(hex: "#5fb488")
         }
     }
 

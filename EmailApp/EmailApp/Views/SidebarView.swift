@@ -4,39 +4,39 @@ struct SidebarView: View {
     @Bindable var vm: InboxViewModel
     @State private var isConnectingGmail = false
     @State private var isConnectingOutlook = false
+    @State private var isInboxExpanded = false
 
-    @State private var isInboxExpanded = true
-
-    private let folders: [(id: String, label: String, icon: String)] = [
+    private let mailFolders: [(id: String, label: String, icon: String)] = [
+        ("all", "All Mail", "tray.2"),
         ("sent", "Sent", "paperplane"),
         ("drafts", "Drafts", "doc"),
         ("archive", "Archive", "archivebox"),
         ("trash", "Trash", "trash")
     ]
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Button {
-                vm.composeContext = .new
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "square.and.pencil")
-                    Text("Compose")
-                    Spacer()
-                }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color.appSurfaceRaised))
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.appBorder))
-            }
-            .buttonStyle(.plain)
+    private var primaryAccount: Account? { vm.accounts.first }
 
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+                .padding(.bottom, 14)
+
+            SearchRow(vm: vm)
+                .padding(.bottom, 14)
+
+            SectionLabel("Views")
             VStack(alignment: .leading, spacing: 2) {
                 InboxNavItem(vm: vm, isExpanded: $isInboxExpanded)
+                ForEach([MessageCategory.social, .promotions, .updates, .forums], id: \.self) { category in
+                    CategoryNavItem(vm: vm, category: category)
+                }
+            }
+            .padding(.top, 6)
+            .padding(.bottom, 14)
 
-                ForEach(folders, id: \.id) { folder in
+            SectionLabel("Mail")
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(mailFolders, id: \.id) { folder in
                     NavItem(
                         label: folder.label,
                         icon: folder.icon,
@@ -47,6 +47,7 @@ struct SidebarView: View {
                     }
                 }
             }
+            .padding(.top, 6)
 
             Spacer()
 
@@ -94,6 +95,42 @@ struct SidebarView: View {
         .background(Color.appSurface)
     }
 
+    private var header: some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(primaryAccount?.provider.color ?? Color.appHover)
+                .frame(width: 32, height: 32)
+                .overlay(
+                    Text(primaryAccount?.prettyLocalName.prefix(1) ?? "?")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                )
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(primaryAccount?.prettyLocalName ?? "No account")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text(primaryAccount?.email ?? "Connect an account below")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 4)
+
+            Button {
+                vm.composeContext = .new
+            } label: {
+                Image(systemName: "square.and.pencil")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(6)
+                    .background(Circle().fill(Color.appHover))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private func connectButton(isConnecting: Bool, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
@@ -114,36 +151,71 @@ struct SidebarView: View {
     }
 }
 
-/// The "Inbox" row is a disclosure: tapping the label opens the inbox with
-/// no provider filter ("All"), the chevron expands/collapses Gmail/Outlook
-/// shortcuts that open the inbox pre-filtered to that provider — same
-/// filtering `vm.providerFilter` already did as a chip row up top.
+/// Tapping this focuses the existing search field in the top bar (same
+/// trigger Cmd+K already uses) rather than duplicating a second search
+/// implementation in the sidebar.
+private struct SearchRow: View {
+    let vm: InboxViewModel
+
+    var body: some View {
+        Button {
+            vm.searchFocusTrigger += 1
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .frame(width: 18)
+                Text("Search")
+                    .font(.subheadline)
+                Spacer()
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct SectionLabel: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, 8)
+    }
+}
+
+/// The "Inbox" row doubles as the Primary category view (colored icon +
+/// unread count, like the other Views rows) and a disclosure: the chevron
+/// expands Gmail/Outlook shortcuts that open the inbox pre-filtered to that
+/// provider — same `vm.providerFilter` that used to live in top-bar chips.
 private struct InboxNavItem: View {
     @Bindable var vm: InboxViewModel
     @Binding var isExpanded: Bool
 
-    private var isActive: Bool { vm.selectedFolder == "inbox" }
+    private var isActive: Bool { vm.selectedFolder == "inbox" && vm.categoryFilter == .primary }
     private var unreadBadge: String? { vm.totalUnreadCount > 0 ? "\(vm.totalUnreadCount)" : nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Button {
                 vm.selectedFolder = "inbox"
-                vm.providerFilter = nil
+                vm.categoryFilter = .primary
             } label: {
                 HStack(spacing: 10) {
-                    Image(systemName: "tray")
+                    Image(systemName: MessageCategory.primary.icon)
+                        .foregroundStyle(MessageCategory.primary.tint)
                         .frame(width: 18)
                     Text("Inbox")
-                        .font(.subheadline)
+                        .font(.subheadline.weight(.medium))
                     Spacer()
                     if let unreadBadge {
                         Text(unreadBadge)
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(Color.appHover))
                     }
                     Image(systemName: "chevron.up")
                         .font(.caption2.weight(.semibold))
@@ -152,24 +224,67 @@ private struct InboxNavItem: View {
                         .contentShape(Rectangle())
                         .onTapGesture { isExpanded.toggle() }
                 }
-                .foregroundStyle(isActive ? .primary : .secondary)
+                .foregroundStyle(.primary)
                 .padding(.horizontal, 8)
-                .padding(.vertical, 7)
-                .background(RoundedRectangle(cornerRadius: 8).fill(isActive && vm.providerFilter == nil ? Color.appHover : .clear))
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(isActive ? Color.appHover : .clear))
             }
             .buttonStyle(.plain)
 
             if isExpanded {
                 ProviderShortcut(label: "Gmail", color: Provider.gmail.color, isActive: isActive && vm.providerFilter == .gmail) {
                     vm.selectedFolder = "inbox"
+                    vm.categoryFilter = .primary
                     vm.providerFilter = .gmail
                 }
                 ProviderShortcut(label: "Outlook", color: Provider.outlook.color, isActive: isActive && vm.providerFilter == .outlook) {
                     vm.selectedFolder = "inbox"
+                    vm.categoryFilter = .primary
                     vm.providerFilter = .outlook
                 }
             }
         }
+    }
+}
+
+/// A Views row for one of the non-Primary categories (Social, Promotions,
+/// Updates, Forums) — colored icon + right-aligned unread count, Notion
+/// Mail style.
+private struct CategoryNavItem: View {
+    @Bindable var vm: InboxViewModel
+    let category: MessageCategory
+
+    private var isActive: Bool { vm.selectedFolder == "inbox" && vm.categoryFilter == category }
+    private var badge: String? {
+        let count = vm.unreadCount(for: category)
+        return count > 0 ? "\(count)" : nil
+    }
+
+    var body: some View {
+        Button {
+            vm.selectedFolder = "inbox"
+            vm.categoryFilter = category
+            vm.providerFilter = nil
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: category.icon)
+                    .foregroundStyle(category.tint)
+                    .frame(width: 18)
+                Text(category.label)
+                    .font(.subheadline.weight(.medium))
+                Spacer()
+                if let badge {
+                    Text(badge)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 8).fill(isActive ? Color.appHover : .clear))
+        }
+        .buttonStyle(.plain)
     }
 }
 
