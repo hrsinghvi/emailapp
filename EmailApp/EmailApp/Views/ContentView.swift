@@ -1,12 +1,5 @@
 import SwiftUI
 
-private struct WidthPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 struct ContentView: View {
     @Bindable var vm: InboxViewModel
     @FocusState private var isContentFocused: Bool
@@ -146,14 +139,11 @@ private struct TopBar: View {
     ]
 
     private let searchBarHeight: CGFloat = 44
-    // Real width comes from the PreferenceKey below once laid out; this is
-    // just a sane default so the dropdown never renders at width 0 on the
-    // very first frame (that collapsed its background to nothing and let
-    // the chip row overflow past it, unclipped).
-    @State private var searchBarWidth: CGFloat = 320
 
     var body: some View {
         GeometryReader { sectionGeo in
+            let searchBarWidth = sectionGeo.size.width * 0.5
+
             HStack(spacing: 10) {
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
@@ -173,19 +163,11 @@ private struct TopBar: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .frame(width: sectionGeo.size.width * 0.5, height: searchBarHeight)
+                .frame(width: searchBarWidth, height: searchBarHeight)
                 .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 22))
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(key: WidthPreferenceKey.self, value: geo.size.width)
-                    }
-                )
-                .onPreferenceChange(WidthPreferenceKey.self) { newWidth in
-                    if newWidth > 0 { searchBarWidth = newWidth }
-                }
                 .overlay(alignment: .topLeading) {
                     if isSearchFocused {
-                        searchDropdown
+                        searchDropdown(width: searchBarWidth)
                             .offset(y: searchBarHeight + 4)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
@@ -205,7 +187,7 @@ private struct TopBar: View {
         return recentSearches.filter { $0.localizedCaseInsensitiveContains(vm.searchText) }
     }
 
-    private var searchDropdown: some View {
+    private func searchDropdown(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             FlowLayout(spacing: 6) {
                 ForEach(quickFilters, id: \.token) { filter in
@@ -235,7 +217,7 @@ private struct TopBar: View {
             }
         }
         .padding(10)
-        .frame(width: searchBarWidth, alignment: .leading)
+        .frame(width: width, alignment: .leading)
         .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.appBorder))
         .shadow(color: .black.opacity(0.4), radius: 16, y: 6)
