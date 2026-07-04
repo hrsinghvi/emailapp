@@ -11,9 +11,9 @@ struct ComposeView: View {
 
     @State private var draftId = UUID()
     @State private var origin: DraftOrigin = .new
-    @State private var to = ""
-    @State private var cc = ""
-    @State private var bcc = ""
+    @State private var toEmails: [String] = []
+    @State private var ccEmails: [String] = []
+    @State private var bccEmails: [String] = []
     @State private var showCcBcc = false
     @State private var subject = ""
     @State private var attributedBody = NSAttributedString(string: "")
@@ -67,12 +67,11 @@ struct ComposeView: View {
                 .buttonStyle(.plain)
             }
 
-            field("To", text: $to)
-                .disabled(toIsFixed)
+            RecipientChipField(placeholder: "To", emails: $toEmails, isDisabled: toIsFixed)
 
             if showCcBcc {
-                field("Cc", text: $cc)
-                field("Bcc", text: $bcc)
+                RecipientChipField(placeholder: "Cc", emails: $ccEmails)
+                RecipientChipField(placeholder: "Bcc", emails: $bccEmails)
             } else {
                 Button("Add Cc/Bcc") { showCcBcc = true }
                     .buttonStyle(.plain)
@@ -136,7 +135,7 @@ struct ComposeView: View {
                         .background(Capsule().fill(Color.appAccent.opacity(0.9)))
                 }
                 .buttonStyle(.plain)
-                .disabled(to.isEmpty || subject.isEmpty)
+                .disabled(toEmails.isEmpty || subject.isEmpty)
             }
         }
         .padding(20)
@@ -168,15 +167,14 @@ struct ComposeView: View {
             attributedBody = signatureAttributedString(forAccount: vm.accounts.first)
         case .reply(let message):
             origin = .reply(messageId: message.id)
-            to = message.senderEmail
+            toEmails = [message.senderEmail]
             subject = message.subject.lowercased().hasPrefix("re:") ? message.subject : "Re: \(message.subject)"
             attributedBody = signatureAttributedString(forAccount: vm.accounts.first { $0.id == message.accountId })
         case .replyAll(let message):
             origin = .replyAll(messageId: message.id)
             var seen = Set<String>()
-            let recipients = ([message.senderEmail] + message.toRecipients + message.ccRecipients)
+            toEmails = ([message.senderEmail] + message.toRecipients + message.ccRecipients)
                 .filter { seen.insert($0.lowercased()).inserted }
-            to = recipients.joined(separator: ", ")
             subject = message.subject.lowercased().hasPrefix("re:") ? message.subject : "Re: \(message.subject)"
             attributedBody = signatureAttributedString(forAccount: vm.accounts.first { $0.id == message.accountId })
         case .forward(let message):
@@ -188,15 +186,19 @@ struct ComposeView: View {
         case .draft(let draft):
             draftId = draft.id
             origin = draft.origin
-            to = draft.to
-            cc = draft.cc
-            bcc = draft.bcc
-            showCcBcc = !draft.cc.isEmpty || !draft.bcc.isEmpty
+            toEmails = Self.splitRecipients(draft.to)
+            ccEmails = Self.splitRecipients(draft.cc)
+            bccEmails = Self.splitRecipients(draft.bcc)
+            showCcBcc = !ccEmails.isEmpty || !bccEmails.isEmpty
             subject = draft.subject
             attributedBody = NSAttributedString(html: draft.bodyHTML) ?? NSAttributedString(string: "")
             attachments = draft.attachments.compactMap(\.outgoing)
             hasSavedOnce = true
         }
+    }
+
+    private static func splitRecipients(_ raw: String) -> [String] {
+        raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 
     private func signatureHTML(forAccount account: Account?) -> String {
@@ -215,13 +217,15 @@ struct ComposeView: View {
     /// First edit creates the draft; every autosave after that fully
     /// replaces its saved contents so it always reflects what's on screen.
     private func autosave() {
-        let isEmpty = to.isEmpty && cc.isEmpty && bcc.isEmpty && subject.isEmpty
+        let isEmpty = toEmails.isEmpty && ccEmails.isEmpty && bccEmails.isEmpty && subject.isEmpty
             && attributedBody.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty
         guard !isEmpty else { return }
         hasSavedOnce = true
         vm.saveDraft(
             Draft(
-                id: draftId, accountEmail: nil, to: to, cc: cc, bcc: bcc, subject: subject,
+                id: draftId, accountEmail: nil,
+                to: toEmails.joined(separator: ", "), cc: ccEmails.joined(separator: ", "), bcc: bccEmails.joined(separator: ", "),
+                subject: subject,
                 bodyHTML: attributedBody.htmlString(),
                 attachments: attachments.map { DraftAttachment(filename: $0.filename, mimeType: $0.mimeType, data: $0.data) },
                 origin: origin, lastModified: Date()
@@ -263,8 +267,8 @@ struct ComposeView: View {
     private func send() {
         vm.queueSend(
             draftId: hasSavedOnce ? draftId : nil, origin: origin,
-            to: to, cc: cc, bcc: bcc, subject: subject,
-            bodyHTML: attributedBody.htmlString(), attachments: attachments
+            to: toEmails.joined(separator: ", "), cc: ccEmails.joined(separator: ", "), bcc: bccEmails.joined(separator: ", "),
+            subject: subject, bodyHTML: attributedBody.htmlString(), attachments: attachments
         )
         onClose()
     }

@@ -122,6 +122,13 @@ struct ContentView: View {
 private struct TopBar: View {
     @Bindable var vm: InboxViewModel
     @FocusState private var isSearchFocused: Bool
+    @State private var recentSearches: [String] = RecentSearchesStore.load()
+
+    private let quickFilters: [(label: String, token: String)] = [
+        ("Has attachment", "has:attachment"),
+        ("Last 7 days", "newer_than:7d"),
+        ("From me", "from:me"),
+    ]
 
     var body: some View {
         HStack(spacing: 10) {
@@ -133,14 +140,111 @@ private struct TopBar: View {
                     .font(.custom("DM Sans", size: 12))
                     .focused($isSearchFocused)
                     .onChange(of: vm.searchFocusTrigger) { _, _ in isSearchFocused = true }
+                    .onSubmit { commitSearch(vm.searchText) }
+                if !vm.searchText.isEmpty {
+                    Button { vm.searchText = "" } label: {
+                        Image(systemName: "xmark.circle.fill").iconButtonHitArea(2)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
             }
             .padding(.horizontal, 16)
             .frame(height: 44)
             .frame(maxWidth: .infinity)
             .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 22))
+            .overlay(alignment: .topLeading) {
+                if isSearchFocused {
+                    searchDropdown
+                        .offset(y: 48)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .zIndex(5)
 
             ConnectivityIndicator(vm: vm)
         }
+        .animation(.easeOut(duration: 0.16), value: isSearchFocused)
+    }
+
+    private var filteredRecents: [String] {
+        guard !vm.searchText.isEmpty else { return recentSearches }
+        return recentSearches.filter { $0.localizedCaseInsensitiveContains(vm.searchText) }
+    }
+
+    private var searchDropdown: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                ForEach(quickFilters, id: \.token) { filter in
+                    Button {
+                        applyQuickFilter(filter.token)
+                    } label: {
+                        Text(filter.label)
+                            .font(.appCaption.weight(.medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(Color.appHover))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if !filteredRecents.isEmpty {
+                Divider().overlay(Color.appBorder)
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(filteredRecents, id: \.self) { query in
+                        RecentSearchRow(query: query) {
+                            commitSearch(query)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 320, alignment: .leading)
+        .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.appBorder))
+        .shadow(color: .black.opacity(0.4), radius: 16, y: 6)
+    }
+
+    private func applyQuickFilter(_ token: String) {
+        guard !vm.searchText.localizedCaseInsensitiveContains(token) else { return }
+        vm.searchText = vm.searchText.isEmpty ? token : vm.searchText + " " + token
+    }
+
+    private func commitSearch(_ query: String) {
+        vm.searchText = query
+        RecentSearchesStore.record(query)
+        recentSearches = RecentSearchesStore.load()
+        isSearchFocused = false
+    }
+}
+
+private struct RecentSearchRow: View {
+    let query: String
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "clock")
+                    .font(.appCaption)
+                    .foregroundStyle(.secondary)
+                Text(query)
+                    .font(.appSubheadline)
+                    .lineLimit(1)
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 6).fill(isHovering ? Color.appHover : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
     }
 }
 

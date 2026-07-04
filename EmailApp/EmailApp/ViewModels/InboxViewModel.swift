@@ -369,12 +369,32 @@ final class InboxViewModel {
             .filter { providerFilter == nil || $0.provider == providerFilter }
             .filter { selectedFolder != "inbox" || $0.category == categoryFilter }
             .filter { message in
-                guard !searchText.isEmpty else { return true }
-                let q = searchText.lowercased()
+                if searchHasAttachment, message.attachments.isEmpty { return false }
+                if searchFromMe, !accounts.contains(where: { $0.email.caseInsensitiveCompare(message.senderEmail) == .orderedSame }) { return false }
+                if searchNewerThan7Days, message.receivedAt < sevenDaysAgo { return false }
+                guard !searchFreeText.isEmpty else { return true }
+                let q = searchFreeText.lowercased()
                 return message.subject.lowercased().contains(q)
                     || message.senderName.lowercased().contains(q)
                     || message.snippet.lowercased().contains(q)
             }
+    }
+
+    /// Gmail-style search operators recognized inside `searchText` — set by
+    /// the search dropdown's quick-filter chips, but typeable directly too.
+    private var searchHasAttachment: Bool { searchText.localizedCaseInsensitiveContains("has:attachment") }
+    private var searchFromMe: Bool { searchText.localizedCaseInsensitiveContains("from:me") }
+    private var searchNewerThan7Days: Bool { searchText.localizedCaseInsensitiveContains("newer_than:7d") }
+    private var sevenDaysAgo: Date { Date().addingTimeInterval(-7 * 24 * 60 * 60) }
+
+    /// `searchText` with every recognized operator token stripped out,
+    /// leaving whatever's left for the plain substring match.
+    private var searchFreeText: String {
+        searchText
+            .replacingOccurrences(of: "has:attachment", with: "", options: .caseInsensitive)
+            .replacingOccurrences(of: "from:me", with: "", options: .caseInsensitive)
+            .replacingOccurrences(of: "newer_than:7d", with: "", options: .caseInsensitive)
+            .trimmingCharacters(in: .whitespaces)
     }
 
     /// Opens a thread: focuses + expands its most recent message, marks it read.
@@ -957,6 +977,10 @@ final class InboxViewModel {
             folder: row.folder
         )
         messages.append(message)
+        // Webhook rows don't carry To/Cc (see the Message.htmlBody comment
+        // for why) — just the sender, but that's still a real, useful
+        // partial update to the index rather than nothing until next sync.
+        Task { await ContactsIndexService.recordContacts(from: [message]) }
         let settings = AppSettings.shared
         if settings.notificationsEnabled, !settings.mutedAccountEmails.contains(row.accountEmail) {
             NotificationService.notifyNewMail(message)
@@ -999,7 +1023,8 @@ final class InboxViewModel {
             accounts.append(account)
         }
         let existing = Set(messages.map(\.id))
-        messages.append(contentsOf: fetched.filter { !existing.contains($0.id) })
+        let newMessages = fetched.filter { !existing.contains($0.id) }
+        messages.append(contentsOf: newMessages)
         // Warm the messages actually visible in the inbox right now — by
         // far the most likely to be opened first — so the very first click
         // of the session is already loaded too, not just subsequent ones.
@@ -1007,5 +1032,9 @@ final class InboxViewModel {
             prewarmHTML(for: thread.latest)
         }
         MessageCacheStore.save(messages)
+        // Incremental only — record just the messages that are actually
+        // new this merge, never the whole re-fetched batch, or refreshing
+        // would double-count everyone's frequency on every sync.
+        Task { await ContactsIndexService.recordContacts(from: newMessages) }
     }
 }
