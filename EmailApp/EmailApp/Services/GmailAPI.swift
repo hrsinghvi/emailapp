@@ -29,20 +29,39 @@ enum GmailAPI {
     nonisolated static func fetchInbox(
         for account: Account, accessToken: String, limit: Int = 25
     ) async throws -> [Message] {
-        try await fetchMessages(labelId: "INBOX", folder: "inbox", for: account, accessToken: accessToken, limit: limit)
+        try await fetchMessages(labelIds: ["INBOX"], folder: "inbox", for: account, accessToken: accessToken, limit: limit)
     }
 
     /// Fetches SENT messages so the Sent folder in the sidebar has content.
     nonisolated static func fetchSent(
         for account: Account, accessToken: String, limit: Int = 25
     ) async throws -> [Message] {
-        try await fetchMessages(labelId: "SENT", folder: "sent", for: account, accessToken: accessToken, limit: limit)
+        try await fetchMessages(labelIds: ["SENT"], folder: "sent", for: account, accessToken: accessToken, limit: limit)
+    }
+
+    /// Fetches inbox mail restricted to one of Gmail's own category tabs
+    /// (Gmail ANDs repeated `labelIds` params) — used for the per-category
+    /// deep-history backfill so Social/Updates/Forums each get their own
+    /// budget instead of competing for a single flat inbox limit.
+    nonisolated static func fetchInboxByCategory(
+        _ category: MessageCategory, for account: Account, accessToken: String, limit: Int
+    ) async throws -> [Message] {
+        let categoryLabel: String
+        switch category {
+        case .primary: categoryLabel = "CATEGORY_PERSONAL"
+        case .social: categoryLabel = "CATEGORY_SOCIAL"
+        case .promotions: categoryLabel = "CATEGORY_PROMOTIONS"
+        case .updates: categoryLabel = "CATEGORY_UPDATES"
+        case .forums: categoryLabel = "CATEGORY_FORUMS"
+        }
+        return try await fetchMessages(
+            labelIds: ["INBOX", categoryLabel], folder: "inbox", for: account, accessToken: accessToken, limit: limit)
     }
 
     private nonisolated static func fetchMessages(
-        labelId: String, folder: String, for account: Account, accessToken: String, limit: Int
+        labelIds: [String], folder: String, for account: Account, accessToken: String, limit: Int
     ) async throws -> [Message] {
-        let ids = try await listMessageIds(labelId: labelId, accessToken: accessToken, limit: limit)
+        let ids = try await listMessageIds(labelIds: labelIds, accessToken: accessToken, limit: limit)
 
         return try await withThrowingTaskGroup(of: Message?.self) { group in
             var iterator = ids.makeIterator()
@@ -68,19 +87,22 @@ enum GmailAPI {
     /// Gmail caps a single list call at 500 results — loops pageToken to
     /// gather more than that (e.g. a 2000-message backfill).
     private nonisolated static func listMessageIds(
-        labelId: String, accessToken: String, limit: Int
+        labelIds: [String], accessToken: String, limit: Int
     ) async throws -> [String] {
         struct ListResponse: Decodable {
             struct Ref: Decodable { let id: String }
             let messages: [Ref]?
             let nextPageToken: String?
         }
+        // Gmail ANDs repeated labelIds params — labelIds=INBOX&labelIds=CATEGORY_SOCIAL
+        // means "in the inbox AND tagged Social", not "either label".
+        let labelQuery = labelIds.map { "labelIds=\($0)" }.joined(separator: "&")
         var ids: [String] = []
         var pageToken: String?
         repeat {
             let remaining = limit - ids.count
             guard remaining > 0 else { break }
-            var url = "\(base)/messages?labelIds=\(labelId)&maxResults=\(min(remaining, 500))"
+            var url = "\(base)/messages?\(labelQuery)&maxResults=\(min(remaining, 500))"
             if let pageToken { url += "&pageToken=\(pageToken)" }
             let listData = try await get(url, accessToken: accessToken)
             let response = try JSONDecoder().decode(ListResponse.self, from: listData)

@@ -853,6 +853,7 @@ final class InboxViewModel {
         startSyncTimerIfNeeded()
         await performOneTimeHistoryBackfillIfNeeded()
         await performOneTimeCategoryBackfillIfNeeded()
+        await performOneTimeCategoryMailBackfillIfNeeded()
     }
 
     /// Runs once ever (per install): pulls a much deeper history than the
@@ -937,6 +938,31 @@ final class InboxViewModel {
             }
             messages = updated
             MessageCacheStore.save(messages)
+        }
+    }
+
+    /// Runs once ever: now that the local cache scales to any mailbox size
+    /// (SQLite, bounded launch-time load — see MessageCacheStore), pulls up
+    /// to 2000 Gmail messages for each of Primary/Social/Updates/Forums
+    /// individually (whichever is smaller — a category with only 500
+    /// messages just gets all 500). Promotions is deliberately left alone.
+    private func performOneTimeCategoryMailBackfillIfNeeded() async {
+        guard !AppSettings.shared.hasBackfilledCategoryMail else { return }
+        guard NetworkMonitor.shared.isOnline else { return }
+        AppSettings.shared.hasBackfilledCategoryMail = true
+
+        let categoriesToBackfill: [MessageCategory] = [.primary, .social, .updates, .forums]
+        for account in accounts where account.provider == .gmail {
+            guard let token = try? await OAuthManager.shared.validAccessToken(for: account) else { continue }
+            for category in categoriesToBackfill {
+                do {
+                    let fetched = try await GmailAPI.fetchInboxByCategory(
+                        category, for: account, accessToken: token, limit: 2000)
+                    merge(account: account, fetched: fetched)
+                } catch {
+                    AppLog.sync.error("Category mail backfill (\(category.rawValue)) failed: \(error.localizedDescription)")
+                }
+            }
         }
     }
 

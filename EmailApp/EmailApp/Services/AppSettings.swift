@@ -47,6 +47,7 @@ final class AppSettings {
         static let gesturesEnabled = "settings.gesturesEnabled"
         static let hasBackfilledMailHistory = "settings.hasBackfilledMailHistory"
         static let hasBackfilledCategories = "settings.hasBackfilledCategories"
+        static let hasBackfilledCategoryMail = "settings.hasBackfilledCategoryMail"
     }
 
     private let defaults = UserDefaults.standard
@@ -118,6 +119,13 @@ final class AppSettings {
         didSet { defaults.set(hasBackfilledCategories, forKey: Key.hasBackfilledCategories) }
     }
 
+    /// One-time deep backfill of Social/Updates/Forums/Primary (each up to
+    /// 2000), separate from the flat inbox-history backfill so every
+    /// category gets its own budget instead of competing for one limit.
+    var hasBackfilledCategoryMail: Bool {
+        didSet { defaults.set(hasBackfilledCategoryMail, forKey: Key.hasBackfilledCategoryMail) }
+    }
+
     private init() {
         launchAtLogin = defaults.object(forKey: Key.launchAtLogin) as? Bool ?? false
         keepAwakeDuringSync = defaults.object(forKey: Key.keepAwakeDuringSync) as? Bool ?? false
@@ -132,6 +140,7 @@ final class AppSettings {
         gesturesEnabled = defaults.object(forKey: Key.gesturesEnabled) as? Bool ?? true
         hasBackfilledMailHistory = defaults.object(forKey: Key.hasBackfilledMailHistory) as? Bool ?? false
         hasBackfilledCategories = defaults.object(forKey: Key.hasBackfilledCategories) as? Bool ?? false
+        hasBackfilledCategoryMail = defaults.object(forKey: Key.hasBackfilledCategoryMail) as? Bool ?? false
     }
 
     /// Registers/unregisters with `SMAppService` — the real macOS login-item
