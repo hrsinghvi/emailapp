@@ -217,7 +217,7 @@ private struct AttachmentPill: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: AttachmentIcon.systemName(forMimeType: attachment.mimeType))
-                .font(.custom("DM Sans", size: 9).weight(.bold))
+                .font(.custom("DM Sans", size: 7).weight(.bold))
                 .foregroundStyle(.white)
                 .frame(width: 16, height: 16)
                 .background(RoundedRectangle(cornerRadius: 4).fill(tint))

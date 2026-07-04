@@ -71,7 +71,7 @@ struct FormattingToolbar: View {
     private func toolButton(_ systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.custom("DM Sans", size: 12))
+                .font(.custom("DM Sans", size: 10))
                 .frame(width: 22, height: 22)
         }
         .buttonStyle(.plain)

@@ -20,11 +20,11 @@ enum AppFontRegistration {
 /// matching their default system point sizes (subheadline 15, etc).
 /// `.weight()` still chains onto these normally.
 extension Font {
-    static let appLargeTitle = Font.custom("DM Sans", size: 34)
-    static let appTitle2 = Font.custom("DM Sans", size: 22)
-    static let appHeadline = Font.custom("DM Sans", size: 17).weight(.semibold)
-    static let appBody = Font.custom("DM Sans", size: 17)
-    static let appSubheadline = Font.custom("DM Sans", size: 15)
-    static let appCaption = Font.custom("DM Sans", size: 12)
-    static let appCaption2 = Font.custom("DM Sans", size: 11)
+    static let appLargeTitle = Font.custom("DM Sans", size: 32)
+    static let appTitle2 = Font.custom("DM Sans", size: 20)
+    static let appHeadline = Font.custom("DM Sans", size: 15).weight(.semibold)
+    static let appBody = Font.custom("DM Sans", size: 15)
+    static let appSubheadline = Font.custom("DM Sans", size: 13)
+    static let appCaption = Font.custom("DM Sans", size: 10)
+    static let appCaption2 = Font.custom("DM Sans", size: 9)
 }
