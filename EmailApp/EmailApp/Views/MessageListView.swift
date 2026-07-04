@@ -166,10 +166,10 @@ private struct ThreadRow: View {
 
             if !message.attachments.isEmpty {
                 HStack(spacing: 8) {
-                    // Gmail tucks the attachment chip close to the row's
-                    // left margin, right under the checkbox — not indented
-                    // all the way out to the sender-name column.
-                    Color.clear.frame(width: indicatorClusterWidth + 12)
+                    // Aligned under the subject/snippet text, not the
+                    // sender column: indicator + checkbox clusters + the
+                    // fixed sender-name width, plus the gaps between them.
+                    Color.clear.frame(width: indicatorClusterWidth + 12 + checkboxClusterWidth + 12 + 150 + 10)
                     ForEach(message.attachments.prefix(3)) { attachment in
                         AttachmentPill(attachment: attachment)
                     }
