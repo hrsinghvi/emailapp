@@ -25,7 +25,7 @@ struct SidebarView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 InboxNavItem(vm: vm, isExpanded: $isInboxExpanded)
-                ForEach([MessageCategory.social, .promotions, .updates, .forums], id: \.self) { category in
+                ForEach([MessageCategory.promotions, .social, .updates, .forums], id: \.self) { category in
                     CategoryNavItem(vm: vm, category: category)
                 }
 
