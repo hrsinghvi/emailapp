@@ -88,16 +88,6 @@ private struct TopBar: View {
             .padding(.vertical, 7)
             .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 8))
 
-            FilterChip(title: "All", tint: .white, isActive: vm.providerFilter == nil) {
-                vm.providerFilter = nil
-            }
-            FilterChip(title: "Gmail", tint: Provider.gmail.color, isActive: vm.providerFilter == .gmail) {
-                vm.providerFilter = .gmail
-            }
-            FilterChip(title: "Outlook", tint: Provider.outlook.color, isActive: vm.providerFilter == .outlook) {
-                vm.providerFilter = .outlook
-            }
-
             ConnectivityIndicator(vm: vm)
         }
     }
@@ -159,27 +149,6 @@ private struct CategoryTabBar: View {
         }
         .padding(.horizontal, 4)
         .overlay(alignment: .bottom) { Divider().overlay(Color.appBorder) }
-    }
-}
-
-private struct FilterChip: View {
-    let title: String
-    let tint: Color
-    let isActive: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(isActive ? tint : .secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule().fill(isActive ? tint.opacity(0.18) : Color.appHover)
-                )
-        }
-        .buttonStyle(.plain)
     }
 }
 
