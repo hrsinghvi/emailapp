@@ -346,8 +346,10 @@ private struct ListToolbar: View {
             }
         }
         // Matches MessageListView's row checkbox X position exactly:
-        // rowHorizontalPadding(16) + leadingInset(3) + row spacing(10).
-        .padding(.leading, 29)
+        // rowHorizontalPadding(16) + leadingInset(3) + row spacing(10),
+        // minus 6 to offset iconButtonHitArea's own symmetric padding
+        // around the glyph (the row checkbox has no such padding).
+        .padding(.leading, 23)
         .padding(.trailing, 6)
         .padding(.vertical, 10)
         .animation(.easeOut(duration: 0.18), value: vm.selectedThreadKeys.isEmpty)

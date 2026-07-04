@@ -75,7 +75,14 @@ final class InboxViewModel {
     }
 
     var accounts: [Account]
-    var messages: [Message]
+    /// Recomputing `filteredThreads` is O(n) over the whole mailbox
+    /// (filter + group + sort, plus `Message.category`'s heuristic re-run
+    /// per message) — cheap at dozens of messages, but with 1000+ synced
+    /// it's expensive enough that recomputing it on every SwiftUI render
+    /// (which a plain computed property does) is what caused the multi-
+    /// second jank switching folders. `didSet` here recomputes once per
+    /// actual mailbox change instead of once per render.
+    var messages: [Message] { didSet { recomputeFilteredThreads() } }
 
     /// Which thread is open in the reading pane.
     var selectedThreadKey: String?
@@ -84,12 +91,12 @@ final class InboxViewModel {
     var expandedMessageIds: Set<UUID> = []
     var focusedMessageId: UUID?
 
-    var selectedFolder: String = "inbox" { didSet { listPageIndex = 0 } }
-    var providerFilter: Provider? { didSet { listPageIndex = 0 } }
+    var selectedFolder: String = "inbox" { didSet { listPageIndex = 0; recomputeFilteredThreads() } }
+    var providerFilter: Provider? { didSet { listPageIndex = 0; recomputeFilteredThreads() } }
     /// Gmail-style category tab — only meaningful (and only shown) for the
     /// inbox; other folders show every category mixed together.
-    var categoryFilter: MessageCategory = .primary { didSet { listPageIndex = 0 } }
-    var searchText: String = "" { didSet { listPageIndex = 0 } }
+    var categoryFilter: MessageCategory = .primary { didSet { listPageIndex = 0; recomputeFilteredThreads() } }
+    var searchText: String = "" { didSet { listPageIndex = 0; recomputeFilteredThreads() } }
     var composeContext: ComposeContext?
     /// Settings is an in-window dimmed modal (Claude-desktop style), not a
     /// separate NSWindow — this is the only state it needs.
@@ -307,9 +314,13 @@ final class InboxViewModel {
 
     // MARK: - Thread grouping
 
-    var filteredThreads: [MessageThread] {
+    /// Cached — see the doc comment on `messages` for why this can't be a
+    /// plain computed property at mailbox sizes past a few hundred.
+    private(set) var filteredThreads: [MessageThread] = []
+
+    private func recomputeFilteredThreads() {
         let grouped = Dictionary(grouping: filteredMessages, by: \.threadKey)
-        return grouped.map { key, messages in
+        filteredThreads = grouped.map { key, messages in
             MessageThread(id: key, messages: messages.sorted { $0.receivedAt < $1.receivedAt })
         }
         .sorted { $0.latest.receivedAt > $1.latest.receivedAt }

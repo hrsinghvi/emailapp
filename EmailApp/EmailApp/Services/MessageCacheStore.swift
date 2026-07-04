@@ -12,7 +12,7 @@ import SQLite3
 /// (`INSERT OR REPLACE`, not a full-file rewrite) and a bounded `load()` —
 /// only the most recent N messages are decoded into memory at launch
 /// regardless of how much mail has ever been synced.
-enum MessageCacheStore {
+nonisolated enum MessageCacheStore {
     private static let recentLoadLimit = 1500
 
     private static let dbURL: URL = {
@@ -66,23 +66,31 @@ enum MessageCacheStore {
 
     /// Upserts each message as its own row in one transaction — cheap
     /// regardless of total mailbox size, unlike rewriting one giant file.
+    /// Every call site passes the *whole* in-memory array (a single star
+    /// toggle re-upserts 1000+ unchanged rows too) — harmless for
+    /// correctness, but real work, so it runs off the main thread. The UI
+    /// already updated optimistically before this is called; nothing is
+    /// waiting on it to finish.
     static func save(_ messages: [Message]) {
-        guard let db, !messages.isEmpty else { return }
-        let encoder = JSONEncoder()
-        sqlite3_exec(db, "BEGIN TRANSACTION;", nil, nil, nil)
-        var statement: OpaquePointer?
-        sqlite3_prepare_v2(
-            db, "INSERT OR REPLACE INTO messages (id, received_at, json) VALUES (?, ?, ?);", -1, &statement, nil)
-        for message in messages {
-            guard let json = try? encoder.encode(message), let jsonString = String(data: json, encoding: .utf8) else { continue }
-            sqlite3_reset(statement)
-            sqlite3_bind_text(statement, 1, message.id.uuidString, -1, SQLITE_TRANSIENT)
-            sqlite3_bind_double(statement, 2, message.receivedAt.timeIntervalSince1970)
-            sqlite3_bind_text(statement, 3, jsonString, -1, SQLITE_TRANSIENT)
-            sqlite3_step(statement)
+        guard !messages.isEmpty else { return }
+        Task.detached(priority: .utility) {
+            guard let db else { return }
+            let encoder = JSONEncoder()
+            sqlite3_exec(db, "BEGIN TRANSACTION;", nil, nil, nil)
+            var statement: OpaquePointer?
+            sqlite3_prepare_v2(
+                db, "INSERT OR REPLACE INTO messages (id, received_at, json) VALUES (?, ?, ?);", -1, &statement, nil)
+            for message in messages {
+                guard let json = try? encoder.encode(message), let jsonString = String(data: json, encoding: .utf8) else { continue }
+                sqlite3_reset(statement)
+                sqlite3_bind_text(statement, 1, message.id.uuidString, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_double(statement, 2, message.receivedAt.timeIntervalSince1970)
+                sqlite3_bind_text(statement, 3, jsonString, -1, SQLITE_TRANSIENT)
+                sqlite3_step(statement)
+            }
+            sqlite3_finalize(statement)
+            sqlite3_exec(db, "COMMIT;", nil, nil, nil)
         }
-        sqlite3_finalize(statement)
-        sqlite3_exec(db, "COMMIT;", nil, nil, nil)
     }
 
     static func clear() {
