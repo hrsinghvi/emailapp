@@ -105,9 +105,10 @@ private struct TopBar: View {
     }
 }
 
-/// Gmail-style slim toolbar above the tabs — the checkbox is always
-/// visible (not gated behind an active selection like `BulkActionBar`),
-/// and refresh re-runs the same fetch `restoreSession()` does at launch.
+/// Gmail-style slim toolbar above the list. With nothing selected it shows
+/// select-all/refresh on the left and pagination on the right; the moment
+/// something's selected, the right side morphs into bulk actions instead —
+/// no separate row pushing the list down, same as Gmail.
 private struct ListToolbar: View {
     @Bindable var vm: InboxViewModel
     @State private var isRefreshing = false
@@ -123,52 +124,80 @@ private struct ListToolbar: View {
             }
             .buttonStyle(.plain)
 
-            Button {
-                guard !isRefreshing else { return }
-                isRefreshing = true
-                Task {
-                    await vm.refreshAll()
-                    isRefreshing = false
+            if vm.selectedThreadKeys.isEmpty {
+                Button {
+                    guard !isRefreshing else { return }
+                    isRefreshing = true
+                    Task {
+                        await vm.refreshAll()
+                        isRefreshing = false
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.custom("DM Sans", size: 13))
+                        .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                        .animation(isRefreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: isRefreshing)
                 }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.custom("DM Sans", size: 13))
-                    .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                    .animation(isRefreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            } else {
+                Text("\(vm.selectedThreadKeys.count) selected")
+                    .font(.appCaption)
+                    .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
 
             Spacer()
 
-            if range.total > 0 {
-                Text("\(range.start + 1)–\(range.end) of \(range.total)")
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
+            if vm.selectedThreadKeys.isEmpty {
+                if range.total > 0 {
+                    Text("\(range.start + 1)–\(range.end) of \(range.total)")
+                        .font(.appCaption)
+                        .foregroundStyle(.secondary)
 
-                Button { vm.goToPreviousPage() } label: {
-                    Image(systemName: "chevron.left")
+                    Button { vm.goToPreviousPage() } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(vm.listPageIndex > 0 ? .secondary : Color.secondary.opacity(0.3))
+                    .disabled(vm.listPageIndex == 0)
+
+                    Button { vm.goToNextPage() } label: {
+                        Image(systemName: "chevron.right")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(range.end < range.total ? .secondary : Color.secondary.opacity(0.3))
+                    .disabled(range.end >= range.total)
+                }
+            } else {
+                bulkButton("Archive", icon: "archivebox") { vm.bulkArchive() }
+                bulkButton("Delete", icon: "trash") { vm.bulkDelete() }
+                bulkButton("Mark Read", icon: "envelope.open") { vm.bulkMarkRead(true) }
+                bulkButton("Mark Unread", icon: "envelope.badge") { vm.bulkMarkRead(false) }
+
+                Button { vm.selectedThreadKeys.removeAll() } label: {
+                    Image(systemName: "xmark")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(vm.listPageIndex > 0 ? .secondary : Color.secondary.opacity(0.3))
-                .disabled(vm.listPageIndex == 0)
-
-                Button { vm.goToNextPage() } label: {
-                    Image(systemName: "chevron.right")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(range.end < range.total ? .secondary : Color.secondary.opacity(0.3))
-                .disabled(range.end >= range.total)
+                .foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 10)
+        .animation(.easeOut(duration: 0.18), value: vm.selectedThreadKeys.isEmpty)
     }
 
     private var range: (start: Int, end: Int, total: Int) { vm.listPageRange }
 
     private var allSelected: Bool {
         !vm.filteredThreads.isEmpty && Set(vm.filteredThreads.map(\.id)) == vm.selectedThreadKeys
+    }
+
+    private func bulkButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon).font(.appCaption.weight(.medium))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
     }
 }
 

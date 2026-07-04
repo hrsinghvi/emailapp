@@ -6,12 +6,6 @@ struct MessageListView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            if !vm.selectedThreadKeys.isEmpty {
-                BulkActionBar(vm: vm)
-                    .padding(.horizontal, 8)
-                    .padding(.top, 8)
-            }
-
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(vm.pagedThreads) { thread in
@@ -42,56 +36,6 @@ struct MessageListView: View {
     }
 }
 
-private struct BulkActionBar: View {
-    @Bindable var vm: InboxViewModel
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Button {
-                vm.toggleSelectAll()
-            } label: {
-                Image(systemName: allSelected ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(allSelected ? Color.appAccent : .secondary)
-            }
-            .buttonStyle(.plain)
-
-            Text("\(vm.selectedThreadKeys.count) selected")
-                .font(.appCaption)
-                .foregroundStyle(.secondary)
-
-            Spacer()
-
-            bulkButton("Archive", icon: "archivebox") { vm.bulkArchive() }
-            bulkButton("Delete", icon: "trash") { vm.bulkDelete() }
-            bulkButton("Mark Read", icon: "envelope.open") { vm.bulkMarkRead(true) }
-            bulkButton("Mark Unread", icon: "envelope.badge") { vm.bulkMarkRead(false) }
-
-            Button {
-                vm.selectedThreadKeys.removeAll()
-            } label: {
-                Image(systemName: "xmark")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
-    }
-
-    private var allSelected: Bool {
-        !vm.filteredThreads.isEmpty && Set(vm.filteredThreads.map(\.id)) == vm.selectedThreadKeys
-    }
-
-    private func bulkButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: icon)
-                .font(.appCaption.weight(.medium))
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-    }
-}
 
 private struct ThreadRow: View {
     let vm: InboxViewModel
