@@ -1,5 +1,12 @@
 import SwiftUI
 
+private struct WidthPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct ContentView: View {
     @Bindable var vm: InboxViewModel
     @FocusState private var isContentFocused: Bool
@@ -138,11 +145,8 @@ private struct TopBar: View {
         ("From me", "from:me"),
     ]
 
-    /// ~6/9 of the previous full-width bar — width only, height is back to
-    /// the original 44. Shared with the dropdown below so the two always
-    /// line up exactly.
-    private let searchBarWidth: CGFloat = 300
     private let searchBarHeight: CGFloat = 44
+    @State private var searchBarWidth: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 10) {
@@ -164,8 +168,15 @@ private struct TopBar: View {
                 }
             }
             .padding(.horizontal, 16)
-            .frame(width: searchBarWidth, height: searchBarHeight)
+            .frame(height: searchBarHeight)
+            .frame(maxWidth: .infinity)
             .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 22))
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(key: WidthPreferenceKey.self, value: geo.size.width)
+                }
+            )
+            .onPreferenceChange(WidthPreferenceKey.self) { searchBarWidth = $0 }
             .overlay(alignment: .topLeading) {
                 if isSearchFocused {
                     searchDropdown
@@ -173,8 +184,6 @@ private struct TopBar: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
-
-            Spacer()
 
             ConnectivityIndicator(vm: vm)
         }
