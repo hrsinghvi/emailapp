@@ -148,7 +148,7 @@ private struct TopBar: View {
         ("From me", "from:me"),
     ]
 
-    private let searchBarHeight: CGFloat = 44
+    private let searchBarHeight: CGFloat = 52
 
     var body: some View {
         GeometryReader { sectionGeo in
