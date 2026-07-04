@@ -6,14 +6,15 @@ struct ContentView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Extends flush to the window's top edge (behind the traffic
-            // lights) instead of respecting the same top inset as the rest
-            // of the content — its own internal padding pushes the nav
-            // items down clear of the traffic lights instead.
+            // Extends flush to the window's top and bottom edges (behind
+            // the traffic lights, all the way to the bottom corners)
+            // instead of respecting the same insets as the rest of the
+            // content — its own internal padding pushes the nav items
+            // clear of the traffic lights instead.
             SidebarView(vm: vm)
                 .frame(width: 240)
                 .frame(maxHeight: .infinity)
-                .ignoresSafeArea(.container, edges: .top)
+                .ignoresSafeArea(.container, edges: [.top, .bottom])
 
             Group {
                 if vm.selectedThread != nil {
@@ -32,9 +33,9 @@ struct ContentView: View {
             }
             .frame(minWidth: 320, maxWidth: .infinity)
             .padding(.top, 34)
+            .padding(.bottom, 12)
         }
         .padding(.trailing, 12)
-        .padding(.bottom, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.container, edges: .top)
         .background(
