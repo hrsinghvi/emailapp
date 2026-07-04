@@ -1,8 +1,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { randomUUID } from "crypto";
 import { supabase } from "../../lib/supabase";
 import { encrypt } from "../../lib/crypto";
 import * as gmail from "../../lib/gmail";
 import * as graph from "../../lib/graph";
+import * as googleCalendar from "../../lib/googleCalendar";
+import * as graphCalendar from "../../lib/graphCalendar";
 
 /**
  * Called by the Swift app right after a provider OAuth flow completes.
@@ -33,6 +36,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: upsertError?.message ?? "account upsert failed" });
   }
 
+  let mailWarning: string | null = null;
   try {
     if (provider === "gmail") {
       const accessToken = await gmail.refreshAccessToken(refreshToken);
@@ -54,10 +58,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Account + refresh token are safely stored either way; only the push
     // subscription failed. The daily cron will retry since watch_expiration
     // stays null/stale, which the renewal query treats as overdue.
-    return res
-      .status(207)
-      .json({ ok: true, accountId: account.id, warning: `push setup failed: ${(err as Error).message}` });
+    mailWarning = `mail push setup failed: ${(err as Error).message}`;
   }
 
+  let calendarWarning: string | null = null;
+  try {
+    if (provider === "gmail" && process.env.GOOGLE_CHANNEL_TOKEN) {
+      const accessToken = await gmail.refreshAccessToken(refreshToken);
+      const channelId = randomUUID();
+      const { resourceId, expiration } = await googleCalendar.watchCalendar(
+        accessToken,
+        channelId,
+        `${process.env.PUBLIC_BASE_URL}/api/calendar/googleWebhook`,
+        process.env.GOOGLE_CHANNEL_TOKEN
+      );
+      await supabase
+        .from("accounts")
+        .update({
+          calendar_channel_id: channelId,
+          calendar_resource_id: resourceId,
+          calendar_watch_expiration: new Date(Number(expiration)).toISOString(),
+        })
+        .eq("id", account.id);
+    } else if (provider === "outlook") {
+      const accessToken = await graph.refreshAccessToken(refreshToken);
+      const notificationUrl = `${process.env.PUBLIC_BASE_URL}/api/calendar/graphWebhook`;
+      const sub = await graphCalendar.createSubscription(accessToken, notificationUrl, process.env.GRAPH_CLIENT_STATE!);
+      await supabase
+        .from("accounts")
+        .update({ calendar_subscription_id: sub.id, calendar_watch_expiration: sub.expirationDateTime })
+        .eq("id", account.id);
+    }
+  } catch (err) {
+    calendarWarning = `calendar push setup failed: ${(err as Error).message}`;
+  }
+
+  if (mailWarning || calendarWarning) {
+    return res.status(207).json({ ok: true, accountId: account.id, warning: [mailWarning, calendarWarning].filter(Boolean).join("; ") });
+  }
   return res.status(200).json({ ok: true, accountId: account.id });
 }

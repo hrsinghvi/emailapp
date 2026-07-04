@@ -2,7 +2,9 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var vm: InboxViewModel
+    @Bindable var calendarVM: CalendarViewModel
     @FocusState private var isContentFocused: Bool
+    @State private var isCalendarMode = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -11,11 +13,17 @@ struct ContentView: View {
             // instead of respecting the same insets as the rest of the
             // content — its own internal padding pushes the nav items
             // clear of the traffic lights instead.
-            SidebarView(vm: vm)
+            SidebarView(vm: vm, isCalendarMode: $isCalendarMode)
                 .frame(width: 240)
                 .frame(maxHeight: .infinity)
                 .ignoresSafeArea(.container, edges: [.top, .bottom])
 
+            if isCalendarMode {
+                CalendarView(calendarVM: calendarVM, accounts: vm.accounts)
+                    .frame(minWidth: 320, maxWidth: .infinity)
+                    .padding(.top, 34)
+                    .padding(.bottom, 12)
+            } else {
             // Only the toolbar row + body swap when a thread opens — the
             // search bar stays put instead of the whole pane being
             // replaced, matching Gmail rather than a full-screen takeover.
@@ -41,7 +49,7 @@ struct ContentView: View {
 
                 Group {
                     if vm.selectedThread != nil {
-                        ReadingPaneView(vm: vm)
+                        ReadingPaneView(vm: vm, calendarVM: calendarVM)
                             .transition(.opacity.combined(with: .move(edge: .trailing)))
                     } else if vm.selectedFolder == "drafts" {
                         DraftsListView(vm: vm)
@@ -56,6 +64,7 @@ struct ContentView: View {
             .frame(minWidth: 320, maxWidth: .infinity)
             .padding(.top, 34)
             .padding(.bottom, 12)
+            }
         }
         .padding(.trailing, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -112,6 +121,11 @@ struct ContentView: View {
         .task { await vm.startRealtimeUpdates() }
         .task { await vm.startMCPApprovalUpdates() }
         .task { await ContactsIndexService.warmCache() }
+        // Warmed eagerly (not just when Calendar is opened) so the reading
+        // pane's "already on your calendar" invite detection works the
+        // first time a meeting-invite email is opened, not only after the
+        // user has visited the Calendar tab at least once this session.
+        .task(id: vm.accounts.map(\.id)) { await calendarVM.loadEvents(accounts: vm.accounts) }
         .overlay(alignment: .bottom) { PendingSendBannerStack(vm: vm) }
         .overlay(alignment: .bottomTrailing) {
             if let context = vm.composeContext {
@@ -462,7 +476,7 @@ private struct ConnectivityIndicator: View {
 }
 
 #Preview {
-    ContentView(vm: InboxViewModel())
+    ContentView(vm: InboxViewModel(), calendarVM: CalendarViewModel())
         .frame(width: 1100, height: 700)
         .preferredColorScheme(.dark)
 }

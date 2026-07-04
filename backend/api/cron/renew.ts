@@ -1,8 +1,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { randomUUID } from "crypto";
 import { supabase } from "../../lib/supabase";
 import { decrypt } from "../../lib/crypto";
 import * as gmail from "../../lib/gmail";
 import * as graph from "../../lib/graph";
+import * as googleCalendar from "../../lib/googleCalendar";
+import * as graphCalendar from "../../lib/graphCalendar";
 
 // Standard cron syntax can't express "every 6 days" / "every 2.5 days" —
 // day-of-month steps reset each month and don't divide evenly into it. This
@@ -50,6 +53,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       results.push({
         email: account.email,
         provider: account.provider,
+        renewed: false,
+        error: (err as Error).message,
+      });
+    }
+
+    // Calendar watches renew on the same daily pass, independent of the
+    // mail watch above (different resource, different expiration column).
+    const calendarExpiresAt = account.calendar_watch_expiration
+      ? new Date(account.calendar_watch_expiration).getTime()
+      : 0;
+    if (calendarExpiresAt - now > buffer) continue;
+    if (!process.env.PUBLIC_BASE_URL) continue;
+
+    try {
+      const refreshToken = decrypt(account.encrypted_refresh_token);
+      if (account.provider === "gmail") {
+        if (!process.env.GOOGLE_CHANNEL_TOKEN) continue;
+        const accessToken = await gmail.refreshAccessToken(refreshToken);
+        // Google can't renew a channel in place — a new one replaces it.
+        const channelId = randomUUID();
+        const { resourceId, expiration } = await googleCalendar.watchCalendar(
+          accessToken,
+          channelId,
+          `${process.env.PUBLIC_BASE_URL}/api/calendar/googleWebhook`,
+          process.env.GOOGLE_CHANNEL_TOKEN
+        );
+        if (account.calendar_channel_id && account.calendar_resource_id) {
+          await googleCalendar.stopChannel(accessToken, account.calendar_channel_id, account.calendar_resource_id);
+        }
+        await supabase
+          .from("accounts")
+          .update({
+            calendar_channel_id: channelId,
+            calendar_resource_id: resourceId,
+            calendar_watch_expiration: new Date(Number(expiration)).toISOString(),
+          })
+          .eq("id", account.id);
+      } else {
+        if (!account.calendar_subscription_id) continue;
+        const accessToken = await graph.refreshAccessToken(refreshToken);
+        const { expirationDateTime } = await graphCalendar.renewSubscription(
+          accessToken,
+          account.calendar_subscription_id
+        );
+        await supabase
+          .from("accounts")
+          .update({ calendar_watch_expiration: expirationDateTime })
+          .eq("id", account.id);
+      }
+      results.push({ email: account.email, provider: `${account.provider}-calendar`, renewed: true });
+    } catch (err) {
+      results.push({
+        email: account.email,
+        provider: `${account.provider}-calendar`,
         renewed: false,
         error: (err as Error).message,
       });

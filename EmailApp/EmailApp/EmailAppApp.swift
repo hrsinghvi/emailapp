@@ -11,6 +11,7 @@ import SwiftUI
 struct EmailAppApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var vm = InboxViewModel()
+    @State private var calendarVM = CalendarViewModel()
 
     init() {
         AppFontRegistration.registerOnce()
@@ -18,7 +19,7 @@ struct EmailAppApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(vm: vm)
+            ContentView(vm: vm, calendarVM: calendarVM)
                 .frame(minWidth: 1100, minHeight: 700)
                 .preferredColorScheme(.dark)
                 .environment(\.font, .appBody)
