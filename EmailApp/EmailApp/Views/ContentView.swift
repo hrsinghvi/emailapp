@@ -67,6 +67,16 @@ struct ContentView: View {
             }
             .ignoresSafeArea()
         )
+        // The empty strip behind the traffic lights, above TopBar/Sidebar's
+        // own content — double-click to zoom, click-drag to move, same as
+        // a normal titlebar. Doesn't interfere with the traffic light
+        // buttons themselves; those are window chrome, always hit-tested
+        // before the content view underneath them.
+        .overlay(alignment: .top) {
+            TitleBarDragZoneView()
+                .frame(height: 34)
+                .ignoresSafeArea()
+        }
         .focusable()
         .focusEffectDisabled()
         .focused($isContentFocused)
