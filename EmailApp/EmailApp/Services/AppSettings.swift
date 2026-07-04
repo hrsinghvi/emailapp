@@ -43,7 +43,6 @@ final class AppSettings {
         static let undoSendDelay = "settings.undoSendDelay"
         static let defaultReplyBehavior = "settings.defaultReplyBehavior"
         static let signatures = "settings.signatures"
-        static let accentColorHex = "settings.accentColorHex"
         static let gesturesEnabled = "settings.gesturesEnabled"
     }
 
@@ -92,15 +91,6 @@ final class AppSettings {
         didSet { defaults.set(signatures, forKey: Key.signatures) }
     }
 
-    var accentColorHex: String {
-        didSet { defaults.set(accentColorHex, forKey: Key.accentColorHex) }
-    }
-
-    var accentColor: Color {
-        get { Color(hex: accentColorHex) }
-        set { accentColorHex = newValue.toHex() ?? Color.defaultAccentHex }
-    }
-
     var gesturesEnabled: Bool {
         didSet { defaults.set(gesturesEnabled, forKey: Key.gesturesEnabled) }
     }
@@ -115,7 +105,6 @@ final class AppSettings {
         undoSendDelay = defaults.object(forKey: Key.undoSendDelay) as? Double ?? 8
         defaultReplyBehavior = DefaultReplyBehavior(rawValue: defaults.string(forKey: Key.defaultReplyBehavior) ?? "") ?? .reply
         signatures = defaults.dictionary(forKey: Key.signatures) as? [String: String] ?? [:]
-        accentColorHex = defaults.string(forKey: Key.accentColorHex) ?? Color.defaultAccentHex
         gesturesEnabled = defaults.object(forKey: Key.gesturesEnabled) as? Bool ?? true
     }
 

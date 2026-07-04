@@ -8,10 +8,12 @@ struct SidebarView: View {
 
     /// Plain (non-category) folders shown below the colored Views rows,
     /// in one continuous list — no section dividers. Each still gets its
-    /// own muted icon tint, matching the Views rows above them.
+    /// own muted icon tint, matching the Views rows above them — every
+    /// sidebar icon (these plus the MessageCategory ones) uses a distinct
+    /// hue, not just a different shade of one already in use.
     private let mailFolders: [(id: String, label: String, icon: String, tint: Color)] = [
-        ("sent", "Sent", "paperplane", Color(hex: "#5b9bd5").opacity(0.8)),
-        ("drafts", "Drafts", "doc", Color(hex: "#8a8f98").opacity(0.8))
+        ("sent", "Sent", "paperplane", Color(hex: "#4fc3c7").opacity(0.8)),
+        ("drafts", "Drafts", "doc", Color(hex: "#9099a3").opacity(0.8))
     ]
 
     private var primaryAccount: Account? { vm.accounts.first }
@@ -48,25 +50,25 @@ struct SidebarView: View {
 
                 NavItem(
                     label: "Important", icon: "bookmark", isActive: vm.selectedFolder == "important",
-                    tint: Color.appAccent.opacity(0.85)
+                    tint: Color(hex: "#e2678f").opacity(0.85)
                 ) {
                     vm.selectedFolder = "important"
                 }
                 NavItem(
                     label: "Archive", icon: "archivebox", isActive: vm.selectedFolder == "archive",
-                    tint: Color(hex: "#e2984e").opacity(0.8)
+                    tint: Color(hex: "#a8c14e").opacity(0.8)
                 ) {
                     vm.selectedFolder = "archive"
                 }
                 NavItem(
                     label: "Trash", icon: "trash", isActive: vm.selectedFolder == "trash",
-                    tint: Color(hex: "#e5493f").opacity(0.8)
+                    tint: Color(hex: "#7b8fe0").opacity(0.8)
                 ) {
                     vm.selectedFolder = "trash"
                 }
                 NavItem(
                     label: "All Mail", icon: "envelope", isActive: vm.selectedFolder == "all",
-                    tint: Color(hex: "#5fb488").opacity(0.8)
+                    tint: Color(hex: "#c766c9").opacity(0.8)
                 ) {
                     vm.selectedFolder = "all"
                 }

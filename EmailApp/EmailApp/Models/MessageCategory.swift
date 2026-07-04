@@ -27,14 +27,16 @@ enum MessageCategory: String, CaseIterable, Codable {
     }
 
     /// Muted, not fully-saturated — outline icons read better dimmed than
-    /// at full opacity against the dark sidebar.
+    /// at full opacity against the dark sidebar. Every sidebar icon (this
+    /// enum plus the plain folders in SidebarView) uses its own hue, evenly
+    /// spread around the color wheel — no two are shades of the same color.
     var tint: Color {
         switch self {
-        case .primary: return Color(hex: "#e0796b").opacity(0.8)
+        case .primary: return Color(hex: "#e0645a").opacity(0.8)
         case .social: return Color(hex: "#5b9bd5").opacity(0.8)
-        case .promotions: return Color.appAccent.opacity(0.8)
+        case .promotions: return Color(hex: "#a78bfa").opacity(0.8)
         case .updates: return Color(hex: "#e2984e").opacity(0.8)
-        case .forums: return Color(hex: "#5fb488").opacity(0.8)
+        case .forums: return Color(hex: "#4fb47a").opacity(0.8)
         }
     }
 

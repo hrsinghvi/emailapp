@@ -22,7 +22,6 @@ extension Color {
         return String(format: "#%02X%02X%02X", r, g, b)
     }
 
-    static let defaultAccentHex = "#a78bfa"
 }
 
 /// Flat Notion-Mail/Gmail-inspired dark palette — replaces the old
@@ -34,7 +33,6 @@ extension Color {
     static let appSurfaceRaised = Color(hex: "#252525")
     static let appBorder = Color.white.opacity(0.08)
     static let appHover = Color.white.opacity(0.06)
-    /// User-configurable via Settings > Appearance — reads live so every
-    /// view using `.appAccent` updates the moment the picker changes.
-    static var appAccent: Color { AppSettings.shared.accentColor }
+    /// Fixed — no accent-color picker anymore, just plain white.
+    static let appAccent = Color.white
 }

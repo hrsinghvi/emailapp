@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, accounts, notifications, compose, appearance, shortcuts, mcp, advanced, about
+    case general, accounts, notifications, compose, shortcuts, mcp, advanced, about
 
     var id: String { rawValue }
 
@@ -12,7 +12,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .accounts: return "Accounts"
         case .notifications: return "Notifications"
         case .compose: return "Compose"
-        case .appearance: return "Appearance"
         case .shortcuts: return "Shortcuts"
         case .mcp: return "MCP"
         case .advanced: return "Advanced"
@@ -26,7 +25,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .accounts: return "person.crop.circle"
         case .notifications: return "bell"
         case .compose: return "square.and.pencil"
-        case .appearance: return "paintpalette"
         case .shortcuts: return "keyboard"
         case .mcp: return "bolt.horizontal.circle"
         case .advanced: return "wrench.and.screwdriver"
@@ -104,7 +102,6 @@ struct SettingsView: View {
         case .accounts: AccountsSettingsSection(vm: vm)
         case .notifications: NotificationsSettingsSection(vm: vm)
         case .compose: ComposeSettingsSection(vm: vm)
-        case .appearance: AppearanceSettingsSection()
         case .shortcuts: ShortcutsSettingsSection()
         case .mcp: MCPSettingsSectionView(vm: vm)
         case .advanced: AdvancedSettingsSection(vm: vm)
@@ -384,23 +381,6 @@ private struct ComposeSettingsSection: View {
                     .scrollContentBackground(.hidden)
                 }
                 .padding(.vertical, 6)
-            }
-        }
-    }
-}
-
-// MARK: - Appearance
-
-private struct AppearanceSettingsSection: View {
-    @Bindable private var settings = AppSettings.shared
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            SettingsHeader(title: "Appearance")
-
-            SettingsRow(title: "Accent color", subtitle: "Used for active states, selections, and highlights throughout the app") {
-                ColorPicker("", selection: $settings.accentColor, supportsOpacity: false)
-                    .labelsHidden()
             }
         }
     }
