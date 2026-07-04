@@ -51,6 +51,11 @@ final class HTMLPrewarmCache {
     private var lruOrder: [UUID] = []
     private let capacity = 15
 
+    func clear() {
+        entries.removeAll()
+        lruOrder.removeAll()
+    }
+
     func webView(for messageId: UUID) -> WKWebView? {
         entries[messageId]?.webView
     }

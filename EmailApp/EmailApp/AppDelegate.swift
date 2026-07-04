@@ -12,6 +12,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NotificationService.requestAuthorization()
     }
 
+    /// Settings > General > "Quit fully when the last window closes" — the
+    /// default SwiftUI behavior already keeps the app running (returning
+    /// false here), so this only matters when the user opts into the
+    /// non-default "quit fully" behavior.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        AppSettings.shared.quitBehavior == .quitFully
+    }
+
     /// Show the banner even while the app is frontmost — otherwise new-mail
     /// notifications would silently do nothing if you happened to be
     /// looking at the app already.

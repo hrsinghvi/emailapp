@@ -19,6 +19,7 @@ struct ContentView: View {
             Group {
                 if vm.selectedThread != nil {
                     ReadingPaneView(vm: vm)
+                        .transition(.opacity.combined(with: .move(edge: .trailing)))
                 } else {
                     VStack(spacing: 10) {
                         TopBar(vm: vm)
@@ -29,11 +30,13 @@ struct ContentView: View {
                             MessageListView(vm: vm)
                         }
                     }
+                    .transition(.opacity)
                 }
             }
             .frame(minWidth: 320, maxWidth: .infinity)
             .padding(.top, 34)
             .padding(.bottom, 12)
+            .animation(.easeOut(duration: 0.22), value: vm.selectedThread?.id)
         }
         .padding(.trailing, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -56,6 +59,7 @@ struct ContentView: View {
         .onKeyPress(.deleteForward) { vm.archiveFocused(); return .handled }
         .task { await vm.restoreSession() }
         .task { await vm.startRealtimeUpdates() }
+        .task { await vm.startMCPApprovalUpdates() }
         .overlay(alignment: .bottom) { PendingSendBannerStack(vm: vm) }
         .overlay(alignment: .bottomTrailing) {
             if let context = vm.composeContext {
@@ -64,6 +68,7 @@ struct ContentView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .animation(.spring(response: 0.32, dampingFraction: 1), value: vm.composeContext?.id)
         .alert(
             "Error",
             isPresented: Binding(get: { vm.errorMessage != nil }, set: { if !$0 { vm.errorMessage = nil } })

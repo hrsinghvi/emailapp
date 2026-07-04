@@ -52,8 +52,10 @@ struct ReadingPaneView: View {
                     ForEach(thread.messages) { message in
                         if vm.expandedMessageIds.contains(message.id) {
                             ExpandedMessageCard(vm: vm, message: message)
+                                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                         } else {
                             collapsedRow(message)
+                                .transition(.opacity)
                         }
                     }
                 }

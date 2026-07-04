@@ -160,9 +160,11 @@ struct SidebarView: View {
 
             Spacer(minLength: 4)
 
-            // No settings screen exists yet — this doesn't do anything.
-            Image(systemName: "gearshape")
-                .foregroundStyle(.secondary)
+            SettingsLink {
+                Image(systemName: "gearshape")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
         }
         .padding(.top, 10)
         .overlay(alignment: .top) { Divider().overlay(Color.appBorder) }
@@ -233,6 +235,7 @@ private struct InboxNavItem: View {
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 8).fill(isActive ? Color.appHover : .clear))
+                .animation(.easeOut(duration: 0.18), value: isActive)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -293,6 +296,7 @@ private struct CategoryNavItem: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 8).fill(isActive ? Color.appHover : .clear))
+                .animation(.easeOut(duration: 0.18), value: isActive)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -319,6 +323,7 @@ private struct ProviderShortcut: View {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 8).fill(isActive ? Color.appHover : .clear))
+                .animation(.easeOut(duration: 0.18), value: isActive)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 extension Color {
     init(hex: String) {
@@ -10,6 +11,18 @@ extension Color {
         let b = Double(value & 0x0000FF) / 255.0
         self.init(red: r, green: g, blue: b)
     }
+
+    /// Round-trips through NSColor's sRGB space — good enough for a settings
+    /// swatch, not meant to preserve exotic color spaces.
+    func toHex() -> String? {
+        guard let rgb = NSColor(self).usingColorSpace(.sRGB) else { return nil }
+        let r = Int((rgb.redComponent * 255).rounded())
+        let g = Int((rgb.greenComponent * 255).rounded())
+        let b = Int((rgb.blueComponent * 255).rounded())
+        return String(format: "#%02X%02X%02X", r, g, b)
+    }
+
+    static let defaultAccentHex = "#a78bfa"
 }
 
 /// Flat Notion-Mail/Gmail-inspired dark palette — replaces the old
@@ -21,5 +34,7 @@ extension Color {
     static let appSurfaceRaised = Color(hex: "#252525")
     static let appBorder = Color.white.opacity(0.08)
     static let appHover = Color.white.opacity(0.06)
-    static let appAccent = Color(hex: "#a78bfa")
+    /// User-configurable via Settings > Appearance — reads live so every
+    /// view using `.appAccent` updates the moment the picker changes.
+    static var appAccent: Color { AppSettings.shared.accentColor }
 }

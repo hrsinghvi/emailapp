@@ -102,6 +102,9 @@ final class InboxViewModel {
     var drafts: [Draft] = []
     var pendingSends: [PendingSend] = []
     var offlineQueue: [QueuedActionEnvelope] = []
+    /// Write actions an MCP tool call queued because Settings > MCP >
+    /// "require confirmation" is on — surfaced for approve/reject there.
+    var pendingMCPActions: [PendingAction] = []
 
     /// Unread count across every connected account's inbox, regardless of
     /// whatever provider filter/search/folder is currently on screen —
@@ -155,13 +158,14 @@ final class InboxViewModel {
         // the real send succeeds, so a crash mid-countdown doesn't lose it.
         if let draftId { drafts.removeAll { $0.id == draftId } }
 
+        let delay = AppSettings.shared.undoSendDelay
         var pending = PendingSend(
             draftId: draftId, origin: origin, to: to, cc: cc, bcc: bcc, subject: subject,
-            bodyHTML: bodyHTML, attachments: attachments, scheduledAt: Date().addingTimeInterval(8)
+            bodyHTML: bodyHTML, attachments: attachments, scheduledAt: Date().addingTimeInterval(delay)
         )
         let sendId = pending.id
         pending.task = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(8))
+            try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
             await self?.performActualSend(sendId)
         }
@@ -399,13 +403,16 @@ final class InboxViewModel {
     /// Expands/collapses one message within the open thread. Expanding
     /// marks it read and makes it the focus for keyboard actions.
     func toggleExpand(_ message: Message) {
-        if expandedMessageIds.contains(message.id) {
-            expandedMessageIds.remove(message.id)
-        } else {
-            expandedMessageIds.insert(message.id)
-            focusedMessageId = message.id
-            markRead(message)
+        let isExpanding = !expandedMessageIds.contains(message.id)
+        withAnimation(.easeOut(duration: 0.22)) {
+            if isExpanding {
+                expandedMessageIds.insert(message.id)
+                focusedMessageId = message.id
+            } else {
+                expandedMessageIds.remove(message.id)
+            }
         }
+        if isExpanding { markRead(message) }
     }
 
     /// Moves the open thread selection up/down through the current list —
@@ -499,7 +506,9 @@ final class InboxViewModel {
     func archive(_ message: Message) {
         guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
         let previousFolder = messages[index].folder
-        messages[index].folder = "archive"
+        withAnimation(.easeOut(duration: 0.2)) {
+            messages[index].folder = "archive"
+        }
         MessageCacheStore.save(messages)
         if selectedThreadKey == message.threadKey, selectedThread == nil {
             selectedThreadKey = nil
@@ -554,7 +563,9 @@ final class InboxViewModel {
     func delete(_ message: Message) {
         guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
         let previousFolder = messages[index].folder
-        messages[index].folder = "trash"
+        withAnimation(.easeOut(duration: 0.2)) {
+            messages[index].folder = "trash"
+        }
         MessageCacheStore.save(messages)
 
         guard NetworkMonitor.shared.isOnline else {
@@ -650,7 +661,18 @@ final class InboxViewModel {
     /// - ponytail: no sender picker — single default account. Add one if
     ///   multi-account send-from becomes a real need.
     func send(to: String, cc: String = "", bcc: String = "", subject: String, bodyHTML: String, attachments: [OutgoingAttachment] = []) async throws {
-        guard let account = accounts.first else { throw SendError.noAccount }
+        try await sendFrom(accountEmail: nil, to: to, cc: cc, bcc: bcc, subject: subject, bodyHTML: bodyHTML, attachments: attachments)
+    }
+
+    /// Same as `send`, but for callers that know exactly which connected
+    /// account should send it (MCP's `send_email` names one explicitly) —
+    /// falls back to the first account if that email isn't connected.
+    func sendFrom(
+        accountEmail: String?, to: String, cc: String = "", bcc: String = "",
+        subject: String, bodyHTML: String, attachments: [OutgoingAttachment] = []
+    ) async throws {
+        let account = accountEmail.flatMap { email in accounts.first { $0.email == email } } ?? accounts.first
+        guard let account else { throw SendError.noAccount }
         let token = try await OAuthManager.shared.validAccessToken(for: account)
         switch account.provider {
         case .gmail:
@@ -728,6 +750,28 @@ final class InboxViewModel {
         }
     }
 
+    /// Deletes the stored tokens and drops the account's mail from this
+    /// session — it won't come back on relaunch, and won't show up again
+    /// until reconnected from Settings.
+    func disconnectAccount(_ account: Account) {
+        OAuthManager.shared.disconnect(account)
+        accounts.removeAll { $0.id == account.id }
+        messages.removeAll { $0.accountId == account.id }
+        MessageCacheStore.save(messages)
+    }
+
+    /// Settings > Advanced > "Clear local cache" — drops the on-disk
+    /// message cache and prewarmed HTML views, then immediately refetches
+    /// so the effect is visible right away rather than only on next
+    /// launch. Drafts and the offline write queue are untouched — those
+    /// are pending user work, not disposable cache.
+    func clearLocalCache() {
+        MessageCacheStore.clear()
+        HTMLPrewarmCache.shared.clear()
+        messages.removeAll()
+        Task { await refreshAll() }
+    }
+
     /// Restores any accounts signed in during a prior launch (silent token
     /// refresh, no browser prompt) and loads their mail. Call once at startup.
     func restoreSession() async {
@@ -737,6 +781,8 @@ final class InboxViewModel {
         if messages.isEmpty {
             messages = MessageCacheStore.load()
         }
+        PowerAssertionService.beginSyncIfEnabled()
+        defer { PowerAssertionService.endSync() }
         for account in await OAuthManager.shared.restoreAccounts() {
             do {
                 try await fetchAndMerge(account)
@@ -744,6 +790,7 @@ final class InboxViewModel {
                 AppLog.auth.error("Silent restore failed for \(account.email): \(error.localizedDescription)")
             }
         }
+        startSyncTimerIfNeeded()
     }
 
     /// Manual re-fetch for every connected account — backs the toolbar's
@@ -751,6 +798,8 @@ final class InboxViewModel {
     /// arrives; this is for "no, check right now."
     func refreshAll() async {
         guard NetworkMonitor.shared.isOnline else { return }
+        PowerAssertionService.beginSyncIfEnabled()
+        defer { PowerAssertionService.endSync() }
         for account in accounts {
             do {
                 try await fetchAndMerge(account)
@@ -760,12 +809,115 @@ final class InboxViewModel {
         }
     }
 
+    private var syncTimerTask: Task<Void, Never>?
+
+    /// Settings > General > sync frequency override — realtime push already
+    /// covers new mail as it arrives; this is a periodic belt-and-suspenders
+    /// refresh for whatever realtime might miss. 0 disables it.
+    private func startSyncTimerIfNeeded() {
+        syncTimerTask?.cancel()
+        let minutes = AppSettings.shared.syncFrequencyMinutes
+        guard minutes > 0 else { return }
+        syncTimerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(minutes * 60))
+                guard !Task.isCancelled else { return }
+                await self?.refreshAll()
+            }
+        }
+    }
+
+    /// Called when the setting changes while the app is already running, so
+    /// a new interval takes effect immediately instead of at next launch.
+    func applySyncFrequencyChange() {
+        startSyncTimerIfNeeded()
+    }
+
     /// Subscribes to live inserts from the backend so new mail (delivered via
     /// Gmail/Graph webhooks) appears within seconds, without polling. Runs
     /// until cancelled — call from a long-lived `.task {}`.
     func startRealtimeUpdates() async {
         await RealtimeService.subscribeToMessages { [weak self] row in
             Task { @MainActor in self?.handleRealtimeInsert(row) }
+        }
+    }
+
+    /// Loads any write actions already waiting for approval, then streams
+    /// in new ones as MCP tool calls queue them. Call from a long-lived
+    /// `.task {}`, same as `startRealtimeUpdates`.
+    func startMCPApprovalUpdates() async {
+        if let existing = try? await MCPSettingsService.fetchPendingActions() {
+            pendingMCPActions = existing
+        }
+        await MCPSettingsService.subscribeToPendingActions { [weak self] action in
+            Task { @MainActor in
+                guard let self, !self.pendingMCPActions.contains(action) else { return }
+                self.pendingMCPActions.insert(action, at: 0)
+            }
+        }
+    }
+
+    /// Executes the queued write for real using the app's own already-
+    /// authenticated Gmail/Graph clients, then marks it resolved.
+    func approvePendingMCPAction(_ action: PendingAction) async {
+        do {
+            try await executeMCPAction(action)
+            try await MCPSettingsService.resolvePendingAction(action.id, tool: action.tool, approved: true)
+        } catch {
+            errorMessage = "Couldn't complete the approved action: \(error.localizedDescription)"
+            try? await MCPSettingsService.resolvePendingAction(action.id, tool: action.tool, approved: false)
+        }
+        pendingMCPActions.removeAll { $0.id == action.id }
+    }
+
+    func rejectPendingMCPAction(_ action: PendingAction) async {
+        try? await MCPSettingsService.resolvePendingAction(action.id, tool: action.tool, approved: false)
+        pendingMCPActions.removeAll { $0.id == action.id }
+    }
+
+    private enum MCPActionError: LocalizedError {
+        case missingArgs, messageNotFound
+        var errorDescription: String? {
+            switch self {
+            case .missingArgs: return "The queued action is missing required data."
+            case .messageNotFound: return "That message is no longer available."
+            }
+        }
+    }
+
+    private func executeMCPAction(_ action: PendingAction) async throws {
+        let args = action.args
+        switch action.tool {
+        case "archive_email":
+            guard let idString = args["message_id"]?.stringValue, let message = messages.first(where: { $0.id.uuidString.lowercased() == idString.lowercased() }) else {
+                throw MCPActionError.messageNotFound
+            }
+            archive(message)
+
+        case "mark_read":
+            guard let idString = args["message_id"]?.stringValue, let message = messages.first(where: { $0.id.uuidString.lowercased() == idString.lowercased() }) else {
+                throw MCPActionError.messageNotFound
+            }
+            let isRead = args["is_read"]?.boolValue ?? true
+            await setRead(message, read: isRead)
+
+        case "send_email":
+            guard let to = args["to"]?.arrayValue?.compactMap(\.stringValue), !to.isEmpty,
+                  let subject = args["subject"]?.stringValue, let body = args["body"]?.stringValue,
+                  let account = args["account"]?.stringValue else {
+                throw MCPActionError.missingArgs
+            }
+            try await sendFrom(accountEmail: account, to: to.joined(separator: ", "), subject: subject, bodyHTML: body)
+
+        case "reply_email":
+            guard let idString = args["message_id"]?.stringValue, let message = messages.first(where: { $0.id.uuidString.lowercased() == idString.lowercased() }),
+                  let body = args["body"]?.stringValue else {
+                throw MCPActionError.missingArgs
+            }
+            try await reply(to: message, bodyHTML: body)
+
+        default:
+            throw MCPActionError.missingArgs
         }
     }
 
@@ -796,7 +948,10 @@ final class InboxViewModel {
             folder: row.folder
         )
         messages.append(message)
-        NotificationService.notifyNewMail(message)
+        let settings = AppSettings.shared
+        if settings.notificationsEnabled, !settings.mutedAccountEmails.contains(row.accountEmail) {
+            NotificationService.notifyNewMail(message)
+        }
     }
 
     /// Jumps straight to a message regardless of whatever folder/filter/

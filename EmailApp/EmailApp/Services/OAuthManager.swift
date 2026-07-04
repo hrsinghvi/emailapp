@@ -84,6 +84,13 @@ final class OAuthManager: NSObject {
         "\(provider.rawValue):\(email)"
     }
 
+    /// Removes the stored tokens for good — the account won't silently come
+    /// back on the next `restoreAccounts()` since there's nothing left in
+    /// the Keychain to restore.
+    func disconnect(_ account: Account) {
+        try? KeychainService.delete(account: keychainAccount(provider: account.provider, email: account.email))
+    }
+
     // MARK: - Public API
 
     /// Runs the interactive consent flow, stores tokens in the Keychain,

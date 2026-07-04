@@ -35,12 +35,22 @@ struct EmailAppApp: App {
                     .keyboardShortcut("n", modifiers: .command)
             }
             CommandMenu("Message") {
-                Button("Reply") { vm.focusedMessage.map { vm.composeContext = .reply($0) } }
-                    .keyboardShortcut("r", modifiers: .command)
-                    .disabled(vm.focusedMessage == nil)
-                Button("Reply All") { vm.focusedMessage.map { vm.composeContext = .replyAll($0) } }
-                    .keyboardShortcut("r", modifiers: [.command, .shift])
-                    .disabled(vm.focusedMessage == nil)
+                // Cmd+R triggers whichever action Settings > Compose >
+                // "Default reply behavior" names; Cmd+Shift+R always does
+                // the other one, so both remain reachable regardless of
+                // the setting.
+                Button(AppSettings.shared.defaultReplyBehavior == .reply ? "Reply" : "Reply All") {
+                    guard let message = vm.focusedMessage else { return }
+                    vm.composeContext = AppSettings.shared.defaultReplyBehavior == .reply ? .reply(message) : .replyAll(message)
+                }
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(vm.focusedMessage == nil)
+                Button(AppSettings.shared.defaultReplyBehavior == .reply ? "Reply All" : "Reply") {
+                    guard let message = vm.focusedMessage else { return }
+                    vm.composeContext = AppSettings.shared.defaultReplyBehavior == .reply ? .replyAll(message) : .reply(message)
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(vm.focusedMessage == nil)
                 Button("Forward") { vm.focusedMessage.map { vm.composeContext = .forward($0) } }
                     .keyboardShortcut("f", modifiers: .command)
                     .disabled(vm.focusedMessage == nil)
@@ -65,6 +75,13 @@ struct EmailAppApp: App {
                 Button("Outlook") { vm.providerFilter = .outlook }
                     .keyboardShortcut("3", modifiers: .command)
             }
+        }
+
+        // A `Settings` scene is what actually wires up Cmd+, on macOS —
+        // SwiftUI handles the shortcut and menu item automatically, no
+        // manual keyboardShortcut needed.
+        Settings {
+            SettingsView(vm: vm)
         }
     }
 }

@@ -16,23 +16,29 @@ struct SwipeableRow<Content: View>: View {
     private let badgeWidth: CGFloat = 64
 
     var body: some View {
-        SwipeGestureHost(
-            onHorizontalDelta: { dragOffset = $0 },
-            onGestureEnd: commitOrSnapBack
-        ) {
-            ZStack {
-                reveal
-                content()
-                    .offset(x: dragOffset)
-                    .gesture(
-                        DragGesture(minimumDistance: 12)
-                            .onChanged { value in
-                                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                                dragOffset = value.translation.width
-                            }
-                            .onEnded { _ in commitOrSnapBack() }
-                    )
+        // Settings > Shortcuts > "Swipe gestures" — off just renders the
+        // row plain, no drag/swipe recognizers at all.
+        if AppSettings.shared.gesturesEnabled {
+            SwipeGestureHost(
+                onHorizontalDelta: { dragOffset = $0 },
+                onGestureEnd: commitOrSnapBack
+            ) {
+                ZStack {
+                    reveal
+                    content()
+                        .offset(x: dragOffset)
+                        .gesture(
+                            DragGesture(minimumDistance: 12)
+                                .onChanged { value in
+                                    guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                                    dragOffset = value.translation.width
+                                }
+                                .onEnded { _ in commitOrSnapBack() }
+                        )
+                }
             }
+        } else {
+            content()
         }
     }
 

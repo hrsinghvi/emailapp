@@ -31,6 +31,7 @@ struct MessageListView: View {
                                 vm.handleRowClick(thread, shift: flags.contains(.shift), command: flags.contains(.command))
                             }
                         }
+                        .transition(.opacity.combined(with: .move(edge: .leading)))
                         Divider().overlay(Color.appBorder)
                     }
                 }
@@ -125,20 +126,24 @@ private struct ThreadRow: View {
                 Button(action: onToggleCheck) {
                     Image(systemName: isChecked ? "checkmark.square.fill" : "square")
                         .foregroundStyle(isChecked ? Color.appAccent : .secondary)
+                        .scaleEffect(isChecked ? 1.08 : 1)
+                        .animation(.spring(response: 0.22, dampingFraction: 1), value: isChecked)
                 }
                 .buttonStyle(.plain)
                 .frame(width: checkboxClusterWidth, alignment: .leading)
                 .padding(.top, 2)
 
-                Button { vm.toggleStarred(message) } label: {
+                Button { withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) { vm.toggleStarred(message) } } label: {
                     Image(systemName: message.isStarred ? "star.fill" : "star")
                         .foregroundStyle(message.isStarred ? .yellow : .secondary)
+                        .scaleEffect(message.isStarred ? 1.1 : 1)
                 }
                 .buttonStyle(.plain)
                 .frame(width: starClusterWidth, alignment: .leading)
                 .padding(.top, 2)
+                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: message.isStarred)
 
-                Button { vm.toggleImportant(message) } label: {
+                Button { withAnimation(.easeOut(duration: 0.18)) { vm.toggleImportant(message) } } label: {
                     Image(systemName: message.isImportant ? "bookmark.fill" : "bookmark")
                         .foregroundStyle(message.isImportant ? Color.appAccent : .secondary)
                 }
@@ -150,6 +155,7 @@ private struct ThreadRow: View {
                     .font(.appSubheadline.weight(thread.hasUnread ? .semibold : .regular))
                     .lineLimit(1)
                     .frame(width: 150, alignment: .leading)
+                    .animation(.easeOut(duration: 0.2), value: thread.hasUnread)
 
                 if thread.count > 1 {
                     Text("\(thread.count)")
@@ -204,7 +210,7 @@ private struct ThreadRow: View {
             .frame(maxHeight: .infinity)
         }
         .onHover { isHovering = $0 }
-        .animation(.easeInOut(duration: 0.12), value: isHovering)
+        .animation(.easeOut(duration: 0.16), value: isHovering)
     }
 }
 

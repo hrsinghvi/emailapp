@@ -21,4 +21,8 @@ enum MessageCacheStore {
         guard let data = try? JSONEncoder().encode(messages) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
+
+    static func clear() {
+        try? FileManager.default.removeItem(at: fileURL)
+    }
 }

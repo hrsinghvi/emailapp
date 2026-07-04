@@ -96,8 +96,13 @@ struct ComposeView: View {
                                 sizeMB: attachment.sizeMB,
                                 thumbnail: thumbnail(for: attachment),
                                 systemIconName: AttachmentIcon.systemName(forMimeType: attachment.mimeType),
-                                onRemove: { attachments.removeAll { $0.id == attachment.id } }
+                                onRemove: {
+                                    withAnimation(.easeOut(duration: 0.18)) {
+                                        attachments.removeAll { $0.id == attachment.id }
+                                    }
+                                }
                             )
+                            .transition(.scale(scale: 0.85).combined(with: .opacity))
                         }
                     }
                 }
@@ -159,10 +164,12 @@ struct ComposeView: View {
         switch context {
         case .new:
             origin = .new
+            attributedBody = signatureAttributedString(forAccount: vm.accounts.first)
         case .reply(let message):
             origin = .reply(messageId: message.id)
             to = message.senderEmail
             subject = message.subject.lowercased().hasPrefix("re:") ? message.subject : "Re: \(message.subject)"
+            attributedBody = signatureAttributedString(forAccount: vm.accounts.first { $0.id == message.accountId })
         case .replyAll(let message):
             origin = .replyAll(messageId: message.id)
             var seen = Set<String>()
@@ -170,10 +177,12 @@ struct ComposeView: View {
                 .filter { seen.insert($0.lowercased()).inserted }
             to = recipients.joined(separator: ", ")
             subject = message.subject.lowercased().hasPrefix("re:") ? message.subject : "Re: \(message.subject)"
+            attributedBody = signatureAttributedString(forAccount: vm.accounts.first { $0.id == message.accountId })
         case .forward(let message):
             origin = .forward(messageId: message.id)
             subject = message.subject.lowercased().hasPrefix("fwd:") ? message.subject : "Fwd: \(message.subject)"
-            let quoted = "<br><br>---------- Forwarded message ----------<br>From: \(message.senderName) &lt;\(message.senderEmail)&gt;<br>Subject: \(message.subject)<br><br>\(message.htmlBody ?? message.body)"
+            let signature = signatureHTML(forAccount: vm.accounts.first { $0.id == message.accountId })
+            let quoted = "\(signature)<br><br>---------- Forwarded message ----------<br>From: \(message.senderName) &lt;\(message.senderEmail)&gt;<br>Subject: \(message.subject)<br><br>\(message.htmlBody ?? message.body)"
             attributedBody = NSAttributedString(html: quoted) ?? NSAttributedString(string: quoted)
         case .draft(let draft):
             draftId = draft.id
@@ -187,6 +196,19 @@ struct ComposeView: View {
             attachments = draft.attachments.compactMap(\.outgoing)
             hasSavedOnce = true
         }
+    }
+
+    private func signatureHTML(forAccount account: Account?) -> String {
+        guard let email = account?.email, let signature = AppSettings.shared.signatures[email], !signature.isEmpty else {
+            return ""
+        }
+        return "<br><br>\(signature.replacingOccurrences(of: "\n", with: "<br>"))"
+    }
+
+    private func signatureAttributedString(forAccount account: Account?) -> NSAttributedString {
+        let html = signatureHTML(forAccount: account)
+        guard !html.isEmpty else { return NSAttributedString(string: "") }
+        return NSAttributedString(html: html) ?? NSAttributedString(string: "")
     }
 
     /// First edit creates the draft; every autosave after that fully
@@ -212,10 +234,12 @@ struct ComposeView: View {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         guard panel.runModal() == .OK else { return }
-        for url in panel.urls {
-            guard let data = try? Data(contentsOf: url) else { continue }
-            let mimeType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
-            attachments.append(OutgoingAttachment(filename: url.lastPathComponent, mimeType: mimeType, data: data))
+        withAnimation(.easeOut(duration: 0.2)) {
+            for url in panel.urls {
+                guard let data = try? Data(contentsOf: url) else { continue }
+                let mimeType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+                attachments.append(OutgoingAttachment(filename: url.lastPathComponent, mimeType: mimeType, data: data))
+            }
         }
     }
 
