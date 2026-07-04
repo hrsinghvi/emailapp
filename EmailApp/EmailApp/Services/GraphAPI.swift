@@ -53,9 +53,18 @@ enum GraphAPI {
     private nonisolated static func fetchFolder(
         wellKnownName: String, folder: String, for account: Account, accessToken: String, limit: Int
     ) async throws -> [Message] {
+        struct ListResponse: Decodable {
+            let value: [RawMessage]
+            let nextLink: String?
+            enum CodingKeys: String, CodingKey {
+                case value
+                case nextLink = "@odata.nextLink"
+            }
+        }
+
         var comps = URLComponents(string: "\(base)/me/mailFolders/\(wellKnownName)/messages")!
         comps.queryItems = [
-            .init(name: "$top", value: String(limit)),
+            .init(name: "$top", value: String(min(limit, 999))),
             .init(name: "$orderby", value: "receivedDateTime desc"),
             .init(
                 name: "$select",
@@ -63,9 +72,19 @@ enum GraphAPI {
                     + "toRecipients,ccRecipients,hasAttachments"
             ),
         ]
-        struct ListResponse: Decodable { let value: [RawMessage] }
-        let data = try await get(comps.url!.absoluteString, accessToken: accessToken)
-        let raw = try JSONDecoder().decode(ListResponse.self, from: data).value
+
+        // Loops @odata.nextLink beyond the first page — Graph caps a single
+        // page well under most backfill targets (e.g. "every message" for a
+        // fresh account, or a few thousand for an older one).
+        var raw: [RawMessage] = []
+        var nextURL: String? = comps.url!.absoluteString
+        while let url = nextURL, raw.count < limit {
+            let data = try await get(url, accessToken: accessToken)
+            let response = try JSONDecoder().decode(ListResponse.self, from: data)
+            raw.append(contentsOf: response.value)
+            nextURL = response.nextLink
+        }
+        if raw.count > limit { raw = Array(raw.prefix(limit)) }
         var messages = raw.map { $0.toMessage(account: account, folder: folder) }
 
         // Attachment bytes aren't in the list response — fetch metadata only

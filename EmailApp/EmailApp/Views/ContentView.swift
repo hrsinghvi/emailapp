@@ -274,16 +274,6 @@ private struct ListToolbar: View {
 
     var body: some View {
         HStack(spacing: 22) {
-            Button {
-                vm.toggleSelectAll()
-            } label: {
-                Image(systemName: allSelected ? "checkmark.square.fill" : "square")
-                    .font(.custom("DM Sans", size: 13))
-                    .foregroundStyle(allSelected ? Color.appAccent : .secondary)
-                    .iconButtonHitArea()
-            }
-            .buttonStyle(.plain)
-
             if vm.selectedThreadKeys.isEmpty {
                 Button {
                     guard !isRefreshing else { return }
@@ -301,7 +291,19 @@ private struct ListToolbar: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-            } else {
+            }
+
+            Button {
+                vm.toggleSelectAll()
+            } label: {
+                Image(systemName: allSelected ? "checkmark.square.fill" : "square")
+                    .font(.custom("DM Sans", size: 13))
+                    .foregroundStyle(allSelected ? Color.appAccent : .secondary)
+                    .iconButtonHitArea()
+            }
+            .buttonStyle(.plain)
+
+            if !vm.selectedThreadKeys.isEmpty {
                 Text("\(vm.selectedThreadKeys.count) selected")
                     .font(.appCaption)
                     .foregroundStyle(.secondary)
@@ -342,7 +344,10 @@ private struct ListToolbar: View {
                 .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, 6)
+        // Matches MessageListView's row checkbox X position exactly:
+        // rowHorizontalPadding(16) + leadingInset(3) + row spacing(10).
+        .padding(.leading, 29)
+        .padding(.trailing, 6)
         .padding(.vertical, 10)
         .animation(.easeOut(duration: 0.18), value: vm.selectedThreadKeys.isEmpty)
     }

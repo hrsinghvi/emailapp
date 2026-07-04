@@ -42,17 +42,11 @@ enum GmailAPI {
     private nonisolated static func fetchMessages(
         labelId: String, folder: String, for account: Account, accessToken: String, limit: Int
     ) async throws -> [Message] {
-        struct ListResponse: Decodable {
-            struct Ref: Decodable { let id: String }
-            let messages: [Ref]?
-        }
-        let listData = try await get(
-            "\(base)/messages?labelIds=\(labelId)&maxResults=\(limit)", accessToken: accessToken)
-        let ids = (try JSONDecoder().decode(ListResponse.self, from: listData).messages ?? []).map(\.id)
+        let ids = try await listMessageIds(labelId: labelId, accessToken: accessToken, limit: limit)
 
         return try await withThrowingTaskGroup(of: Message?.self) { group in
             var iterator = ids.makeIterator()
-            let maxConcurrent = 5
+            let maxConcurrent = 8
 
             func addNext() {
                 guard let id = iterator.next() else { return }
@@ -69,6 +63,31 @@ enum GmailAPI {
             }
             return results.sorted { $0.receivedAt > $1.receivedAt }
         }
+    }
+
+    /// Gmail caps a single list call at 500 results — loops pageToken to
+    /// gather more than that (e.g. a 2000-message backfill).
+    private nonisolated static func listMessageIds(
+        labelId: String, accessToken: String, limit: Int
+    ) async throws -> [String] {
+        struct ListResponse: Decodable {
+            struct Ref: Decodable { let id: String }
+            let messages: [Ref]?
+            let nextPageToken: String?
+        }
+        var ids: [String] = []
+        var pageToken: String?
+        repeat {
+            let remaining = limit - ids.count
+            guard remaining > 0 else { break }
+            var url = "\(base)/messages?labelIds=\(labelId)&maxResults=\(min(remaining, 500))"
+            if let pageToken { url += "&pageToken=\(pageToken)" }
+            let listData = try await get(url, accessToken: accessToken)
+            let response = try JSONDecoder().decode(ListResponse.self, from: listData)
+            ids.append(contentsOf: (response.messages ?? []).map(\.id))
+            pageToken = response.nextPageToken
+        } while pageToken != nil && ids.count < limit
+        return ids
     }
 
     // MARK: - Mutations

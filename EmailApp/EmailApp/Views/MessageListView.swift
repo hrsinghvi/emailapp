@@ -74,6 +74,7 @@ private struct ThreadRow: View {
 
                 Button(action: onToggleCheck) {
                     Image(systemName: isChecked ? "checkmark.square.fill" : "square")
+                        .font(.custom("DM Sans", size: 13))
                         .foregroundStyle(isChecked ? Color.appAccent : .secondary)
                         .scaleEffect(isChecked ? 1.08 : 1)
                         .animation(.spring(response: 0.22, dampingFraction: 1), value: isChecked)
@@ -86,6 +87,7 @@ private struct ThreadRow: View {
 
                 Button { withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) { vm.toggleStarred(message) } } label: {
                     Image(systemName: message.isStarred ? "star.fill" : "star")
+                        .font(.custom("DM Sans", size: 13))
                         .foregroundStyle(message.isStarred ? .yellow : .secondary)
                         .scaleEffect(message.isStarred ? 1.1 : 1)
                         .frame(width: starClusterWidth, height: 22)
@@ -98,6 +100,7 @@ private struct ThreadRow: View {
 
                 Button { withAnimation(.easeOut(duration: 0.18)) { vm.toggleImportant(message) } } label: {
                     Image(systemName: message.isImportant ? "bookmark.fill" : "bookmark")
+                        .font(.custom("DM Sans", size: 13))
                         .foregroundStyle(message.isImportant ? Color.appAccent : .secondary)
                         .frame(width: importantClusterWidth, height: 22)
                         .contentShape(Rectangle())

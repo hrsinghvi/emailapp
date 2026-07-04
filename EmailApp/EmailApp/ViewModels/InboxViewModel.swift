@@ -822,6 +822,39 @@ final class InboxViewModel {
             }
         }
         startSyncTimerIfNeeded()
+        await performOneTimeHistoryBackfillIfNeeded()
+    }
+
+    /// Runs once ever (per install): pulls a much deeper history than the
+    /// regular sync does — 2000 latest from Gmail, everything from Outlook
+    /// (fine for a small/new account). Ordinary syncs stay at the smaller
+    /// default so they don't re-fetch thousands of already-known messages
+    /// on every refresh; this just backfills what was missing the first time.
+    private func performOneTimeHistoryBackfillIfNeeded() async {
+        guard !AppSettings.shared.hasBackfilledMailHistory else { return }
+        guard NetworkMonitor.shared.isOnline else { return }
+        AppSettings.shared.hasBackfilledMailHistory = true
+        for account in accounts {
+            do {
+                let token = try await OAuthManager.shared.validAccessToken(for: account)
+                let fetched: [Message]
+                switch account.provider {
+                case .gmail:
+                    async let inboxTask = GmailAPI.fetchInbox(for: account, accessToken: token, limit: 2000)
+                    async let sentTask = GmailAPI.fetchSent(for: account, accessToken: token, limit: 500)
+                    let (inbox, sent) = try await (inboxTask, sentTask)
+                    fetched = inbox + sent
+                case .outlook:
+                    async let inboxTask = GraphAPI.fetchInbox(for: account, accessToken: token, limit: 10000)
+                    async let sentTask = GraphAPI.fetchSent(for: account, accessToken: token, limit: 10000)
+                    let (inbox, sent) = try await (inboxTask, sentTask)
+                    fetched = inbox + sent
+                }
+                merge(account: account, fetched: fetched)
+            } catch {
+                AppLog.sync.error("History backfill failed for \(account.email): \(error.localizedDescription)")
+            }
+        }
     }
 
     /// Manual re-fetch for every connected account — backs the toolbar's

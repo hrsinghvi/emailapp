@@ -44,6 +44,7 @@ final class AppSettings {
         static let defaultReplyBehavior = "settings.defaultReplyBehavior"
         static let signatures = "settings.signatures"
         static let gesturesEnabled = "settings.gesturesEnabled"
+        static let hasBackfilledMailHistory = "settings.hasBackfilledMailHistory"
     }
 
     private let defaults = UserDefaults.standard
@@ -95,6 +96,12 @@ final class AppSettings {
         didSet { defaults.set(gesturesEnabled, forKey: Key.gesturesEnabled) }
     }
 
+    /// One-time deep-history backfill (2000 latest from Gmail, everything
+    /// from Outlook) — runs once ever, not on every sync.
+    var hasBackfilledMailHistory: Bool {
+        didSet { defaults.set(hasBackfilledMailHistory, forKey: Key.hasBackfilledMailHistory) }
+    }
+
     private init() {
         launchAtLogin = defaults.object(forKey: Key.launchAtLogin) as? Bool ?? false
         keepAwakeDuringSync = defaults.object(forKey: Key.keepAwakeDuringSync) as? Bool ?? false
@@ -106,6 +113,7 @@ final class AppSettings {
         defaultReplyBehavior = DefaultReplyBehavior(rawValue: defaults.string(forKey: Key.defaultReplyBehavior) ?? "") ?? .reply
         signatures = defaults.dictionary(forKey: Key.signatures) as? [String: String] ?? [:]
         gesturesEnabled = defaults.object(forKey: Key.gesturesEnabled) as? Bool ?? true
+        hasBackfilledMailHistory = defaults.object(forKey: Key.hasBackfilledMailHistory) as? Bool ?? false
     }
 
     /// Registers/unregisters with `SMAppService` — the real macOS login-item
