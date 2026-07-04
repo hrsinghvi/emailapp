@@ -275,15 +275,20 @@ private struct ListToolbar: View {
     var body: some View {
         HStack(spacing: 22) {
             // Checkbox goes first so its X position matches the row
-            // checkbox directly below it (both use the same leading
-            // padding) — vertically aligned rather than offset by refresh.
+            // checkbox directly below it. Deliberately NOT using
+            // iconButtonHitArea() here — its padding shifted the glyph
+            // relative to the row checkbox, which has no such padding.
+            // Same frame-based sizing as the row checkbox instead, so
+            // both go through an identical layout, guaranteeing alignment
+            // instead of guessing a compensating offset.
             Button {
                 vm.toggleSelectAll()
             } label: {
                 Image(systemName: allSelected ? "checkmark.square.fill" : "square")
                     .font(.custom("DM Sans", size: 13))
                     .foregroundStyle(allSelected ? Color.appAccent : .secondary)
-                    .iconButtonHitArea()
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
@@ -346,10 +351,8 @@ private struct ListToolbar: View {
             }
         }
         // Matches MessageListView's row checkbox X position exactly:
-        // rowHorizontalPadding(16) + leadingInset(3) + row spacing(10),
-        // minus 6 to offset iconButtonHitArea's own symmetric padding
-        // around the glyph (the row checkbox has no such padding).
-        .padding(.leading, 23)
+        // rowHorizontalPadding(16) + leadingInset(3) + row spacing(10).
+        .padding(.leading, 29)
         .padding(.trailing, 6)
         .padding(.vertical, 10)
         .animation(.easeOut(duration: 0.18), value: vm.selectedThreadKeys.isEmpty)
