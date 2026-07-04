@@ -73,12 +73,16 @@ struct ContentView: View {
         // buttons themselves; those are window chrome, always hit-tested
         // before the content view underneath them.
         .overlay(alignment: .top) {
-            // No .ignoresSafeArea() here — that expanded this view's actual
-            // hit-testable bounds past the intended 34pt strip and down
-            // over the search bar, so its clicks went to performDrag
-            // instead of the search field and the field became permanently
-            // unclickable once that layout kicked in.
+            // Order matters: .ignoresSafeArea() FIRST pins this to the true
+            // top of the window (behind the traffic lights) instead of
+            // being inset below them; .frame(height: 34) AFTER that then
+            // hard-caps it back down. Doing it the other way around (frame
+            // then ignoresSafeArea) let the safe-area expansion override
+            // the cap and grow this view's hit-testable bounds down over
+            // the search bar, which is what made the search field
+            // permanently unclickable a few turns ago.
             TitleBarDragZoneView()
+                .ignoresSafeArea()
                 .frame(height: 34)
         }
         .focusable()
