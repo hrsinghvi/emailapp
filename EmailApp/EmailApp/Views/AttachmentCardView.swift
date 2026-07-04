@@ -34,6 +34,7 @@ struct AttachmentCardView: View {
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(.white, Color.black.opacity(0.65))
                             .font(.custom("DM Sans", size: 13))
+                            .iconButtonHitArea(4)
                     }
                     .buttonStyle(.plain)
                     .padding(3)

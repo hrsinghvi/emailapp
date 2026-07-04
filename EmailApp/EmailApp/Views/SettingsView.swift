@@ -625,7 +625,7 @@ private struct MCPSettingsSectionView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(settings.mcpBearerToken, forType: .string)
                 } label: {
-                    Image(systemName: "doc.on.doc")
+                    Image(systemName: "doc.on.doc").iconButtonHitArea()
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 Spacer()

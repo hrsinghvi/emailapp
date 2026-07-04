@@ -138,34 +138,36 @@ struct SidebarView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(primaryAccount?.provider.color ?? Color.appHover)
-                .frame(width: 32, height: 32)
-                .overlay(
-                    Text(primaryAccount?.prettyLocalName.prefix(1) ?? "?")
-                        .font(.appSubheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                )
+        Button { vm.isSettingsPresented = true } label: {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(primaryAccount?.provider.color ?? Color.appHover)
+                    .frame(width: 32, height: 32)
+                    .overlay(
+                        Text(primaryAccount?.prettyLocalName.prefix(1) ?? "?")
+                            .font(.appSubheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                    )
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(primaryAccount?.prettyLocalName ?? "No account")
-                    .font(.appCaption.weight(.semibold))
-                    .lineLimit(1)
-                Text(primaryAccount?.email ?? "Connect below")
-                    .font(.appCaption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(primaryAccount?.prettyLocalName ?? "No account")
+                        .font(.appCaption.weight(.semibold))
+                        .lineLimit(1)
+                    Text(primaryAccount?.email ?? "Connect below")
+                        .font(.appCaption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
 
-            Spacer(minLength: 4)
+                Spacer(minLength: 4)
 
-            Button { vm.isSettingsPresented = true } label: {
                 Image(systemName: "gearshape")
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 4)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .padding(.top, 10)
         .overlay(alignment: .top) { Divider().overlay(Color.appBorder) }
     }
@@ -227,7 +229,7 @@ private struct InboxNavItem: View {
                         .font(.appCaption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(isExpanded ? 0 : 180))
-                        .contentShape(Rectangle())
+                        .iconButtonHitArea()
                         .onTapGesture { isExpanded.toggle() }
                 }
                 .foregroundStyle(.primary)

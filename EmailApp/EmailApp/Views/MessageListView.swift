@@ -46,18 +46,23 @@ private struct ThreadRow: View {
     @State private var isHovering = false
 
     /// Fixed regardless of hover/selection/attachment state, so the row
-    /// never visually shifts.
-    private let leadingInset: CGFloat = 14
+    /// never visually shifts. `leadingInset` + `senderExtraLeadingPadding`
+    /// are sized so the checkbox/star/important cluster sits centered
+    /// between the provider color indicator and the sender name, instead
+    /// of hugging the sender side.
+    private let leadingInset: CGFloat = 3
     private let checkboxClusterWidth: CGFloat = 22
     private let starClusterWidth: CGFloat = 22
     private let importantClusterWidth: CGFloat = 22
+    private let senderExtraLeadingPadding: CGFloat = 11
     private let rowHorizontalPadding: CGFloat = 16
 
     /// Sum of the 4 fixed leading elements (spacer/checkbox/star/important)
-    /// plus the 4 row-spacing gaps between them, so the attachment row
-    /// below can align under the subject text precisely.
+    /// plus the 4 row-spacing gaps between them plus the sender's extra
+    /// leading padding, so the attachment row below can align under the
+    /// subject text precisely.
     private var contentIndent: CGFloat {
-        leadingInset + checkboxClusterWidth + starClusterWidth + importantClusterWidth + 4 * 10
+        leadingInset + checkboxClusterWidth + starClusterWidth + importantClusterWidth + 4 * 10 + senderExtraLeadingPadding
     }
 
     var body: some View {
@@ -72,6 +77,8 @@ private struct ThreadRow: View {
                         .foregroundStyle(isChecked ? Color.appAccent : .secondary)
                         .scaleEffect(isChecked ? 1.08 : 1)
                         .animation(.spring(response: 0.22, dampingFraction: 1), value: isChecked)
+                        .frame(width: checkboxClusterWidth, height: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .frame(width: checkboxClusterWidth, alignment: .leading)
@@ -81,6 +88,8 @@ private struct ThreadRow: View {
                     Image(systemName: message.isStarred ? "star.fill" : "star")
                         .foregroundStyle(message.isStarred ? .yellow : .secondary)
                         .scaleEffect(message.isStarred ? 1.1 : 1)
+                        .frame(width: starClusterWidth, height: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .frame(width: starClusterWidth, alignment: .leading)
@@ -90,6 +99,8 @@ private struct ThreadRow: View {
                 Button { withAnimation(.easeOut(duration: 0.18)) { vm.toggleImportant(message) } } label: {
                     Image(systemName: message.isImportant ? "bookmark.fill" : "bookmark")
                         .foregroundStyle(message.isImportant ? Color.appAccent : .secondary)
+                        .frame(width: importantClusterWidth, height: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .frame(width: importantClusterWidth, alignment: .leading)
@@ -100,6 +111,7 @@ private struct ThreadRow: View {
                     .lineLimit(1)
                     .frame(width: 150, alignment: .leading)
                     .animation(.easeOut(duration: 0.2), value: thread.hasUnread)
+                    .padding(.leading, senderExtraLeadingPadding)
 
                 if thread.count > 1 {
                     Text("\(thread.count)")

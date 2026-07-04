@@ -62,6 +62,7 @@ struct ComposeView: View {
                     Image(systemName: "xmark")
                         .font(.appCaption.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .iconButtonHitArea()
                 }
                 .buttonStyle(.plain)
             }

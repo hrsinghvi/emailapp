@@ -57,6 +57,11 @@ struct ContentView: View {
         .onKeyPress(.return) { vm.openSelected(); return .handled }
         .onKeyPress(.delete) { vm.archiveFocused(); return .handled }
         .onKeyPress(.deleteForward) { vm.archiveFocused(); return .handled }
+        .onKeyPress(.escape) {
+            guard vm.isSettingsPresented else { return .ignored }
+            vm.isSettingsPresented = false
+            return .handled
+        }
         .task { await vm.restoreSession() }
         .task { await vm.startRealtimeUpdates() }
         .task { await vm.startMCPApprovalUpdates() }
@@ -134,6 +139,7 @@ private struct ListToolbar: View {
                 Image(systemName: allSelected ? "checkmark.square.fill" : "square")
                     .font(.custom("DM Sans", size: 13))
                     .foregroundStyle(allSelected ? Color.appAccent : .secondary)
+                    .iconButtonHitArea()
             }
             .buttonStyle(.plain)
 
@@ -150,6 +156,7 @@ private struct ListToolbar: View {
                         .font(.custom("DM Sans", size: 13))
                         .rotationEffect(.degrees(isRefreshing ? 360 : 0))
                         .animation(isRefreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                        .iconButtonHitArea()
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -168,14 +175,14 @@ private struct ListToolbar: View {
                         .foregroundStyle(.secondary)
 
                     Button { vm.goToPreviousPage() } label: {
-                        Image(systemName: "chevron.left")
+                        Image(systemName: "chevron.left").iconButtonHitArea()
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(vm.listPageIndex > 0 ? .secondary : Color.secondary.opacity(0.3))
                     .disabled(vm.listPageIndex == 0)
 
                     Button { vm.goToNextPage() } label: {
-                        Image(systemName: "chevron.right")
+                        Image(systemName: "chevron.right").iconButtonHitArea()
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(range.end < range.total ? .secondary : Color.secondary.opacity(0.3))
@@ -188,7 +195,7 @@ private struct ListToolbar: View {
                 bulkButton("Mark Unread", icon: "envelope.badge") { vm.bulkMarkRead(false) }
 
                 Button { vm.selectedThreadKeys.removeAll() } label: {
-                    Image(systemName: "xmark")
+                    Image(systemName: "xmark").iconButtonHitArea()
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
