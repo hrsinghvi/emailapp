@@ -123,20 +123,28 @@ final class InboxViewModel {
         messages.filter { $0.folder == "inbox" && !$0.isRead }.count
     }
 
+    /// Every sidebar badge counts THREADS, matching exactly what the list
+    /// toolbar's own "1-50 of N" reports for that same folder/category —
+    /// they used to disagree (badges counted raw messages, sometimes only
+    /// unread ones; the toolbar counts threads after grouping by
+    /// threadKey), which is what made the two numbers never match.
+    private func threadCount(matching predicate: (Message) -> Bool) -> Int {
+        Set(messages.filter(predicate).map(\.threadKey)).count
+    }
+
     /// Backs the sidebar's per-category ("Views") badge counts.
-    func unreadCount(for category: MessageCategory) -> Int {
-        messages.filter { $0.folder == "inbox" && !$0.isRead && $0.category == category }.count
+    func threadCount(for category: MessageCategory) -> Int {
+        threadCount { $0.folder == "inbox" && $0.category == category }
     }
 
     /// Backs the sidebar's Starred/Sent/Important/Archive/Trash/All Mail
-    /// badges — total count in that folder, not just unread (matching how
-    /// Starred in particular is conventionally shown).
-    func messageCount(forFolder folder: String) -> Int {
+    /// badges.
+    func threadCount(forFolder folder: String) -> Int {
         switch folder {
-        case "all": return messages.filter { $0.folder != "trash" }.count
-        case "starred": return messages.filter { $0.isStarred }.count
-        case "important": return messages.filter { $0.isImportant }.count
-        default: return messages.filter { $0.folder == folder }.count
+        case "all": return threadCount { $0.folder != "trash" }
+        case "starred": return threadCount { $0.isStarred }
+        case "important": return threadCount { $0.isImportant }
+        default: return threadCount { $0.folder == folder }
         }
     }
 
