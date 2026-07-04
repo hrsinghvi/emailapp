@@ -202,6 +202,8 @@ final class InboxViewModel {
             )
             pendingSends.removeAll { $0.id == id }
             if let draftId = pending.draftId { deleteDraft(id: draftId) }
+            let recipients = (pending.to + "," + pending.cc + "," + pending.bcc).split(separator: ",").map(String.init)
+            Task { await ContactsIndexService.recordUsage(emails: recipients) }
         } catch {
             pendingSends.removeAll { $0.id == id }
             guard NetworkMonitor.shared.isOnline else {

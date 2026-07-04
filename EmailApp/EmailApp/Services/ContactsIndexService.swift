@@ -48,6 +48,11 @@ private struct UpsertContactsParams: Encodable {
     let entries: [ContactEntry]
 }
 
+private struct BoostContactsParams: Encodable {
+    let emails: [String]
+    let boost: Int
+}
+
 /// Local contacts index built entirely from mail the app has already
 /// synced — every sender and every To/Cc recipient seen across both
 /// accounts, deduped by email, ranked by how often each has appeared.
@@ -106,15 +111,35 @@ enum ContactsIndexService {
         }
     }
 
-    /// Matches against name or email, most-contacted first — backs the
-    /// compose recipient autocomplete dropdown. Synchronous: no network
-    /// wait, so it's safe to call on every keystroke.
+    /// Prefix match only — typing "m" surfaces "Manish" or "manish@...",
+    /// not every contact whose domain happens to contain an "m" (e.g.
+    /// "gmail.com" matched everyone under plain substring search).
+    /// Matches on any word of the display name or the email's local part.
     static func search(prefix: String, limit: Int = 6) -> [Contact] {
         let trimmed = prefix.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !trimmed.isEmpty else { return [] }
-        return Array(
-            cache.filter { $0.name.lowercased().contains(trimmed) || $0.email.lowercased().contains(trimmed) }
-                .prefix(limit)
-        )
+        let matches = cache.filter { contact in
+            let nameWords = contact.displayName.lowercased().split(separator: " ")
+            let localPart = contact.email.lowercased().split(separator: "@").first ?? ""
+            return nameWords.contains { $0.hasPrefix(trimmed) } || localPart.hasPrefix(trimmed)
+        }
+        return Array(matches.prefix(limit))
+    }
+
+    /// Called every time the user actually uses a contact (picks them from
+    /// the autocomplete dropdown, or sends to a raw address) — a much
+    /// bigger frequency bump than the +1-per-mail-seen from sync, so the
+    /// people you actually pick rise to the top fast.
+    static func recordUsage(emails: [String], boost: Int = 25) async {
+        let cleaned = emails.map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
+        guard !cleaned.isEmpty else { return }
+        do {
+            try await SupabaseService.client
+                .rpc("boost_contacts", params: BoostContactsParams(emails: cleaned, boost: boost))
+                .execute()
+            await refreshCache()
+        } catch {
+            AppLog.sync.error("Contact usage boost failed: \(error.localizedDescription)")
+        }
     }
 }
