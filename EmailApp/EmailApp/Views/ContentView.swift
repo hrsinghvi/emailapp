@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct ContentView: View {
@@ -62,23 +61,26 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.container, edges: .top)
         .background(
-            ZStack {
-                // Double-click anywhere this background is actually the
-                // topmost view (i.e. nothing else — no button, no field —
-                // is sitting on top of it at that point) zooms the window,
-                // same as a real titlebar. Plain SwiftUI gesture instead of
-                // a separate AppKit NSView overlay: a raw NSView's hit-
-                // testing doesn't reliably respect SwiftUI's frame
-                // constraints and kept silently swallowing clicks meant for
-                // real controls elsewhere in the window. A SwiftUI-native
-                // gesture only ever fires when this
-                // specific view is genuinely the one under the cursor,
-                // which SwiftUI's own hit-testing already guarantees.
-                // Click-drag-to-move is handled separately by
-                // isMovableByWindowBackground in WindowConfigurator.
+            // .ignoresSafeArea() applied ONCE here, to the whole ZStack —
+            // everything inside (Color fill, the drag zone) then just uses
+            // plain alignment/frame within that already-correct coordinate
+            // space. Previously the drag-zone view had .ignoresSafeArea()
+            // and .frame() applied directly to itself in a specific order,
+            // which was fragile (get the order wrong and its hit-testable
+            // bounds silently grow past the intended 34pt). This structure
+            // can't have that problem — there's no safe-area math happening
+            // on the drag zone itself at all.
+            ZStack(alignment: .top) {
                 Color.appBackground
-                    .onTapGesture(count: 2) { NSApp.keyWindow?.performZoom(nil) }
                 WindowConfigurator()
+                // Only the empty 34pt strip above TopBar — real
+                // click-drag-to-move and double-click-to-zoom, both from
+                // one NSView's mouseDown (see TitleBarDragZoneView). Not
+                // NSWindow.isMovableByWindowBackground (drags from
+                // anywhere) and not a separate SwiftUI double-click gesture
+                // (the two independently kept conflicting with each other).
+                TitleBarDragZoneView()
+                    .frame(height: 34)
             }
             .ignoresSafeArea()
         )

@@ -23,15 +23,35 @@ struct WindowConfigurator: NSViewRepresentable {
         // it in; this app has no use for it.
         window.tabbingMode = .disallowed
         NSWindow.allowsAutomaticWindowTabbing = false
-        // Click-drag-to-move on any empty background, same as a real
-        // titlebar — a plain NSWindow flag, no custom hit-testing to get
-        // wrong. Previously this app used a full-width invisible NSView
-        // overlay for both drag and double-click-zoom, but that view's
-        // AppKit-level hit-testing didn't reliably respect SwiftUI's frame
-        // constraints, and ended up silently swallowing clicks meant for
-        // real SwiftUI controls sitting at the same height elsewhere in
-        // the window. Window-background dragging doesn't need any of
-        // that — it's automatic for any point with no view underneath.
-        window.isMovableByWindowBackground = true
+        // Deliberately NOT window.isMovableByWindowBackground = true — that
+        // makes EVERY empty pixel in the whole window draggable (way more
+        // than just the top strip), and it actively conflicts with the
+        // double-click-to-zoom gesture on the same region: AppKit's own
+        // drag-recognition on the first mouseDown can preempt SwiftUI's
+        // gesture recognizer before it ever sees a second click, which is
+        // exactly why double-click-to-zoom kept breaking. Drag + zoom are
+        // both handled by TitleBarDragZoneView instead, scoped to only the
+        // 34pt strip above TopBar — see ContentView.
+    }
+}
+
+/// Real titlebar behavior (click-drag to move, double-click to zoom) for
+/// exactly the empty 34pt strip above TopBar — nowhere else. Handling both
+/// from one NSView's mouseDown (the same approach a real titlebar uses) is
+/// what keeps drag and double-click-zoom from fighting each other; using
+/// NSWindow's isMovableByWindowBackground flag for drag while relying on a
+/// separate SwiftUI gesture for zoom made the two interfere (see above).
+struct TitleBarDragZoneView: NSViewRepresentable {
+    func makeNSView(context: Context) -> DragZoneNSView { DragZoneNSView() }
+    func updateNSView(_ nsView: DragZoneNSView, context: Context) {}
+}
+
+final class DragZoneNSView: NSView {
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            window?.performZoom(nil)
+        } else {
+            window?.performDrag(with: event)
+        }
     }
 }
