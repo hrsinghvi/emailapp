@@ -84,6 +84,15 @@ enum GmailAPI {
         }
     }
 
+    /// All message ids under a single label — used by the one-time
+    /// starred/important migration to import existing star/importance state
+    /// in two cheap list calls instead of a per-message fetch. Ongoing
+    /// syncs don't need this at all: STARRED/IMPORTANT already ride along
+    /// in labelIds on every regular message fetch (see RawMessage.toMessage).
+    nonisolated static func fetchMessageIds(label: String, accessToken: String, limit: Int) async throws -> Set<String> {
+        Set(try await listMessageIds(labelIds: [label], accessToken: accessToken, limit: limit))
+    }
+
     /// Gmail caps a single list call at 500 results — loops pageToken to
     /// gather more than that (e.g. a 2000-message backfill).
     private nonisolated static func listMessageIds(
@@ -337,6 +346,8 @@ enum GmailAPI {
                 toRecipients: Self.parseAddressList(header("To")),
                 ccRecipients: Self.parseAddressList(header("Cc")),
                 attachments: Self.extractAttachments(payload),
+                isStarred: labelIds?.contains("STARRED") ?? false,
+                isImportant: labelIds?.contains("IMPORTANT") ?? false,
                 providerCategory: Self.category(fromLabels: labelIds)
             )
         }

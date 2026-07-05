@@ -67,6 +67,46 @@ enum GraphAPI {
         try await fetchFolder(wellKnownName: "deleteditems", folder: "trash", for: account, accessToken: accessToken, limit: limit)
     }
 
+    /// Mailbox-wide (not folder-scoped — `/me/messages` searches every
+    /// folder) id lists for the one-time starred/important migration.
+    /// Cheap: only `id` comes back, no bodies. Ongoing syncs don't need
+    /// this — flag/importance already ride along on every regular message
+    /// fetch (see RawMessage.toMessage's $select above).
+    nonisolated static func fetchFlaggedIds(accessToken: String, limit: Int) async throws -> Set<String> {
+        try await fetchFilteredIds(filter: "flag/flagStatus eq 'flagged'", accessToken: accessToken, limit: limit)
+    }
+
+    nonisolated static func fetchImportantIds(accessToken: String, limit: Int) async throws -> Set<String> {
+        try await fetchFilteredIds(filter: "importance eq 'high'", accessToken: accessToken, limit: limit)
+    }
+
+    private nonisolated static func fetchFilteredIds(filter: String, accessToken: String, limit: Int) async throws -> Set<String> {
+        struct IdOnly: Decodable { let id: String }
+        struct ListResponse: Decodable {
+            let value: [IdOnly]
+            let nextLink: String?
+            enum CodingKeys: String, CodingKey {
+                case value
+                case nextLink = "@odata.nextLink"
+            }
+        }
+        var comps = URLComponents(string: "\(base)/me/messages")!
+        comps.queryItems = [
+            .init(name: "$filter", value: filter),
+            .init(name: "$select", value: "id"),
+            .init(name: "$top", value: "999"),
+        ]
+        var ids: Set<String> = []
+        var nextURL: String? = comps.url!.absoluteString
+        while let url = nextURL, ids.count < limit {
+            let data = try await get(url, accessToken: accessToken)
+            let response = try JSONDecoder().decode(ListResponse.self, from: data)
+            ids.formUnion(response.value.map(\.id))
+            nextURL = response.nextLink
+        }
+        return ids
+    }
+
     private nonisolated static func fetchFolder(
         wellKnownName: String, folder: String, for account: Account, accessToken: String, limit: Int
     ) async throws -> [Message] {
@@ -86,7 +126,7 @@ enum GraphAPI {
             .init(
                 name: "$select",
                 value: "id,subject,bodyPreview,body,from,receivedDateTime,isRead,conversationId,"
-                    + "toRecipients,ccRecipients,hasAttachments"
+                    + "toRecipients,ccRecipients,hasAttachments,flag,importance"
             ),
         ]
 
@@ -310,6 +350,10 @@ enum GraphAPI {
         let toRecipients: [Recipient]?
         let ccRecipients: [Recipient]?
         let hasAttachments: Bool?
+        let flag: Flag?
+        let importance: String?
+
+        struct Flag: Decodable { let flagStatus: String? }
 
         func toMessage(account: Account, folder: String) -> Message {
             let senderName = from?.emailAddress?.name ?? from?.emailAddress?.address ?? ""
@@ -341,7 +385,9 @@ enum GraphAPI {
                 isRead: isRead ?? true,
                 folder: folder,
                 toRecipients: (toRecipients ?? []).compactMap { $0.emailAddress?.address },
-                ccRecipients: (ccRecipients ?? []).compactMap { $0.emailAddress?.address }
+                ccRecipients: (ccRecipients ?? []).compactMap { $0.emailAddress?.address },
+                isStarred: flag?.flagStatus?.lowercased() == "flagged",
+                isImportant: importance?.lowercased() == "high"
             )
         }
     }

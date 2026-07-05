@@ -992,6 +992,7 @@ final class InboxViewModel {
         await performOneTimeCategoryBackfillIfNeeded()
         await performOneTimeCategoryMailBackfillIfNeeded()
         await performOutlookImmutableIdMigrationIfNeeded()
+        await performStarredImportantMigrationIfNeeded()
     }
 
     /// Runs once ever (per install): pulls a much deeper history than the
@@ -1136,6 +1137,59 @@ final class InboxViewModel {
                 AppLog.sync.error("Outlook immutable-id migration failed for \(account.email): \(error.localizedDescription)")
             }
         }
+    }
+
+    /// One-time import of each provider's real starred/important state for
+    /// every already-cached message. isStarred/isImportant used to be set
+    /// from nothing on every fetch — mail synced before this existed shows
+    /// as neither, regardless of its real Gmail STARRED/IMPORTANT label or
+    /// Outlook flagged/high-importance state, until this runs once. Going
+    /// forward this isn't needed at all — both providers' fetch code now
+    /// reads the real state directly off every regular fetch.
+    private func performStarredImportantMigrationIfNeeded() async {
+        guard !AppSettings.shared.hasMigratedStarredImportant else { return }
+        guard NetworkMonitor.shared.isOnline else { return }
+        AppSettings.shared.hasMigratedStarredImportant = true
+
+        for account in accounts where account.provider == .gmail {
+            guard let token = try? await OAuthManager.shared.validAccessToken(for: account) else { continue }
+            do {
+                async let starredTask = GmailAPI.fetchMessageIds(label: "STARRED", accessToken: token, limit: 50000)
+                async let importantTask = GmailAPI.fetchMessageIds(label: "IMPORTANT", accessToken: token, limit: 50000)
+                let (starred, important) = try await (starredTask, importantTask)
+                for index in messages.indices where messages[index].accountId == account.id && messages[index].provider == .gmail {
+                    messages[index].isStarred = starred.contains(messages[index].providerId)
+                    messages[index].isImportant = important.contains(messages[index].providerId)
+                }
+            } catch {
+                AppLog.sync.error("Starred/important migration failed for \(account.email): \(error.localizedDescription)")
+            }
+        }
+
+        // Outlook doesn't offer a cheap "list ids matching this filter and
+        // patch in place" path the way Gmail's labelIds do here — flag/
+        // importance only come back on a full message fetch, so the only
+        // way to backfill already-cached Outlook mail is the same
+        // remove-and-refetch-every-folder approach the immutable-id
+        // migration above uses (independent of whether that one already
+        // ran — it may have, on a build before flag/importance were part
+        // of its $select, which wouldn't have carried this data either).
+        for account in accounts where account.provider == .outlook {
+            guard let token = try? await OAuthManager.shared.validAccessToken(for: account) else { continue }
+            messages.removeAll { $0.accountId == account.id && $0.provider == .outlook }
+            do {
+                async let inboxTask = GraphAPI.fetchInbox(for: account, accessToken: token, limit: 10000)
+                async let sentTask = GraphAPI.fetchSent(for: account, accessToken: token, limit: 10000)
+                async let archiveTask = GraphAPI.fetchArchived(for: account, accessToken: token, limit: 10000)
+                async let deletedTask = GraphAPI.fetchDeleted(for: account, accessToken: token, limit: 10000)
+                let (inbox, sent, archived, deleted) = try await (inboxTask, sentTask, archiveTask, deletedTask)
+                merge(account: account, fetched: inbox + sent + archived + deleted)
+            } catch {
+                AppLog.sync.error("Starred/important migration (Outlook) failed for \(account.email): \(error.localizedDescription)")
+            }
+        }
+
+        MessageCacheStore.save(messages)
     }
 
     /// Manual re-fetch for every connected account — backs the toolbar's

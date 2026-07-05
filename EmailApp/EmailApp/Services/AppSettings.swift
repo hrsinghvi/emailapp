@@ -49,6 +49,7 @@ final class AppSettings {
         static let hasBackfilledCategories = "settings.hasBackfilledCategories"
         static let hasBackfilledCategoryMail = "settings.hasBackfilledCategoryMail"
         static let hasMigratedOutlookImmutableIds = "settings.hasMigratedOutlookImmutableIds"
+        static let hasMigratedStarredImportant = "settings.hasMigratedStarredImportant"
     }
 
     private let defaults = UserDefaults.standard
@@ -139,6 +140,15 @@ final class AppSettings {
         didSet { defaults.set(hasMigratedOutlookImmutableIds, forKey: Key.hasMigratedOutlookImmutableIds) }
     }
 
+    /// One-time import of each provider's real star/importance state for
+    /// every already-cached message — isStarred/isImportant used to be
+    /// local-only, set from nothing on fetch, so mail synced before this
+    /// existed shows as neither starred nor important regardless of its
+    /// real Gmail/Outlook state until this runs once.
+    var hasMigratedStarredImportant: Bool {
+        didSet { defaults.set(hasMigratedStarredImportant, forKey: Key.hasMigratedStarredImportant) }
+    }
+
     private init() {
         launchAtLogin = defaults.object(forKey: Key.launchAtLogin) as? Bool ?? false
         keepAwakeDuringSync = defaults.object(forKey: Key.keepAwakeDuringSync) as? Bool ?? false
@@ -155,6 +165,7 @@ final class AppSettings {
         hasBackfilledCategories = defaults.object(forKey: Key.hasBackfilledCategories) as? Bool ?? false
         hasBackfilledCategoryMail = defaults.object(forKey: Key.hasBackfilledCategoryMail) as? Bool ?? false
         hasMigratedOutlookImmutableIds = defaults.object(forKey: Key.hasMigratedOutlookImmutableIds) as? Bool ?? false
+        hasMigratedStarredImportant = defaults.object(forKey: Key.hasMigratedStarredImportant) as? Bool ?? false
     }
 
     /// Registers/unregisters with `SMAppService` — the real macOS login-item
