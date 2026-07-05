@@ -3,7 +3,6 @@ import SwiftUI
 
 struct ReadingPaneView: View {
     @Bindable var vm: InboxViewModel
-    @Bindable var calendarVM: CalendarViewModel
 
     var body: some View {
         Group {
@@ -38,7 +37,7 @@ struct ReadingPaneView: View {
 
                     ForEach(thread.messages) { message in
                         if vm.expandedMessageIds.contains(message.id) {
-                            ExpandedMessageCard(vm: vm, calendarVM: calendarVM, message: message)
+                            ExpandedMessageCard(vm: vm, message: message)
                                 .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                         } else {
                             collapsedRow(message)
@@ -93,13 +92,11 @@ struct ReadingPaneView: View {
 /// being recreated on every parent body re-evaluation.
 private struct ExpandedMessageCard: View {
     let vm: InboxViewModel
-    let calendarVM: CalendarViewModel
     let message: Message
     @State private var htmlHeight: CGFloat
 
-    init(vm: InboxViewModel, calendarVM: CalendarViewModel, message: Message) {
+    init(vm: InboxViewModel, message: Message) {
         self.vm = vm
-        self.calendarVM = calendarVM
         self.message = message
         // If this message was prewarmed, its height is already known —
         // start there so there's no loading-spinner flash at all.
@@ -135,8 +132,6 @@ private struct ExpandedMessageCard: View {
             .contentShape(Rectangle())
             .onTapGesture { vm.toggleExpand(message) }
             .pointerOnHover()
-
-            InviteCardView(vm: vm, calendarVM: calendarVM, message: message)
 
             bodyContent
 

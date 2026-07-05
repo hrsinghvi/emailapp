@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SidebarView: View {
     @Bindable var vm: InboxViewModel
-    @Binding var isCalendarMode: Bool
     @State private var isConnectingGmail = false
     @State private var isConnectingOutlook = false
     @State private var isInboxExpanded = true
@@ -27,17 +26,16 @@ struct SidebarView: View {
                 .padding(.bottom, 14)
 
             VStack(alignment: .leading, spacing: 2) {
-                InboxNavItem(vm: vm, isExpanded: $isInboxExpanded, isCalendarMode: $isCalendarMode)
+                InboxNavItem(vm: vm, isExpanded: $isInboxExpanded)
                 ForEach([MessageCategory.promotions, .social, .updates, .forums], id: \.self) { category in
-                    CategoryNavItem(vm: vm, category: category, isCalendarMode: $isCalendarMode)
+                    CategoryNavItem(vm: vm, category: category)
                 }
 
                 NavItem(
-                    label: "Starred", icon: "star", isActive: !isCalendarMode && vm.selectedFolder == "starred",
+                    label: "Starred", icon: "star", isActive: vm.selectedFolder == "starred",
                     tint: Color(hex: "#e8c547").opacity(0.85),
                     badge: badge(vm.threadCount(forFolder: "starred"))
                 ) {
-                    isCalendarMode = false
                     vm.selectedFolder = "starred"
                 }
 
@@ -45,45 +43,40 @@ struct SidebarView: View {
                     NavItem(
                         label: folder.label,
                         icon: folder.icon,
-                        isActive: !isCalendarMode && vm.selectedFolder == folder.id,
+                        isActive: vm.selectedFolder == folder.id,
                         tint: folder.tint,
                         badge: folder.id == "drafts" ? badge(vm.drafts.count) : badge(vm.threadCount(forFolder: folder.id))
                     ) {
-                        isCalendarMode = false
-                        vm.selectedFolder = folder.id
+                            vm.selectedFolder = folder.id
                     }
                 }
 
                 NavItem(
-                    label: "Important", icon: "bookmark", isActive: !isCalendarMode && vm.selectedFolder == "important",
+                    label: "Important", icon: "bookmark", isActive: vm.selectedFolder == "important",
                     tint: Color(hex: "#e2678f").opacity(0.85),
                     badge: badge(vm.threadCount(forFolder: "important"))
                 ) {
-                    isCalendarMode = false
                     vm.selectedFolder = "important"
                 }
                 NavItem(
-                    label: "Archive", icon: "archivebox", isActive: !isCalendarMode && vm.selectedFolder == "archive",
+                    label: "Archive", icon: "archivebox", isActive: vm.selectedFolder == "archive",
                     tint: Color(hex: "#a8c14e").opacity(0.8),
                     badge: badge(vm.threadCount(forFolder: "archive"))
                 ) {
-                    isCalendarMode = false
                     vm.selectedFolder = "archive"
                 }
                 NavItem(
-                    label: "Trash", icon: "trash", isActive: !isCalendarMode && vm.selectedFolder == "trash",
+                    label: "Trash", icon: "trash", isActive: vm.selectedFolder == "trash",
                     tint: Color(hex: "#7b8fe0").opacity(0.8),
                     badge: badge(vm.threadCount(forFolder: "trash"))
                 ) {
-                    isCalendarMode = false
                     vm.selectedFolder = "trash"
                 }
                 NavItem(
-                    label: "All Mail", icon: "envelope", isActive: !isCalendarMode && vm.selectedFolder == "all",
+                    label: "All Mail", icon: "envelope", isActive: vm.selectedFolder == "all",
                     tint: Color(hex: "#c766c9").opacity(0.8),
                     badge: badge(vm.threadCount(forFolder: "all"))
                 ) {
-                    isCalendarMode = false
                     vm.selectedFolder = "all"
                 }
             }
@@ -184,9 +177,8 @@ struct SidebarView: View {
 private struct InboxNavItem: View {
     @Bindable var vm: InboxViewModel
     @Binding var isExpanded: Bool
-    @Binding var isCalendarMode: Bool
 
-    private var isActive: Bool { !isCalendarMode && vm.selectedFolder == "inbox" && vm.categoryFilter == .primary }
+    private var isActive: Bool { vm.selectedFolder == "inbox" && vm.categoryFilter == .primary }
     // Thread count for Primary, matching exactly what "1-50 of N" shows
     // once you land here — clicking Inbox selects the Primary category.
     private var unreadBadge: String? {
@@ -197,7 +189,6 @@ private struct InboxNavItem: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Button {
-                isCalendarMode = false
                 vm.selectedFolder = "inbox"
                 vm.categoryFilter = .primary
                 vm.providerFilter = nil
@@ -238,13 +229,11 @@ private struct InboxNavItem: View {
                 let gmailColor = vm.accounts.first(where: { $0.provider == .gmail })?.color ?? Provider.gmail.color
                 let outlookColor = vm.accounts.first(where: { $0.provider == .outlook })?.color ?? Provider.outlook.color
                 ProviderShortcut(label: "Gmail", color: gmailColor, isActive: isActive && vm.providerFilter == .gmail) {
-                    isCalendarMode = false
                     vm.selectedFolder = "inbox"
                     vm.categoryFilter = .primary
                     vm.providerFilter = .gmail
                 }
                 ProviderShortcut(label: "Outlook", color: outlookColor, isActive: isActive && vm.providerFilter == .outlook) {
-                    isCalendarMode = false
                     vm.selectedFolder = "inbox"
                     vm.categoryFilter = .primary
                     vm.providerFilter = .outlook
@@ -260,9 +249,8 @@ private struct InboxNavItem: View {
 private struct CategoryNavItem: View {
     @Bindable var vm: InboxViewModel
     let category: MessageCategory
-    @Binding var isCalendarMode: Bool
 
-    private var isActive: Bool { !isCalendarMode && vm.selectedFolder == "inbox" && vm.categoryFilter == category }
+    private var isActive: Bool { vm.selectedFolder == "inbox" && vm.categoryFilter == category }
     private var badge: String? {
         let count = vm.threadCount(for: category)
         return count > 0 ? "\(count)" : nil
@@ -270,7 +258,6 @@ private struct CategoryNavItem: View {
 
     var body: some View {
         Button {
-            isCalendarMode = false
             vm.selectedFolder = "inbox"
             vm.categoryFilter = category
             vm.providerFilter = nil

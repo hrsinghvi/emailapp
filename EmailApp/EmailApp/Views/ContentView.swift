@@ -3,9 +3,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var vm: InboxViewModel
-    @Bindable var calendarVM: CalendarViewModel
     @FocusState private var isContentFocused: Bool
-    @State private var isCalendarMode = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -14,19 +12,16 @@ struct ContentView: View {
             // instead of respecting the same insets as the rest of the
             // content — its own internal padding pushes the nav items
             // clear of the traffic lights instead.
-            SidebarView(vm: vm, isCalendarMode: $isCalendarMode)
+            SidebarView(vm: vm)
                 .frame(width: 240)
                 .frame(maxHeight: .infinity)
                 .ignoresSafeArea(.container, edges: [.top, .bottom])
 
-            // TopBar (and the Mail/Calendar switch inside it) stays mounted
-            // in both modes — it used to live only in the Mail branch, so
-            // the moment you switched to Calendar the switch itself
-            // disappeared with no way back, which is what read as "the
-            // Calendar button doesn't work" (it did switch, there was just
-            // nothing left on screen that could switch back).
+            // Only the toolbar row + body swap when a thread opens — the
+            // search bar stays put instead of the whole pane being
+            // replaced, matching Gmail rather than a full-screen takeover.
             VStack(spacing: 10) {
-                TopBar(vm: vm, isCalendarMode: $isCalendarMode)
+                TopBar(vm: vm)
                     // Without this, the search dropdown (an overlay
                     // attached inside TopBar) painted *behind* the toolbar
                     // row below it — VStack siblings paint in document
@@ -35,36 +30,30 @@ struct ContentView: View {
                     // sibling. This forces TopBar's overlay above it.
                     .zIndex(1)
 
-                if isCalendarMode {
-                    CalendarView(calendarVM: calendarVM, accounts: vm.accounts)
-                        .transition(.opacity)
-                } else {
-                    Group {
-                        if let thread = vm.selectedThread {
-                            DetailToolbar(vm: vm, thread: thread)
-                        } else {
-                            ListToolbar(vm: vm)
-                        }
+                Group {
+                    if let thread = vm.selectedThread {
+                        DetailToolbar(vm: vm, thread: thread)
+                    } else {
+                        ListToolbar(vm: vm)
                     }
-                    .transition(.opacity)
-                    .animation(.easeOut(duration: 0.18), value: vm.selectedThread?.id)
-
-                    Group {
-                        if vm.selectedThread != nil {
-                            ReadingPaneView(vm: vm, calendarVM: calendarVM)
-                                .transition(.opacity.combined(with: .move(edge: .trailing)))
-                        } else if vm.selectedFolder == "drafts" {
-                            DraftsListView(vm: vm)
-                                .transition(.opacity)
-                        } else {
-                            MessageListView(vm: vm)
-                                .transition(.opacity)
-                        }
-                    }
-                    .animation(.easeOut(duration: 0.22), value: vm.selectedThread?.id)
                 }
+                .transition(.opacity)
+                .animation(.easeOut(duration: 0.18), value: vm.selectedThread?.id)
+
+                Group {
+                    if vm.selectedThread != nil {
+                        ReadingPaneView(vm: vm)
+                            .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    } else if vm.selectedFolder == "drafts" {
+                        DraftsListView(vm: vm)
+                            .transition(.opacity)
+                    } else {
+                        MessageListView(vm: vm)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.22), value: vm.selectedThread?.id)
             }
-            .animation(.easeOut(duration: 0.18), value: isCalendarMode)
             .frame(minWidth: 320, maxWidth: .infinity)
             .padding(.top, 34)
             .padding(.bottom, 12)
@@ -81,8 +70,8 @@ struct ContentView: View {
                 // a separate AppKit NSView overlay: a raw NSView's hit-
                 // testing doesn't reliably respect SwiftUI's frame
                 // constraints and kept silently swallowing clicks meant for
-                // real controls (most recently the Mail/Calendar switch).
-                // A SwiftUI-native gesture only ever fires when this
+                // real controls elsewhere in the window. A SwiftUI-native
+                // gesture only ever fires when this
                 // specific view is genuinely the one under the cursor,
                 // which SwiftUI's own hit-testing already guarantees.
                 // Click-drag-to-move is handled separately by
@@ -120,11 +109,6 @@ struct ContentView: View {
         .task { await vm.startRealtimeUpdates() }
         .task { await vm.startMCPApprovalUpdates() }
         .task { await ContactsIndexService.warmCache() }
-        // Warmed eagerly (not just when Calendar is opened) so the reading
-        // pane's "already on your calendar" invite detection works the
-        // first time a meeting-invite email is opened, not only after the
-        // user has visited the Calendar tab at least once this session.
-        .task(id: vm.accounts.map(\.id)) { await calendarVM.loadEvents(accounts: vm.accounts) }
         .overlay(alignment: .bottom) { PendingSendBannerStack(vm: vm) }
         .overlay(alignment: .bottomTrailing) {
             if let context = vm.composeContext {
@@ -158,59 +142,8 @@ struct ContentView: View {
     }
 }
 
-/// A two-sided switch (like a segmented iOS-style toggle) in the empty
-/// space next to the search bar — replaces the old sidebar "Calendar" nav
-/// item as the way to get to Calendar.
-private struct MailCalendarSwitch: View {
-    @Binding var isCalendarMode: Bool
-    let height: CGFloat
-    @Namespace private var namespace
-
-    private var segmentHeight: CGFloat { height - 6 }
-
-    var body: some View {
-        HStack(spacing: 2) {
-            segment(label: "Mail", icon: "envelope", isSelected: !isCalendarMode) {
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { isCalendarMode = false }
-            }
-            segment(label: "Calendar", icon: "calendar", isSelected: isCalendarMode) {
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { isCalendarMode = true }
-            }
-        }
-        .padding(3)
-        .frame(height: height)
-        .background(Color.appSurface, in: Capsule())
-    }
-
-    private func segment(label: String, icon: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                Text(label)
-            }
-            .font(.appCaption.weight(.medium))
-            .foregroundStyle(isSelected ? Color.appBackground : .secondary)
-            .padding(.horizontal, 20)
-            .frame(height: segmentHeight)
-            .background {
-                // A single highlight capsule that slides between the two
-                // segments via matchedGeometryEffect, instead of each
-                // segment independently popping its own background in and
-                // out — that's what reads as a real sliding switch rather
-                // than a cross-fade.
-                if isSelected {
-                    Capsule().fill(Color.white.opacity(0.92))
-                        .matchedGeometryEffect(id: "highlight", in: namespace)
-                }
-            }
-        }
-        .buttonStyle(.pointerPlain)
-    }
-}
-
 private struct TopBar: View {
     @Bindable var vm: InboxViewModel
-    @Binding var isCalendarMode: Bool
     @FocusState private var isSearchFocused: Bool
     @State private var recentSearches: [String] = RecentSearchesStore.load()
 
@@ -256,8 +189,6 @@ private struct TopBar: View {
                 }
 
                 Spacer()
-
-                MailCalendarSwitch(isCalendarMode: $isCalendarMode, height: searchBarHeight)
 
                 ConnectivityIndicator(vm: vm)
             }
@@ -528,7 +459,7 @@ private struct ConnectivityIndicator: View {
 }
 
 #Preview {
-    ContentView(vm: InboxViewModel(), calendarVM: CalendarViewModel())
+    ContentView(vm: InboxViewModel())
         .frame(width: 1100, height: 700)
         .preferredColorScheme(.dark)
 }

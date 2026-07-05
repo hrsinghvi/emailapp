@@ -30,9 +30,8 @@ struct WindowConfigurator: NSViewRepresentable {
         // AppKit-level hit-testing didn't reliably respect SwiftUI's frame
         // constraints, and ended up silently swallowing clicks meant for
         // real SwiftUI controls sitting at the same height elsewhere in
-        // the window (most recently the Mail/Calendar switch). Window-
-        // background dragging doesn't need any of that — it's automatic
-        // for any point with no view underneath.
+        // the window. Window-background dragging doesn't need any of
+        // that — it's automatic for any point with no view underneath.
         window.isMovableByWindowBackground = true
     }
 }
