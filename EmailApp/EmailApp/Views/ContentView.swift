@@ -187,7 +187,7 @@ private struct MailCalendarSwitch: View {
             }
             .font(.appCaption.weight(.medium))
             .foregroundStyle(isSelected ? Color.appBackground : .secondary)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 20)
             .frame(height: segmentHeight)
             .background(isSelected ? Color.white.opacity(0.92) : .clear, in: Capsule())
         }
