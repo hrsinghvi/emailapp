@@ -522,7 +522,7 @@ private struct AboutSettingsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             SettingsHeader(title: "About")
-            Text("EmailApp").font(.appHeadline)
+            Text("Threadwell").font(.appHeadline)
             Text("Version \(version) (\(build))").font(.appCaption).foregroundStyle(.secondary)
 
             Button("View on GitHub") {

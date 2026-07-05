@@ -11,7 +11,7 @@ enum PowerAssertionService {
     @MainActor
     static func beginSyncIfEnabled() {
         guard AppSettings.shared.keepAwakeDuringSync, !isHeld else { return }
-        let reason = "EmailApp is syncing mail" as CFString
+        let reason = "Threadwell is syncing mail" as CFString
         let result = IOPMAssertionCreateWithName(
             kIOPMAssertionTypeNoIdleSleep as CFString,
             IOPMAssertionLevel(kIOPMAssertionLevelOn),
