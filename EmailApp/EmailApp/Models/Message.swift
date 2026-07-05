@@ -42,6 +42,14 @@ struct Message: Identifiable, Hashable, Codable {
     /// below falls back to the sender/subject heuristic only when this is
     /// nil, so Gmail mail lands in the same tab it does in actual Gmail.
     var providerCategory: MessageCategory? = nil
+    /// True only for a message inserted straight from a realtime webhook row
+    /// (see `InboxViewModel.handleRealtimeInsert`) — that payload is
+    /// deliberately minimal (no htmlBody, attachments, providerCategory,
+    /// To/Cc), so the regular sync's `merge` needs an explicit signal to
+    /// replace this entry with the full version instead of treating the id
+    /// as already-known-so-skip. Absent (false) for anything ever fetched
+    /// from Gmail/Graph directly, including old cached JSON with no such key.
+    var needsFullSync: Bool = false
 
     /// Grouping key for thread view: falls back to the message's own id so
     /// a message with no thread/conversation id still renders as a

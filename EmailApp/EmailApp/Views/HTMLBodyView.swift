@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import WebKit
 
@@ -45,7 +46,7 @@ struct HTMLBodyView: NSViewRepresentable {
         prefs.allowsContentJavaScript = false
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences = prefs
-        let webView = WKWebView(frame: .zero, configuration: config)
+        let webView = ScrollPassthroughWebView(frame: .zero, configuration: config)
         webView.underPageBackgroundColor = .clear
         forceTransparentLayer(webView)
         return webView
@@ -93,6 +94,21 @@ struct HTMLBodyView: NSViewRepresentable {
         </style>
         </head><body>\(body)</body></html>
         """
+    }
+
+    /// WKWebView's internal scroll view swallows scroll-wheel events for
+    /// itself even when it has nothing to scroll — which is always, here,
+    /// since this view is deliberately sized to exactly fit its content
+    /// height (see the type doc above). Without this override, hovering the
+    /// cursor over any HTML email body did nothing on scroll instead of
+    /// scrolling the reading pane, forcing users to hunt for a plain-text
+    /// strip of the card to scroll from. Forwarding straight to the next
+    /// responder lets the ancestor SwiftUI ScrollView handle it like any
+    /// other content in the pane.
+    final class ScrollPassthroughWebView: WKWebView {
+        override func scrollWheel(with event: NSEvent) {
+            nextResponder?.scrollWheel(with: event)
+        }
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {

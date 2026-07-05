@@ -1138,7 +1138,8 @@ final class InboxViewModel {
             body: row.body,
             receivedAt: row.receivedAt,
             isRead: row.isRead,
-            folder: row.folder
+            folder: row.folder,
+            needsFullSync: true
         )
         messages.append(message)
         // Webhook rows don't carry To/Cc (see the Message.htmlBody comment
@@ -1186,8 +1187,24 @@ final class InboxViewModel {
         if !accounts.contains(where: { $0.email == account.email && $0.provider == account.provider }) {
             accounts.append(account)
         }
-        let existing = Set(messages.map(\.id))
-        let newMessages = fetched.filter { !existing.contains($0.id) }
+        let existingIndexByID = Dictionary(uniqueKeysWithValues: messages.enumerated().map { ($1.id, $0) })
+        var newMessages: [Message] = []
+        for var message in fetched {
+            if let index = existingIndexByID[message.id] {
+                // Only ever replace a realtime-webhook placeholder (minimal
+                // payload — no attachments/htmlBody/category) once the
+                // regular full sync has the real data. A message that's
+                // already fully synced is left alone so this doesn't clobber
+                // local-only state (isStarred/isImportant) with a stale
+                // refetch that raced it.
+                guard messages[index].needsFullSync else { continue }
+                message.isStarred = messages[index].isStarred
+                message.isImportant = messages[index].isImportant
+                messages[index] = message
+            } else {
+                newMessages.append(message)
+            }
+        }
         messages.append(contentsOf: newMessages)
         // Warm the messages actually visible in the inbox right now — by
         // far the most likely to be opened first — so the very first click
