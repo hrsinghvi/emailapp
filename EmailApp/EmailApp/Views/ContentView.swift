@@ -164,6 +164,9 @@ struct ContentView: View {
 /// item as the way to get to Calendar.
 private struct MailCalendarSwitch: View {
     @Binding var isCalendarMode: Bool
+    let height: CGFloat
+
+    private var segmentHeight: CGFloat { height - 6 }
 
     var body: some View {
         HStack(spacing: 2) {
@@ -171,6 +174,7 @@ private struct MailCalendarSwitch: View {
             segment(label: "Calendar", icon: "calendar", isSelected: isCalendarMode) { isCalendarMode = true }
         }
         .padding(3)
+        .frame(height: height)
         .background(Color.appSurface, in: Capsule())
         .animation(.easeOut(duration: 0.18), value: isCalendarMode)
     }
@@ -184,7 +188,7 @@ private struct MailCalendarSwitch: View {
             .font(.appCaption.weight(.medium))
             .foregroundStyle(isSelected ? Color.appBackground : .secondary)
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .frame(height: segmentHeight)
             .background(isSelected ? Color.white.opacity(0.92) : .clear, in: Capsule())
         }
         .buttonStyle(.pointerPlain)
@@ -240,7 +244,7 @@ private struct TopBar: View {
 
                 Spacer()
 
-                MailCalendarSwitch(isCalendarMode: $isCalendarMode)
+                MailCalendarSwitch(isCalendarMode: $isCalendarMode, height: searchBarHeight)
 
                 ConnectivityIndicator(vm: vm)
             }
