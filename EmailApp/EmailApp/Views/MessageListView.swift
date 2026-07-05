@@ -110,7 +110,8 @@ private struct ThreadRow: View {
                 Button { withAnimation(.easeOut(duration: 0.18)) { vm.toggleImportant(message) } } label: {
                     Image(systemName: message.isImportant ? "bookmark.fill" : "bookmark")
                         .font(.custom("Inter", size: 13))
-                        .foregroundStyle(message.isImportant ? Color.appAccent : .secondary)
+                        // Matches the sidebar's own Important nav item tint.
+                        .foregroundStyle(message.isImportant ? Color(hex: "#e2678f").opacity(0.85) : .secondary)
                         .frame(width: importantClusterWidth, height: 22)
                         .contentShape(Rectangle())
                 }
