@@ -23,27 +23,16 @@ struct WindowConfigurator: NSViewRepresentable {
         // it in; this app has no use for it.
         window.tabbingMode = .disallowed
         NSWindow.allowsAutomaticWindowTabbing = false
-    }
-}
-
-/// `.windowStyle(.hiddenTitleBar)` draws our own SwiftUI content over the
-/// real titlebar strip, which normally means double-click-to-zoom and
-/// click-drag-to-move (standard for the empty part of any Mac app's title
-/// bar) stop working — SwiftUI's content swallows the click before AppKit's
-/// titlebar ever sees it. This re-adds both to whatever region it's placed
-/// behind (the empty top strip above TopBar, not any actual button/field),
-/// calling the exact same NSWindow APIs a real titlebar would.
-struct TitleBarDragZoneView: NSViewRepresentable {
-    func makeNSView(context: Context) -> DragZoneNSView { DragZoneNSView() }
-    func updateNSView(_ nsView: DragZoneNSView, context: Context) {}
-}
-
-final class DragZoneNSView: NSView {
-    override func mouseDown(with event: NSEvent) {
-        if event.clickCount == 2 {
-            window?.performZoom(nil)
-        } else {
-            window?.performDrag(with: event)
-        }
+        // Click-drag-to-move on any empty background, same as a real
+        // titlebar — a plain NSWindow flag, no custom hit-testing to get
+        // wrong. Previously this app used a full-width invisible NSView
+        // overlay for both drag and double-click-zoom, but that view's
+        // AppKit-level hit-testing didn't reliably respect SwiftUI's frame
+        // constraints, and ended up silently swallowing clicks meant for
+        // real SwiftUI controls sitting at the same height elsewhere in
+        // the window (most recently the Mail/Calendar switch). Window-
+        // background dragging doesn't need any of that — it's automatic
+        // for any point with no view underneath.
+        window.isMovableByWindowBackground = true
     }
 }

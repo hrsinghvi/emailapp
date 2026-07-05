@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
@@ -73,29 +74,25 @@ struct ContentView: View {
         .ignoresSafeArea(.container, edges: .top)
         .background(
             ZStack {
+                // Double-click anywhere this background is actually the
+                // topmost view (i.e. nothing else — no button, no field —
+                // is sitting on top of it at that point) zooms the window,
+                // same as a real titlebar. Plain SwiftUI gesture instead of
+                // a separate AppKit NSView overlay: a raw NSView's hit-
+                // testing doesn't reliably respect SwiftUI's frame
+                // constraints and kept silently swallowing clicks meant for
+                // real controls (most recently the Mail/Calendar switch).
+                // A SwiftUI-native gesture only ever fires when this
+                // specific view is genuinely the one under the cursor,
+                // which SwiftUI's own hit-testing already guarantees.
+                // Click-drag-to-move is handled separately by
+                // isMovableByWindowBackground in WindowConfigurator.
                 Color.appBackground
+                    .onTapGesture(count: 2) { NSApp.keyWindow?.performZoom(nil) }
                 WindowConfigurator()
             }
             .ignoresSafeArea()
         )
-        // The empty strip behind the traffic lights, above TopBar/Sidebar's
-        // own content — double-click to zoom, click-drag to move, same as
-        // a normal titlebar. Doesn't interfere with the traffic light
-        // buttons themselves; those are window chrome, always hit-tested
-        // before the content view underneath them.
-        .overlay(alignment: .top) {
-            // Order matters: .ignoresSafeArea() FIRST pins this to the true
-            // top of the window (behind the traffic lights) instead of
-            // being inset below them; .frame(height: 34) AFTER that then
-            // hard-caps it back down. Doing it the other way around (frame
-            // then ignoresSafeArea) let the safe-area expansion override
-            // the cap and grow this view's hit-testable bounds down over
-            // the search bar, which is what made the search field
-            // permanently unclickable a few turns ago.
-            TitleBarDragZoneView()
-                .ignoresSafeArea()
-                .frame(height: 34)
-        }
         .focusable()
         .focusEffectDisabled()
         .focused($isContentFocused)
