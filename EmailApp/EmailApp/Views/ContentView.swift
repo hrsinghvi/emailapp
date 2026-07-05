@@ -42,7 +42,7 @@ struct ContentView: View {
                 Group {
                     if vm.selectedThread != nil {
                         ReadingPaneView(vm: vm)
-                            .transition(.opacity.combined(with: .move(edge: .trailing)))
+                            .transition(.opacity)
                     } else if vm.selectedFolder == "drafts" {
                         DraftsListView(vm: vm)
                             .transition(.opacity)
