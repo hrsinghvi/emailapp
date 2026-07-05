@@ -1,4 +1,5 @@
 import AppKit
+import QuickLook
 import SwiftUI
 
 struct MessageListView: View {
@@ -51,6 +52,7 @@ private struct ThreadRow: View {
     let isChecked: Bool
     let onToggleCheck: () -> Void
     @State private var isHovering = false
+    @State private var preview = AttachmentPreviewController()
 
     /// Fixed regardless of hover/selection/attachment state, so the row
     /// never visually shifts. `leadingInset` + `senderExtraLeadingPadding`
@@ -153,7 +155,14 @@ private struct ThreadRow: View {
                     // sender column.
                     Color.clear.frame(width: contentIndent + 150 + 10)
                     ForEach(message.attachments.prefix(3)) { attachment in
-                        AttachmentPill(attachment: attachment)
+                        AttachmentPill(attachment: attachment, isLoading: preview.loadingAttachmentId == attachment.id)
+                            // A plain tap on this pill is handled here, by
+                            // the pill itself, before it can ever reach the
+                            // row's own onTapGesture (attached in
+                            // MessageListView) — that's what keeps clicking
+                            // an attachment from also opening the thread.
+                            .onTapGesture { preview.preview(attachment, on: message, vm: vm) }
+                            .pointerOnHover()
                     }
                 }
             }
@@ -177,6 +186,7 @@ private struct ThreadRow: View {
         }
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.16), value: isHovering)
+        .quickLookPreview($preview.previewURL)
     }
 }
 
@@ -185,14 +195,21 @@ private struct ThreadRow: View {
 /// you've opened the message.
 private struct AttachmentPill: View {
     let attachment: Attachment
+    var isLoading: Bool = false
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: AttachmentIcon.systemName(forMimeType: attachment.mimeType))
-                .font(.custom("Inter", size: 7).weight(.bold))
-                .foregroundStyle(.white)
-                .frame(width: 16, height: 16)
-                .background(RoundedRectangle(cornerRadius: 4).fill(tint))
+            if isLoading {
+                ProgressView()
+                    .controlSize(.mini)
+                    .frame(width: 16, height: 16)
+            } else {
+                Image(systemName: AttachmentIcon.systemName(forMimeType: attachment.mimeType))
+                    .font(.custom("Inter", size: 7).weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 16, height: 16)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(tint))
+            }
             Text(attachment.filename)
                 .font(.appCaption2)
                 .lineLimit(1)
@@ -202,6 +219,7 @@ private struct AttachmentPill: View {
         .padding(.vertical, 4)
         .frame(maxWidth: 170, alignment: .leading)
         .background(Capsule().strokeBorder(Color.appBorder))
+        .contentShape(Rectangle())
     }
 
     private var tint: Color {

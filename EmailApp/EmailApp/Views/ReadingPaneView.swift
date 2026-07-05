@@ -1,5 +1,4 @@
 import AppKit
-import CryptoKit
 import PDFKit
 import QuickLook
 import SwiftUI
@@ -114,8 +113,7 @@ private struct ExpandedMessageCard: View {
     let vm: InboxViewModel
     let message: Message
     @State private var htmlHeight: CGFloat
-    @State private var previewURL: URL?
-    @State private var isLoadingPreview: Attachment.ID?
+    @State private var preview = AttachmentPreviewController()
     @State private var thumbnails: [String: NSImage] = [:]
 
     init(vm: InboxViewModel, message: Message) {
@@ -179,7 +177,7 @@ private struct ExpandedMessageCard: View {
         }
         .padding(16)
         .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 12))
-        .quickLookPreview($previewURL)
+        .quickLookPreview($preview.previewURL)
     }
 
     /// "me" for any recipient that matches one of the connected accounts,
@@ -237,7 +235,7 @@ private struct ExpandedMessageCard: View {
                         systemIconName: AttachmentIcon.systemName(forMimeType: attachment.mimeType)
                     )
                     .overlay(alignment: .topTrailing) {
-                        if isLoadingPreview == attachment.id {
+                        if preview.loadingAttachmentId == attachment.id {
                             ProgressView()
                                 .controlSize(.small)
                                 .padding(6)
@@ -247,7 +245,7 @@ private struct ExpandedMessageCard: View {
                     // Finder convention (click/space previews, an explicit
                     // action saves). Save As is still available via
                     // right-click, it's just no longer what a plain click does.
-                    .onTapGesture { previewAttachment(attachment) }
+                    .onTapGesture { preview.preview(attachment, on: message, vm: vm) }
                     .contextMenu {
                         Button("Save As…") { saveAttachment(attachment) }
                     }
@@ -288,30 +286,6 @@ private struct ExpandedMessageCard: View {
         thumbnails[attachment.id] = image
     }
 
-    /// Fetches the attachment's real bytes directly from Gmail/Graph on
-    /// first click (never pre-downloaded, never routed through Supabase or
-    /// any other storage), writes them to a temp file, and hands that URL
-    /// straight to QuickLook — no save dialog anywhere in this path.
-    /// Subsequent clicks on the same attachment reuse the temp file instead
-    /// of re-fetching.
-    private func previewAttachment(_ attachment: Attachment) {
-        if let cached = cachedTempFileURL(for: attachment), FileManager.default.fileExists(atPath: cached.path) {
-            previewURL = cached
-            return
-        }
-        isLoadingPreview = attachment.id
-        Task {
-            defer { isLoadingPreview = nil }
-            do {
-                let data = try await vm.attachmentData(attachment, on: message)
-                let url = try writeTempFile(data, for: attachment)
-                previewURL = url
-            } catch {
-                vm.errorMessage = "Couldn't load attachment: \(error.localizedDescription)"
-            }
-        }
-    }
-
     private func saveAttachment(_ attachment: Attachment) {
         Task {
             do {
@@ -325,36 +299,6 @@ private struct ExpandedMessageCard: View {
                 vm.errorMessage = "Couldn't download attachment: \(error.localizedDescription)"
             }
         }
-    }
-
-    private func cachedTempFileURL(for attachment: Attachment) -> URL? {
-        try? tempFileURL(for: attachment)
-    }
-
-    private func writeTempFile(_ data: Data, for attachment: Attachment) throws -> URL {
-        let url = try tempFileURL(for: attachment)
-        try data.write(to: url, options: .atomic)
-        return url
-    }
-
-    /// Namespaced by message + attachment id so two different attachments
-    /// that happen to share a filename (or the same attachment opened from
-    /// two different messages) never collide on disk. The raw provider
-    /// attachment id (Gmail's can run 100+ characters) used to be
-    /// concatenated straight into the filename, which could push the whole
-    /// path component past macOS's 255-byte filename limit and make the
-    /// write fail with "the file name ... is invalid" — hashing it to a
-    /// fixed-length directory component instead means the on-disk filename
-    /// is always just the real, human filename.
-    private func tempFileURL(for attachment: Attachment) throws -> URL {
-        let idHash = SHA256.hash(data: Data(attachment.id.utf8))
-            .map { String(format: "%02x", $0) }.joined()
-        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("ThreadwellAttachmentPreviews", isDirectory: true)
-            .appendingPathComponent(message.id.uuidString, isDirectory: true)
-            .appendingPathComponent(idHash, isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent(attachment.filename)
     }
 
 }
