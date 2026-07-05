@@ -23,8 +23,13 @@ struct EmailAppApp: App {
                 .preferredColorScheme(.dark)
                 .environment(\.font, .appBody)
                 .onAppear { appDelegate.vm = vm }
-                .onChange(of: vm.totalUnreadCount) { _, count in
-                    NSApplication.shared.dockTile.badgeLabel = count > 0 ? "\(count)" : nil
+                // .onChange alone never fires for the count already present
+                // at launch — only for later transitions — so the badge
+                // stayed blank for an entire session unless the unread
+                // count happened to change after launch. .task(id:) runs
+                // immediately AND on every subsequent change.
+                .task(id: vm.totalUnreadCount) {
+                    NSApplication.shared.dockTile.badgeLabel = vm.totalUnreadCount > 0 ? "\(vm.totalUnreadCount)" : nil
                 }
         }
         .windowStyle(.hiddenTitleBar)
