@@ -217,8 +217,10 @@ private struct TopBar: View {
     }
 
     private var filteredRecents: [String] {
-        guard !vm.searchText.isEmpty else { return recentSearches }
-        return recentSearches.filter { $0.localizedCaseInsensitiveContains(vm.searchText) }
+        let matches = vm.searchText.isEmpty
+            ? recentSearches
+            : recentSearches.filter { $0.localizedCaseInsensitiveContains(vm.searchText) }
+        return Array(matches.prefix(6))
     }
 
     private func searchDropdown(width: CGFloat) -> some View {
