@@ -22,7 +22,6 @@ struct HTMLBodyView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         if let cached = HTMLPrewarmCache.shared.webView(for: messageId) {
             cached.navigationDelegate = context.coordinator
-            Self.forceTransparentLayer(cached)
             return cached
         }
         let webView = Self.makeConfiguredWebView()
@@ -47,50 +46,45 @@ struct HTMLBodyView: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences = prefs
         let webView = ScrollPassthroughWebView(frame: .zero, configuration: config)
-        webView.underPageBackgroundColor = .clear
-        forceTransparentLayer(webView)
+        // Opaque white, not transparent — see the doc comment on `wrap`
+        // below for why. White is also just the correct loading-state
+        // color: it matches what's about to render instead of flashing a
+        // different color first.
+        webView.underPageBackgroundColor = .white
         return webView
     }
 
-    /// `underPageBackgroundColor` alone still leaves a one-frame flash of
-    /// opaque black on the view's own backing layer — visible whenever a
-    /// prewarmed WKWebView gets reattached to a fresh host. Forcing the
-    /// CALayer itself transparent removes that flash at the source.
-    private static func forceTransparentLayer(_ webView: WKWebView) {
-        webView.wantsLayer = true
-        webView.layer?.isOpaque = false
-        webView.layer?.backgroundColor = .clear
-    }
-
-    /// Most HTML email is authored on a white canvas with no dark-mode
-    /// awareness. Rather than hand-picking colors (which fights whatever the
-    /// template already declared and produces exactly the inconsistent
-    /// look this replaced), invert the whole rendered document's lightness
-    /// in one compositing pass — same technique Mail.app uses. Hue is
-    /// preserved, images/logos are handled correctly by WebKit's own
-    /// implementation, and it naturally makes every element (cards, tables,
-    /// buttons) read as one consistent dark surface instead of clashing
-    /// light-on-dark boxes.
+    /// Renders email HTML exactly as authored, on an opaque white canvas —
+    /// same approach Gmail's own web/app dark mode uses (the email is a
+    /// light "sheet" floating in the dark app chrome, not a themed part of
+    /// the app). This used to instead make the canvas transparent and run
+    /// every email through an `-apple-color-filter: apple-invert-lightness()`
+    /// pass, gated by a regex heuristic guessing whether the template was
+    /// "already dark" from the first background-color declaration in its
+    /// source. That heuristic was the actual source of the inconsistency —
+    /// wrong on any template whose real body background wasn't inline CSS
+    /// in the first 4KB (external stylesheet, `bgcolor` attribute, a
+    /// tracking pixel's incidental dark color matched instead) — and even
+    /// when right, inversion still recolors every image, logo, and brand
+    /// color, which is exactly the "looks different from the original"
+    /// complaint. Rendering unmodified on white has zero cases where it
+    /// diverges from the original, because it doesn't transform anything.
     /// Sanitizes internally so every caller — the live view and the
     /// prewarm cache alike — is guaranteed to go through it. Two separate
     /// call sites each remembering to sanitize first is exactly how that
     /// step quietly gets skipped on one path.
     static func wrap(_ rawBody: String) -> String {
         let body = HTMLSanitizer.sanitize(rawBody)
-        let invertRule = HTMLDarkModeHeuristic.isAlreadyDark(body)
-            ? ""
-            : "html { -apple-color-filter: apple-invert-lightness(); }"
         return """
         <html><head>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-        html, body { background: transparent !important; margin: 0; padding: 0; }
+        html, body { background: #ffffff; margin: 0; padding: 0; }
         body { font-family: -apple-system, "Helvetica Neue", sans-serif; font-size: 14px;
-               word-wrap: break-word; overflow-wrap: break-word; }
+               color: #1d1d1f; word-wrap: break-word; overflow-wrap: break-word; }
         img { max-width: 100%; height: auto; }
         table { max-width: 100%; }
         * { max-width: 100%; box-sizing: border-box; }
-        \(invertRule)
         </style>
         </head><body>\(body)</body></html>
         """

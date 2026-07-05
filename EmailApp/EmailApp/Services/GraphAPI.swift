@@ -112,14 +112,25 @@ enum GraphAPI {
 
     /// Graph has a well-known "archive" mail folder; move the message into it.
     nonisolated static func setArchived(id: String, accessToken: String) async throws {
-        struct Body: Encodable { let destinationId: String }
-        _ = try await post(
-            "\(base)/me/messages/\(id)/move", accessToken: accessToken, json: Body(destinationId: "archive"))
+        try await move(id: id, to: "archive", accessToken: accessToken)
     }
 
     /// Graph's DELETE moves the message to Deleted Items — not a permanent delete.
     nonisolated static func delete(id: String, accessToken: String) async throws {
         try await delete("\(base)/me/messages/\(id)", accessToken: accessToken)
+    }
+
+    /// Undoes setArchived or delete — Graph has no separate "untrash", moving
+    /// a Deleted Items message back to Inbox is the same well-known-folder
+    /// move as unarchiving.
+    nonisolated static func moveToInbox(id: String, accessToken: String) async throws {
+        try await move(id: id, to: "inbox", accessToken: accessToken)
+    }
+
+    private nonisolated static func move(id: String, to destinationId: String, accessToken: String) async throws {
+        struct Body: Encodable { let destinationId: String }
+        _ = try await post(
+            "\(base)/me/messages/\(id)/move", accessToken: accessToken, json: Body(destinationId: destinationId))
     }
 
     private nonisolated struct GraphAttachment: Encodable {

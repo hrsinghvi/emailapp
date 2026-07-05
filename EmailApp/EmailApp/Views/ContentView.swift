@@ -355,8 +355,18 @@ private struct ListToolbar: View {
                     .disabled(range.end >= range.total)
                 }
             } else {
-                bulkButton("Archive", icon: "archivebox") { vm.bulkArchive() }
-                bulkButton("Delete", icon: "trash") { vm.bulkDelete() }
+                // Archiving/trashing something already in that same folder
+                // doesn't make sense — show the inverse (un-)action instead,
+                // same reasoning as DetailToolbar below.
+                if vm.selectedFolder == "trash" {
+                    bulkButton("Restore", icon: "tray.and.arrow.up") { vm.bulkRestore() }
+                } else if vm.selectedFolder == "archive" {
+                    bulkButton("Unarchive", icon: "tray.and.arrow.down") { vm.bulkUnarchive() }
+                    bulkButton("Delete", icon: "trash") { vm.bulkDelete() }
+                } else {
+                    bulkButton("Archive", icon: "archivebox") { vm.bulkArchive() }
+                    bulkButton("Delete", icon: "trash") { vm.bulkDelete() }
+                }
                 bulkButton("Mark Read", icon: "envelope.open") { vm.bulkMarkRead(true) }
                 bulkButton("Mark Unread", icon: "envelope.badge") { vm.bulkMarkRead(false) }
 
@@ -391,8 +401,11 @@ private struct ListToolbar: View {
 }
 
 /// Replaces `ListToolbar` in the same row the moment a thread opens —
-/// Gmail-style: back, archive, trash, mark unread. Acts on the whole open
-/// conversation, same as swiping a collapsed row in the list.
+/// Gmail-style: back, archive/unarchive, trash/restore, mark read/unread,
+/// plus Reply/Reply All/Forward on the right (moved up from a separate pill
+/// row under every expanded message — one consistent place per thread
+/// instead of one per message). Acts on the whole open conversation, same
+/// as swiping a collapsed row in the list.
 private struct DetailToolbar: View {
     @Bindable var vm: InboxViewModel
     let thread: MessageThread
@@ -407,27 +420,60 @@ private struct DetailToolbar: View {
 
             Divider().frame(height: 16).overlay(Color.appBorder)
 
-            Button { vm.archiveThread(thread) } label: {
-                Image(systemName: "archivebox").iconButtonHitArea()
-            }
-            .buttonStyle(.pointerPlain)
-            .foregroundStyle(.secondary)
+            // Archiving from Archive, or trashing from Trash, is a
+            // meaningless action — show the inverse instead so there's
+            // always exactly one sensible "move it back" button.
+            if vm.selectedFolder == "archive" {
+                Button { vm.unarchiveThread(thread) } label: {
+                    Image(systemName: "tray.and.arrow.down").iconButtonHitArea()
+                }
+                .buttonStyle(.pointerPlain)
+                .foregroundStyle(.secondary)
 
-            Button { vm.deleteThread(thread) } label: {
-                Image(systemName: "trash").iconButtonHitArea()
+                Button { vm.deleteThread(thread) } label: {
+                    Image(systemName: "trash").iconButtonHitArea()
+                }
+                .buttonStyle(.pointerPlain)
+                .foregroundStyle(.secondary)
+            } else if vm.selectedFolder == "trash" {
+                Button { vm.restoreThread(thread) } label: {
+                    Image(systemName: "tray.and.arrow.up").iconButtonHitArea()
+                }
+                .buttonStyle(.pointerPlain)
+                .foregroundStyle(.secondary)
+            } else {
+                Button { vm.archiveThread(thread) } label: {
+                    Image(systemName: "archivebox").iconButtonHitArea()
+                }
+                .buttonStyle(.pointerPlain)
+                .foregroundStyle(.secondary)
+
+                Button { vm.deleteThread(thread) } label: {
+                    Image(systemName: "trash").iconButtonHitArea()
+                }
+                .buttonStyle(.pointerPlain)
+                .foregroundStyle(.secondary)
             }
-            .buttonStyle(.pointerPlain)
-            .foregroundStyle(.secondary)
 
             Divider().frame(height: 16).overlay(Color.appBorder)
 
-            Button { vm.markThreadUnread(thread) } label: {
-                Image(systemName: "envelope.badge").iconButtonHitArea()
+            Button { vm.toggleThreadReadStatus(thread) } label: {
+                Image(systemName: thread.latest.isRead ? "envelope.badge" : "envelope.open").iconButtonHitArea()
             }
             .buttonStyle(.pointerPlain)
             .foregroundStyle(.secondary)
 
             Spacer()
+
+            ActionPill(title: "Reply", icon: "arrowshape.turn.up.left", tint: .white) {
+                vm.composeContext = .reply(thread.latest)
+            }
+            ActionPill(title: "Reply All", icon: "arrowshape.turn.up.left.2", tint: .white) {
+                vm.composeContext = .replyAll(thread.latest)
+            }
+            ActionPill(title: "Forward", icon: "arrowshape.turn.up.right", tint: .white) {
+                vm.composeContext = .forward(thread.latest)
+            }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 10)

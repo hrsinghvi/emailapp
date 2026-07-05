@@ -7,6 +7,7 @@ import SwiftUI
 /// drives one drag stream at a time, so there's no need for extra
 /// bookkeeping to keep "only one swipe active" true.
 struct SwipeableRow<Content: View>: View {
+    var rightIcon: String = "archivebox.fill"
     let onSwipeRight: () -> Void
     let onSwipeLeft: () -> Void
     @ViewBuilder let content: () -> Content
@@ -55,7 +56,7 @@ struct SwipeableRow<Content: View>: View {
     private var reveal: some View {
         if dragOffset > 0 {
             HStack(spacing: 0) {
-                badge(icon: "archivebox.fill", color: .green, width: min(dragOffset, badgeWidth))
+                badge(icon: rightIcon, color: .green, width: min(dragOffset, badgeWidth))
                 Spacer(minLength: 0)
             }
         } else if dragOffset < 0 {

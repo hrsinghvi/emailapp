@@ -10,7 +10,13 @@ struct MessageListView: View {
                 LazyVStack(spacing: 0) {
                     ForEach(vm.pagedThreads) { thread in
                         SwipeableRow(
-                            onSwipeRight: { vm.archiveThread(thread) },
+                            rightIcon: vm.selectedFolder == "trash" ? "tray.and.arrow.up.fill"
+                                : vm.selectedFolder == "archive" ? "tray.and.arrow.down.fill" : "archivebox.fill",
+                            onSwipeRight: {
+                                if vm.selectedFolder == "trash" { vm.restoreThread(thread) }
+                                else if vm.selectedFolder == "archive" { vm.unarchiveThread(thread) }
+                                else { vm.archiveThread(thread) }
+                            },
                             onSwipeLeft: { vm.markThreadUnread(thread) }
                         ) {
                             ThreadRow(

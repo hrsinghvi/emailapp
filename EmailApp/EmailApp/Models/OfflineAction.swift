@@ -14,7 +14,9 @@ struct QueuedSend: Codable {
 
 enum OfflineAction: Codable {
     case archive(messageId: UUID)
+    case unarchive(messageId: UUID)
     case delete(messageId: UUID)
+    case restore(messageId: UUID)
     case markRead(messageId: UUID, read: Bool)
     case send(QueuedSend)
 }

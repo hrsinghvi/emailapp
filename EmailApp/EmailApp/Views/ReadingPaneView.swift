@@ -1,7 +1,25 @@
 import AppKit
 import CryptoKit
+import PDFKit
 import QuickLook
 import SwiftUI
+
+/// In-memory only — thumbnails regenerate from the (also-cached-on-disk)
+/// attachment temp file cheaply enough that persisting this across launches
+/// isn't worth the complexity. Keyed by the provider attachment id, same as
+/// the on-disk temp file cache in ExpandedMessageCard.
+final class AttachmentThumbnailCache {
+    static let shared = AttachmentThumbnailCache()
+    private let cache = NSCache<NSString, NSImage>()
+
+    func image(for attachmentId: String) -> NSImage? {
+        cache.object(forKey: attachmentId as NSString)
+    }
+
+    func store(_ image: NSImage, for attachmentId: String) {
+        cache.setObject(image, forKey: attachmentId as NSString)
+    }
+}
 
 struct ReadingPaneView: View {
     @Bindable var vm: InboxViewModel
@@ -98,6 +116,7 @@ private struct ExpandedMessageCard: View {
     @State private var htmlHeight: CGFloat
     @State private var previewURL: URL?
     @State private var isLoadingPreview: Attachment.ID?
+    @State private var thumbnails: [String: NSImage] = [:]
 
     init(vm: InboxViewModel, message: Message) {
         self.vm = vm
@@ -106,6 +125,11 @@ private struct ExpandedMessageCard: View {
         // start there so there's no loading-spinner flash at all.
         _htmlHeight = State(initialValue: HTMLPrewarmCache.shared.height(for: message.id) ?? 0)
     }
+
+    /// Avatar circle (44) + its spacing (12) — bodyContent/attachments below
+    /// indent by exactly this so they line up under the name/email text
+    /// instead of starting flush under the avatar itself.
+    private static let avatarColumnWidth: CGFloat = 44 + 12
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -121,10 +145,15 @@ private struct ExpandedMessageCard: View {
                             .font(.appHeadline)
                             .foregroundStyle(.white)
                     )
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(message.senderName)
-                        .font(.appHeadline)
-                    Text(message.senderEmail)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 5) {
+                        Text(message.senderName)
+                            .font(.appHeadline)
+                        Text("<\(message.senderEmail)>")
+                            .font(.appCaption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("to \(recipientSummary)")
                         .font(.appCaption)
                         .foregroundStyle(.secondary)
                 }
@@ -137,17 +166,32 @@ private struct ExpandedMessageCard: View {
             .onTapGesture { vm.toggleExpand(message) }
             .pointerOnHover()
 
-            bodyContent
+            VStack(alignment: .leading, spacing: 16) {
+                bodyContent
 
-            if !message.attachments.isEmpty {
-                attachmentsView
+                if !message.attachments.isEmpty {
+                    attachmentsView
+                }
             }
-
-            actionBar
+            .padding(.leading, Self.avatarColumnWidth)
+            .padding(.top, 4)
         }
         .padding(16)
         .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 12))
         .quickLookPreview($previewURL)
+    }
+
+    /// "me" for any recipient that matches one of the connected accounts,
+    /// otherwise the actual address — same convention Gmail's own "to"
+    /// line uses. Falls back to the sender's own address for the rare
+    /// message with no recorded recipients (a self-send, or an older
+    /// realtime-webhook row synced before To/Cc were carried).
+    private var recipientSummary: String {
+        guard !message.toRecipients.isEmpty else { return message.senderEmail }
+        let connectedEmails = Set(vm.accounts.map { $0.email.lowercased() })
+        return message.toRecipients
+            .map { connectedEmails.contains($0.lowercased()) ? "me" : $0 }
+            .joined(separator: ", ")
     }
 
     @ViewBuilder
@@ -164,6 +208,13 @@ private struct ExpandedMessageCard: View {
                     .opacity(htmlHeight == 0 ? 0 : 1)
             }
             .animation(.easeOut(duration: 0.25), value: htmlHeight)
+            // A visible light "sheet" behind the email, same as Gmail's own
+            // dark-mode reading pane — the HTML itself renders unmodified
+            // (see HTMLBodyView.wrap), so it needs an actual light surface
+            // under it rather than blending into this card's dark
+            // background.
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         } else {
             Text(message.body)
                 .font(.appBody)
@@ -181,6 +232,7 @@ private struct ExpandedMessageCard: View {
                     AttachmentCardView(
                         filename: attachment.filename,
                         sizeMB: attachment.sizeMB,
+                        thumbnail: thumbnails[attachment.id],
                         systemIconName: AttachmentIcon.systemName(forMimeType: attachment.mimeType)
                     )
                     .overlay(alignment: .topTrailing) {
@@ -199,9 +251,35 @@ private struct ExpandedMessageCard: View {
                         Button("Save As…") { saveAttachment(attachment) }
                     }
                     .pointerOnHover()
+                    .task(id: attachment.id) { await loadThumbnailIfNeeded(attachment) }
                 }
             }
         }
+    }
+
+    /// Real thumbnails for images/PDFs, Gmail-style, instead of a generic
+    /// file-type icon — only for these two types since they're cheap to
+    /// turn into a small preview (a resizable image already, or PDFKit's
+    /// built-in page thumbnail renderer); other types keep the icon.
+    /// AttachmentThumbnailCache dedupes across re-renders of the same
+    /// message so switching threads and back doesn't re-fetch.
+    private func loadThumbnailIfNeeded(_ attachment: Attachment) async {
+        guard thumbnails[attachment.id] == nil else { return }
+        guard attachment.mimeType.hasPrefix("image/") || attachment.mimeType == "application/pdf" else { return }
+        if let cached = AttachmentThumbnailCache.shared.image(for: attachment.id) {
+            thumbnails[attachment.id] = cached
+            return
+        }
+        guard let data = try? await vm.attachmentData(attachment, on: message) else { return }
+        let image: NSImage?
+        if attachment.mimeType == "application/pdf" {
+            image = PDFDocument(data: data)?.page(at: 0)?.thumbnail(of: CGSize(width: 168, height: 120), for: .cropBox)
+        } else {
+            image = NSImage(data: data)
+        }
+        guard let image else { return }
+        AttachmentThumbnailCache.shared.store(image, for: attachment.id)
+        thumbnails[attachment.id] = image
     }
 
     /// Fetches the attachment's real bytes directly from Gmail/Graph on
@@ -273,34 +351,12 @@ private struct ExpandedMessageCard: View {
         return dir.appendingPathComponent(attachment.filename)
     }
 
-    private var actionBar: some View {
-        HStack(spacing: 10) {
-            ActionPill(title: "Reply", icon: "arrowshape.turn.up.left", tint: .white) {
-                vm.composeContext = .reply(message)
-            }
-            ActionPill(title: "Reply All", icon: "arrowshape.turn.up.left.2", tint: .white) {
-                vm.composeContext = .replyAll(message)
-            }
-            ActionPill(title: "Forward", icon: "arrowshape.turn.up.right", tint: .white) {
-                vm.composeContext = .forward(message)
-            }
-            ActionPill(
-                title: message.isRead ? "Mark Unread" : "Mark Read",
-                icon: "envelope.badge",
-                tint: .white
-            ) {
-                vm.toggleReadStatus(message)
-            }
-            ActionPill(title: "Archive", icon: "archivebox", tint: .white) {
-                vm.archive(message)
-            }
-            Spacer()
-            ActionPill(title: "Ask Claude", icon: "sparkles", tint: Color.appAccent, filled: true) {}
-        }
-    }
 }
 
-private struct ActionPill: View {
+/// Shared with DetailToolbar's Reply/Reply All/Forward row — that row used
+/// to be duplicated per expanded message in a thread; it's one row per
+/// thread now, at the top, next to back/archive/trash.
+struct ActionPill: View {
     let title: String
     let icon: String
     let tint: Color

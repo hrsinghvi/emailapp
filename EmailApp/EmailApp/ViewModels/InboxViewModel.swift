@@ -309,12 +309,26 @@ final class InboxViewModel {
             case .gmail: try await GmailAPI.setArchived(id: message.providerId, accessToken: token)
             case .outlook: try await GraphAPI.setArchived(id: message.providerId, accessToken: token)
             }
+        case .unarchive(let messageId):
+            guard let message = messages.first(where: { $0.id == messageId }) else { return }
+            let token = try await accessToken(for: message)
+            switch message.provider {
+            case .gmail: try await GmailAPI.unarchive(id: message.providerId, accessToken: token)
+            case .outlook: try await GraphAPI.moveToInbox(id: message.providerId, accessToken: token)
+            }
         case .delete(let messageId):
             guard let message = messages.first(where: { $0.id == messageId }) else { return }
             let token = try await accessToken(for: message)
             switch message.provider {
             case .gmail: try await GmailAPI.trash(id: message.providerId, accessToken: token)
             case .outlook: try await GraphAPI.delete(id: message.providerId, accessToken: token)
+            }
+        case .restore(let messageId):
+            guard let message = messages.first(where: { $0.id == messageId }) else { return }
+            let token = try await accessToken(for: message)
+            switch message.provider {
+            case .gmail: try await GmailAPI.untrash(id: message.providerId, accessToken: token)
+            case .outlook: try await GraphAPI.moveToInbox(id: message.providerId, accessToken: token)
             }
         case .markRead(let messageId, let read):
             guard let message = messages.first(where: { $0.id == messageId }) else { return }
@@ -603,8 +617,59 @@ final class InboxViewModel {
         for message in thread.messages { archive(message) }
     }
 
+    /// Moves an archived message back to Inbox — the inverse of `archive`.
+    func unarchive(_ message: Message) {
+        guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
+        let previousFolder = messages[index].folder
+        withAnimation(.easeOut(duration: 0.2)) {
+            messages[index].folder = "inbox"
+        }
+        MessageCacheStore.save(messages)
+        if selectedThreadKey == message.threadKey, selectedThread == nil {
+            selectedThreadKey = nil
+        }
+
+        guard NetworkMonitor.shared.isOnline else {
+            enqueueOffline(.unarchive(messageId: message.id))
+            return
+        }
+        Task {
+            do {
+                let token = try await accessToken(for: message)
+                switch message.provider {
+                case .gmail: try await GmailAPI.unarchive(id: message.providerId, accessToken: token)
+                case .outlook: try await GraphAPI.moveToInbox(id: message.providerId, accessToken: token)
+                }
+            } catch {
+                guard NetworkMonitor.shared.isOnline else {
+                    enqueueOffline(.unarchive(messageId: message.id))
+                    return
+                }
+                if let idx = messages.firstIndex(where: { $0.id == message.id }) {
+                    messages[idx].folder = previousFolder
+                    MessageCacheStore.save(messages)
+                }
+                AppLog.sync.error("unarchive failed for \(message.id): \(error.localizedDescription)")
+                errorMessage = "Couldn't unarchive: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func unarchiveThread(_ thread: MessageThread) {
+        for message in thread.messages { unarchive(message) }
+    }
+
     func markThreadUnread(_ thread: MessageThread) {
         for message in thread.messages { markUnread(message) }
+    }
+
+    /// Toggles the whole thread to the opposite of its latest message's
+    /// current read state — mirrors the per-message Mark Read/Unread pill
+    /// that used to live under each message before it moved into the
+    /// thread-level detail toolbar.
+    func toggleThreadReadStatus(_ thread: MessageThread) {
+        let targetRead = !thread.latest.isRead
+        for message in thread.messages { Task { await setRead(message, read: targetRead) } }
     }
 
     /// Every message in a thread — the detail toolbar's trash icon acts on
@@ -656,6 +721,48 @@ final class InboxViewModel {
         }
     }
 
+    /// Moves a trashed message back to Inbox — the inverse of `delete`.
+    func restore(_ message: Message) {
+        guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
+        let previousFolder = messages[index].folder
+        withAnimation(.easeOut(duration: 0.2)) {
+            messages[index].folder = "inbox"
+        }
+        MessageCacheStore.save(messages)
+        if selectedThreadKey == message.threadKey, selectedThread == nil {
+            selectedThreadKey = nil
+        }
+
+        guard NetworkMonitor.shared.isOnline else {
+            enqueueOffline(.restore(messageId: message.id))
+            return
+        }
+        Task {
+            do {
+                let token = try await accessToken(for: message)
+                switch message.provider {
+                case .gmail: try await GmailAPI.untrash(id: message.providerId, accessToken: token)
+                case .outlook: try await GraphAPI.moveToInbox(id: message.providerId, accessToken: token)
+                }
+            } catch {
+                guard NetworkMonitor.shared.isOnline else {
+                    enqueueOffline(.restore(messageId: message.id))
+                    return
+                }
+                if let idx = messages.firstIndex(where: { $0.id == message.id }) {
+                    messages[idx].folder = previousFolder
+                    MessageCacheStore.save(messages)
+                }
+                AppLog.sync.error("restore failed for \(message.id): \(error.localizedDescription)")
+                errorMessage = "Couldn't restore: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func restoreThread(_ thread: MessageThread) {
+        for message in thread.messages { restore(message) }
+    }
+
     // MARK: - Bulk selection
 
     var selectedThreadKeys: Set<String> = []
@@ -705,8 +812,18 @@ final class InboxViewModel {
         selectedThreadKeys.removeAll()
     }
 
+    func bulkUnarchive() {
+        for message in selectedMessages { unarchive(message) }
+        selectedThreadKeys.removeAll()
+    }
+
     func bulkDelete() {
         for message in selectedMessages { delete(message) }
+        selectedThreadKeys.removeAll()
+    }
+
+    func bulkRestore() {
+        for message in selectedMessages { restore(message) }
         selectedThreadKeys.removeAll()
     }
 
