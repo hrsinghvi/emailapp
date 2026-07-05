@@ -73,7 +73,15 @@ final class OAuthManager: NSObject {
                 redirectURI: Config.azureRedirectURI,
                 redirectScheme: Config.azureRedirectScheme,
                 scopes: Config.azureScopes,
-                extraAuthParams: ["prompt": "select_account"]
+                // "consent" (not just "select_account") forces Microsoft to
+                // re-show the consent screen and explicitly re-grant scopes
+                // — without it, reconnecting after adding a new scope
+                // (Calendars.Read/ReadWrite) could silently skip granting
+                // it, which is exactly what happened: the Outlook calendar
+                // subscription failed to set up after reconnecting because
+                // the token that came back likely didn't actually carry the
+                // new scope.
+                extraAuthParams: ["prompt": "consent"]
             )
         }
     }

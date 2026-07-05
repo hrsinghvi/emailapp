@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 enum SettingsSection: String, CaseIterable, Identifiable {
     case general, accounts, notifications, compose, shortcuts, mcp, advanced, about
@@ -213,12 +214,14 @@ private struct AccountsSettingsSection: View {
                 HStack(spacing: 10) {
                     // Colors every indicator tied to this account: row
                     // accent bar, reading pane, sidebar dot, this row.
-                    ColorPicker("", selection: Binding(
-                        get: { account.color },
-                        set: { settings.accountColors[account.email] = $0.toHex() }
-                    ))
-                    .labelsHidden()
-                    .frame(width: 20)
+                    // A plain ColorPicker's swatch button doesn't shrink
+                    // below its default (fairly wide) size, which is what
+                    // was overlapping the email text — this is a small
+                    // circle instead, opening the real macOS color panel.
+                    AccountColorSwatch(colorHex: Binding(
+                        get: { settings.accountColors[account.email] },
+                        set: { settings.accountColors[account.email] = $0 }
+                    ), fallback: account.provider.color)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(account.email).font(.appSubheadline)
                         Text("Connected · \(account.provider == .gmail ? "Gmail" : "Outlook")")
@@ -282,6 +285,51 @@ private struct AccountsSettingsSection: View {
         }
         .buttonStyle(.pointerPlain)
         .disabled(isConnecting)
+    }
+}
+
+/// A small circular color swatch (matching the app's existing avatar/dot
+/// sizing convention) that opens the real macOS color panel on click —
+/// unlike SwiftUI's ColorPicker, whose default swatch button doesn't
+/// shrink below a fairly wide fixed size and was overlapping adjacent text.
+private struct AccountColorSwatch: View {
+    @Binding var colorHex: String?
+    let fallback: Color
+    @State private var isHovering = false
+    @StateObject private var coordinator = ColorPanelCoordinator()
+
+    private var currentColor: Color { colorHex.map { Color(hex: $0) } ?? fallback }
+
+    var body: some View {
+        Circle()
+            .fill(currentColor)
+            .frame(width: 18, height: 18)
+            .overlay(Circle().strokeBorder(Color.white.opacity(isHovering ? 0.5 : 0.25), lineWidth: 1.5))
+            .contentShape(Circle())
+            .onHover { isHovering = $0 }
+            .onTapGesture { openColorPanel() }
+            .pointerOnHover()
+            .onDisappear { NSColorPanel.shared.close() }
+    }
+
+    private func openColorPanel() {
+        let panel = NSColorPanel.shared
+        panel.showsAlpha = false
+        panel.color = NSColor(currentColor)
+        coordinator.onChange = { newColor in
+            colorHex = Color(nsColor: newColor).toHex()
+        }
+        panel.setTarget(coordinator)
+        panel.setAction(#selector(ColorPanelCoordinator.colorChanged(_:)))
+        panel.makeKeyAndOrderFront(nil)
+    }
+}
+
+private final class ColorPanelCoordinator: NSObject, ObservableObject {
+    var onChange: ((NSColor) -> Void)?
+
+    @objc func colorChanged(_ sender: NSColorPanel) {
+        onChange?(sender.color)
     }
 }
 

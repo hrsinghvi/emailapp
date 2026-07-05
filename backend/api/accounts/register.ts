@@ -59,6 +59,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // subscription failed. The daily cron will retry since watch_expiration
     // stays null/stale, which the renewal query treats as overdue.
     mailWarning = `mail push setup failed: ${(err as Error).message}`;
+    console.error("mail push setup failed", err);
   }
 
   let calendarWarning: string | null = null;
@@ -91,6 +92,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   } catch (err) {
     calendarWarning = `calendar push setup failed: ${(err as Error).message}`;
+    console.error("calendar push setup failed", err);
   }
 
   if (mailWarning || calendarWarning) {
