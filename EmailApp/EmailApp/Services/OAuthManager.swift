@@ -138,6 +138,23 @@ final class OAuthManager: NSObject {
     /// stays visible and reply/send can queue; `fetchAndMerge` will retry
     /// the refresh once back online instead of the account silently
     /// vanishing from the whole session until relaunch.
+    /// Purely local (Keychain only, no network) — lets the UI show accounts
+    /// as connected the instant the app launches instead of waiting on the
+    /// token-refresh + backend-registration round trips `restoreAccounts()`
+    /// does per account, which is what made the sidebar flash "No account /
+    /// Connect Gmail" for 5-10 seconds even though cached mail was already
+    /// on screen.
+    func storedAccountsFromKeychain() -> [Account] {
+        guard let keys = try? KeychainService.allAccounts() else { return [] }
+        return keys.compactMap { key in
+            guard let colon = key.firstIndex(of: ":"),
+                  let provider = Provider(rawValue: String(key[key.startIndex..<colon]))
+            else { return nil }
+            let email = String(key[key.index(after: colon)...])
+            return Account(provider: provider, email: email, displayName: email)
+        }
+    }
+
     func restoreAccounts() async -> [Account] {
         guard let keys = try? KeychainService.allAccounts() else { return [] }
         var restored: [Account] = []

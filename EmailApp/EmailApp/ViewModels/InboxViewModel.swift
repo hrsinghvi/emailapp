@@ -849,6 +849,18 @@ final class InboxViewModel {
         if messages.isEmpty {
             messages = await MessageCacheStore.load()
         }
+        // Same fix as the cached-messages line above, for the account list:
+        // show accounts as connected the instant we know about them from
+        // Keychain (purely local, instant) rather than waiting on
+        // restoreAccounts()'s per-account token-refresh + backend-register
+        // network round trips — that's what caused the sidebar to show "No
+        // account / Connect Gmail" for several seconds with mail already
+        // loaded on screen.
+        for account in OAuthManager.shared.storedAccountsFromKeychain() {
+            if !accounts.contains(where: { $0.email == account.email && $0.provider == account.provider }) {
+                accounts.append(account)
+            }
+        }
         PowerAssertionService.beginSyncIfEnabled()
         defer { PowerAssertionService.endSync() }
         for account in await OAuthManager.shared.restoreAccounts() {

@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import QuickLook
 import SwiftUI
 
@@ -254,13 +255,22 @@ private struct ExpandedMessageCard: View {
 
     /// Namespaced by message + attachment id so two different attachments
     /// that happen to share a filename (or the same attachment opened from
-    /// two different messages) never collide on disk.
+    /// two different messages) never collide on disk. The raw provider
+    /// attachment id (Gmail's can run 100+ characters) used to be
+    /// concatenated straight into the filename, which could push the whole
+    /// path component past macOS's 255-byte filename limit and make the
+    /// write fail with "the file name ... is invalid" — hashing it to a
+    /// fixed-length directory component instead means the on-disk filename
+    /// is always just the real, human filename.
     private func tempFileURL(for attachment: Attachment) throws -> URL {
+        let idHash = SHA256.hash(data: Data(attachment.id.utf8))
+            .map { String(format: "%02x", $0) }.joined()
         let dir = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("ThreadwellAttachmentPreviews", isDirectory: true)
             .appendingPathComponent(message.id.uuidString, isDirectory: true)
+            .appendingPathComponent(idHash, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("\(attachment.id)-\(attachment.filename)")
+        return dir.appendingPathComponent(attachment.filename)
     }
 
     private var actionBar: some View {
