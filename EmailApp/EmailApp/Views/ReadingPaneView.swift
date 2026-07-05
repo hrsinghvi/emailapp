@@ -1,4 +1,5 @@
 import AppKit
+import QuickLook
 import SwiftUI
 
 struct ReadingPaneView: View {
@@ -94,6 +95,8 @@ private struct ExpandedMessageCard: View {
     let vm: InboxViewModel
     let message: Message
     @State private var htmlHeight: CGFloat
+    @State private var previewURL: URL?
+    @State private var isLoadingPreview: Attachment.ID?
 
     init(vm: InboxViewModel, message: Message) {
         self.vm = vm
@@ -143,6 +146,7 @@ private struct ExpandedMessageCard: View {
         }
         .padding(16)
         .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 12))
+        .quickLookPreview($previewURL)
     }
 
     @ViewBuilder
@@ -178,9 +182,47 @@ private struct ExpandedMessageCard: View {
                         sizeMB: attachment.sizeMB,
                         systemIconName: AttachmentIcon.systemName(forMimeType: attachment.mimeType)
                     )
-                    .onTapGesture { saveAttachment(attachment) }
+                    .overlay(alignment: .topTrailing) {
+                        if isLoadingPreview == attachment.id {
+                            ProgressView()
+                                .controlSize(.small)
+                                .padding(6)
+                        }
+                    }
+                    // Click previews inline via QuickLook — matches Mail.app/
+                    // Finder convention (click/space previews, an explicit
+                    // action saves). Save As is still available via
+                    // right-click, it's just no longer what a plain click does.
+                    .onTapGesture { previewAttachment(attachment) }
+                    .contextMenu {
+                        Button("Save As…") { saveAttachment(attachment) }
+                    }
                     .pointerOnHover()
                 }
+            }
+        }
+    }
+
+    /// Fetches the attachment's real bytes directly from Gmail/Graph on
+    /// first click (never pre-downloaded, never routed through Supabase or
+    /// any other storage), writes them to a temp file, and hands that URL
+    /// straight to QuickLook — no save dialog anywhere in this path.
+    /// Subsequent clicks on the same attachment reuse the temp file instead
+    /// of re-fetching.
+    private func previewAttachment(_ attachment: Attachment) {
+        if let cached = cachedTempFileURL(for: attachment), FileManager.default.fileExists(atPath: cached.path) {
+            previewURL = cached
+            return
+        }
+        isLoadingPreview = attachment.id
+        Task {
+            defer { isLoadingPreview = nil }
+            do {
+                let data = try await vm.attachmentData(attachment, on: message)
+                let url = try writeTempFile(data, for: attachment)
+                previewURL = url
+            } catch {
+                vm.errorMessage = "Couldn't load attachment: \(error.localizedDescription)"
             }
         }
     }
@@ -198,6 +240,27 @@ private struct ExpandedMessageCard: View {
                 vm.errorMessage = "Couldn't download attachment: \(error.localizedDescription)"
             }
         }
+    }
+
+    private func cachedTempFileURL(for attachment: Attachment) -> URL? {
+        try? tempFileURL(for: attachment)
+    }
+
+    private func writeTempFile(_ data: Data, for attachment: Attachment) throws -> URL {
+        let url = try tempFileURL(for: attachment)
+        try data.write(to: url, options: .atomic)
+        return url
+    }
+
+    /// Namespaced by message + attachment id so two different attachments
+    /// that happen to share a filename (or the same attachment opened from
+    /// two different messages) never collide on disk.
+    private func tempFileURL(for attachment: Attachment) throws -> URL {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("ThreadwellAttachmentPreviews", isDirectory: true)
+            .appendingPathComponent(message.id.uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("\(attachment.id)-\(attachment.filename)")
     }
 
     private var actionBar: some View {
