@@ -328,7 +328,7 @@ private struct ListToolbar: View {
                 .foregroundStyle(.secondary)
             } else {
                 Text("\(vm.selectedThreadKeys.count) selected")
-                    .font(.appCaption)
+                    .font(.appSubheadline)
                     .foregroundStyle(.secondary)
             }
 
@@ -393,7 +393,7 @@ private struct ListToolbar: View {
 
     private func bulkButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: icon).font(.appCaption.weight(.medium))
+            Label(title, systemImage: icon).font(.appSubheadline.weight(.medium))
         }
         .buttonStyle(.pointerPlain)
         .foregroundStyle(.secondary)

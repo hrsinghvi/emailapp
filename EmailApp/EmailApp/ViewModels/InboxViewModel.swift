@@ -991,6 +991,7 @@ final class InboxViewModel {
         await performOneTimeHistoryBackfillIfNeeded()
         await performOneTimeCategoryBackfillIfNeeded()
         await performOneTimeCategoryMailBackfillIfNeeded()
+        await performOutlookImmutableIdMigrationIfNeeded()
     }
 
     /// Runs once ever (per install): pulls a much deeper history than the
@@ -1099,6 +1100,40 @@ final class InboxViewModel {
                 } catch {
                     AppLog.sync.error("Category mail backfill (\(category.rawValue)) failed: \(error.localizedDescription)")
                 }
+            }
+        }
+    }
+
+    /// One-time repair for Outlook messages synced before Graph requests
+    /// carried `Prefer: IdType="ImmutableId"` (see GraphAPI's doc comment on
+    /// that header) — their cached ids are the old folder-tied format, which
+    /// goes stale the moment the message is archived/trashed/restored,
+    /// turning every later action on it into a 404 "ErrorItemNotFound".
+    /// Removing and re-fetching them is the only way to swap in stable ids,
+    /// since the id itself is what has to change, not just an id it's
+    /// paired with. Gmail is untouched — its ids were never folder-tied.
+    private func performOutlookImmutableIdMigrationIfNeeded() async {
+        guard !AppSettings.shared.hasMigratedOutlookImmutableIds else { return }
+        guard NetworkMonitor.shared.isOnline else { return }
+        AppSettings.shared.hasMigratedOutlookImmutableIds = true
+
+        for account in accounts where account.provider == .outlook {
+            guard let token = try? await OAuthManager.shared.validAccessToken(for: account) else { continue }
+            messages.removeAll { $0.accountId == account.id && $0.provider == .outlook }
+            do {
+                // All four folders this app ever assigns locally — a message
+                // sitting in Archive or Deleted Items has an id that's
+                // unresolvable any other way (see fetchArchived's doc
+                // comment), so those two have to be listed directly rather
+                // than reached by id.
+                async let inboxTask = GraphAPI.fetchInbox(for: account, accessToken: token, limit: 10000)
+                async let sentTask = GraphAPI.fetchSent(for: account, accessToken: token, limit: 10000)
+                async let archiveTask = GraphAPI.fetchArchived(for: account, accessToken: token, limit: 10000)
+                async let deletedTask = GraphAPI.fetchDeleted(for: account, accessToken: token, limit: 10000)
+                let (inbox, sent, archived, deleted) = try await (inboxTask, sentTask, archiveTask, deletedTask)
+                merge(account: account, fetched: inbox + sent + archived + deleted)
+            } catch {
+                AppLog.sync.error("Outlook immutable-id migration failed for \(account.email): \(error.localizedDescription)")
             }
         }
     }

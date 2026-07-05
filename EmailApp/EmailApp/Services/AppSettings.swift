@@ -48,6 +48,7 @@ final class AppSettings {
         static let hasBackfilledMailHistory = "settings.hasBackfilledMailHistory"
         static let hasBackfilledCategories = "settings.hasBackfilledCategories"
         static let hasBackfilledCategoryMail = "settings.hasBackfilledCategoryMail"
+        static let hasMigratedOutlookImmutableIds = "settings.hasMigratedOutlookImmutableIds"
     }
 
     private let defaults = UserDefaults.standard
@@ -126,6 +127,18 @@ final class AppSettings {
         didSet { defaults.set(hasBackfilledCategoryMail, forKey: Key.hasBackfilledCategoryMail) }
     }
 
+    /// One-time re-fetch of every Outlook message ever synced before this
+    /// app started requesting Graph's immutable id format (Prefer:
+    /// IdType="ImmutableId"). Old-format ids are tied to the message's
+    /// current folder — archiving/trashing/restoring changes them
+    /// server-side, so any Outlook message synced before this flag existed
+    /// has a locally-cached id that's liable to already be stale, causing
+    /// every further action on it to 404 with "ErrorItemNotFound". Re-
+    /// fetching replaces those with stable ids that survive folder moves.
+    var hasMigratedOutlookImmutableIds: Bool {
+        didSet { defaults.set(hasMigratedOutlookImmutableIds, forKey: Key.hasMigratedOutlookImmutableIds) }
+    }
+
     private init() {
         launchAtLogin = defaults.object(forKey: Key.launchAtLogin) as? Bool ?? false
         keepAwakeDuringSync = defaults.object(forKey: Key.keepAwakeDuringSync) as? Bool ?? false
@@ -141,6 +154,7 @@ final class AppSettings {
         hasBackfilledMailHistory = defaults.object(forKey: Key.hasBackfilledMailHistory) as? Bool ?? false
         hasBackfilledCategories = defaults.object(forKey: Key.hasBackfilledCategories) as? Bool ?? false
         hasBackfilledCategoryMail = defaults.object(forKey: Key.hasBackfilledCategoryMail) as? Bool ?? false
+        hasMigratedOutlookImmutableIds = defaults.object(forKey: Key.hasMigratedOutlookImmutableIds) as? Bool ?? false
     }
 
     /// Registers/unregisters with `SMAppService` — the real macOS login-item

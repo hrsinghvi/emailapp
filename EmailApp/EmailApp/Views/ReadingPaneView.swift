@@ -170,6 +170,7 @@ private struct ExpandedMessageCard: View {
                 bodyContent
 
                 if !message.attachments.isEmpty {
+                    Divider().overlay(Color.appBorder)
                     attachmentsView
                 }
             }
@@ -254,6 +255,11 @@ private struct ExpandedMessageCard: View {
                     .task(id: attachment.id) { await loadThumbnailIfNeeded(attachment) }
                 }
             }
+            // ScrollView centers content shorter than its own width by
+            // default — with only one or two attachments that put the row
+            // floating in the middle of the pane instead of flush left
+            // under the body text above it.
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

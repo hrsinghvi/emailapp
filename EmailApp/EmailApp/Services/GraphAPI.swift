@@ -50,6 +50,23 @@ enum GraphAPI {
         try await fetchFolder(wellKnownName: "sentitems", folder: "sent", for: account, accessToken: accessToken, limit: limit)
     }
 
+    /// Only used by the immutable-id migration (see InboxViewModel) — a
+    /// message already sitting in Archive/Deleted Items has an id that's
+    /// unresolvable by any other endpoint (including a plain GET by id) if
+    /// it predates the immutable-id header, so the only way to recover a
+    /// working id for it is to list the folder it's actually in right now.
+    nonisolated static func fetchArchived(
+        for account: Account, accessToken: String, limit: Int
+    ) async throws -> [Message] {
+        try await fetchFolder(wellKnownName: "archive", folder: "archive", for: account, accessToken: accessToken, limit: limit)
+    }
+
+    nonisolated static func fetchDeleted(
+        for account: Account, accessToken: String, limit: Int
+    ) async throws -> [Message] {
+        try await fetchFolder(wellKnownName: "deleteditems", folder: "trash", for: account, accessToken: accessToken, limit: limit)
+    }
+
     private nonisolated static func fetchFolder(
         wellKnownName: String, folder: String, for account: Account, accessToken: String, limit: Int
     ) async throws -> [Message] {
@@ -337,6 +354,7 @@ enum GraphAPI {
         }
         var req = URLRequest(url: url)
         req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        req.setValue(immutableIdHeader, forHTTPHeaderField: "Prefer")
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse else {
             throw GraphError.requestFailed(-1, "no HTTP response")
@@ -348,6 +366,18 @@ enum GraphAPI {
         return data
     }
 
+    /// Without this, Graph's message ids are tied to their current folder —
+    /// archiving, trashing, or restoring a message (all folder moves under
+    /// the hood) silently changes its id server-side. This app caches the
+    /// id it got back from the last fetch/mutation and reuses it for the
+    /// next action, so a since-changed id means every subsequent action on
+    /// that message 404s with "ErrorItemNotFound" — exactly what archiving,
+    /// then later trying to unarchive/delete/mark-read the same message,
+    /// produced. Immutable ids stay valid across folder moves, so the id
+    /// this app already has on hand keeps working no matter how many times
+    /// the message gets moved around.
+    private nonisolated static let immutableIdHeader = "IdType=\"ImmutableId\""
+
     private nonisolated static func send<T: Encodable>(
         _ urlString: String, method: String, accessToken: String, json: T
     ) async throws -> Data {
@@ -358,6 +388,7 @@ enum GraphAPI {
         req.httpMethod = method
         req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(immutableIdHeader, forHTTPHeaderField: "Prefer")
         req.httpBody = try JSONEncoder().encode(json)
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse else {
@@ -389,6 +420,7 @@ enum GraphAPI {
         var req = URLRequest(url: url)
         req.httpMethod = "DELETE"
         req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        req.setValue(immutableIdHeader, forHTTPHeaderField: "Prefer")
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse else {
             throw GraphError.requestFailed(-1, "no HTTP response")

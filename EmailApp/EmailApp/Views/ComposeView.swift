@@ -91,8 +91,15 @@ struct ComposeView: View {
 
             FormattingToolbar(controller: editorController, onInsertLink: { showLinkPrompt = true }, onInsertImage: pickInlineImage, onAttachFile: pickAttachments)
 
+            // maxHeight caps how far the compose card itself grows — past
+            // this, the NSScrollView already wrapping the editor (see
+            // RichTextEditor) takes over and scrolls internally, same as
+            // any real compose window. Without a cap here, a long email
+            // just kept growing the whole fixed-height card past its own
+            // background, pushing Cancel/Send below the visible card
+            // entirely instead of ever engaging that internal scroll.
             RichTextEditor(attributedText: $attributedBody, controller: editorController)
-                .frame(minHeight: 180)
+                .frame(minHeight: 180, maxHeight: 320)
                 .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
 
             if !attachments.isEmpty {
@@ -113,6 +120,7 @@ struct ComposeView: View {
                             .transition(.scale(scale: 0.85).combined(with: .opacity))
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 
