@@ -64,7 +64,23 @@ export async function renewSubscription(
 
 export async function getMessage(accessToken: string, id: string): Promise<ParsedMessage> {
   const url = `${BASE}/me/messages/${id}?$select=id,subject,bodyPreview,body,from,receivedDateTime,isRead`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  // IdType="ImmutableId": without this, this id and the id the Swift app's
+  // own direct Graph fetches use for the identical message are different
+  // strings (Graph's default id format is tied to the message's folder) —
+  // since both sides derive their internal row id by hashing this string
+  // (see stableId.ts's doc comment), a mismatch here means the same real
+  // email arrives as two permanently-separate rows: one from this webhook
+  // path, one from the app's regular sync. outlook.body-content-type="text":
+  // without this, Graph always reports body.contentType as "html" (Exchange
+  // normalizes storage to HTML internally) even for messages actually
+  // composed as plain text, which made every Outlook email look HTML-
+  // formatted downstream regardless of what was actually sent.
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Prefer: 'IdType="ImmutableId", outlook.body-content-type="text"',
+    },
+  });
   if (!res.ok) throw new Error(`Graph messages.get failed (${res.status}): ${await res.text()}`);
   const raw = (await res.json()) as {
     id: string;

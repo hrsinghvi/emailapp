@@ -412,17 +412,25 @@ enum GraphAPI {
         return data
     }
 
-    /// Without this, Graph's message ids are tied to their current folder —
-    /// archiving, trashing, or restoring a message (all folder moves under
-    /// the hood) silently changes its id server-side. This app caches the
-    /// id it got back from the last fetch/mutation and reuses it for the
-    /// next action, so a since-changed id means every subsequent action on
-    /// that message 404s with "ErrorItemNotFound" — exactly what archiving,
-    /// then later trying to unarchive/delete/mark-read the same message,
-    /// produced. Immutable ids stay valid across folder moves, so the id
-    /// this app already has on hand keeps working no matter how many times
-    /// the message gets moved around.
-    private nonisolated static let immutableIdHeader = "IdType=\"ImmutableId\""
+    /// IdType="ImmutableId": without this, Graph's message ids are tied to
+    /// their current folder — archiving, trashing, or restoring a message
+    /// (all folder moves under the hood) silently changes its id server-
+    /// side. This app caches the id it got back from the last fetch/
+    /// mutation and reuses it for the next action, so a since-changed id
+    /// means every subsequent action on that message 404s with
+    /// "ErrorItemNotFound" — exactly what archiving, then later trying to
+    /// unarchive/delete/mark-read the same message, produced. Immutable ids
+    /// stay valid across folder moves. This also has to exactly match the
+    /// Prefer header the backend's webhook handler sends (see graph.ts's
+    /// getMessage) — the same real email has to resolve to the same id on
+    /// both paths, or it shows up as two permanently-separate messages.
+    ///
+    /// outlook.body-content-type="text": without this, Graph always reports
+    /// body.contentType as "html" (Exchange normalizes storage to HTML
+    /// internally) even for messages actually composed as plain text, which
+    /// made every Outlook email render through the HTML pipeline — a stray
+    /// white card — regardless of what was actually sent.
+    private nonisolated static let immutableIdHeader = "IdType=\"ImmutableId\", outlook.body-content-type=\"text\""
 
     private nonisolated static func send<T: Encodable>(
         _ urlString: String, method: String, accessToken: String, json: T
