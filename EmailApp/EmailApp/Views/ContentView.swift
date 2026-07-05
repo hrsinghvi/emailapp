@@ -18,15 +18,12 @@ struct ContentView: View {
                 .frame(maxHeight: .infinity)
                 .ignoresSafeArea(.container, edges: [.top, .bottom])
 
-            if isCalendarMode {
-                CalendarView(calendarVM: calendarVM, accounts: vm.accounts)
-                    .frame(minWidth: 320, maxWidth: .infinity)
-                    .padding(.top, 34)
-                    .padding(.bottom, 12)
-            } else {
-            // Only the toolbar row + body swap when a thread opens — the
-            // search bar stays put instead of the whole pane being
-            // replaced, matching Gmail rather than a full-screen takeover.
+            // TopBar (and the Mail/Calendar switch inside it) stays mounted
+            // in both modes — it used to live only in the Mail branch, so
+            // the moment you switched to Calendar the switch itself
+            // disappeared with no way back, which is what read as "the
+            // Calendar button doesn't work" (it did switch, there was just
+            // nothing left on screen that could switch back).
             VStack(spacing: 10) {
                 TopBar(vm: vm, isCalendarMode: $isCalendarMode)
                     // Without this, the search dropdown (an overlay
@@ -37,34 +34,39 @@ struct ContentView: View {
                     // sibling. This forces TopBar's overlay above it.
                     .zIndex(1)
 
-                Group {
-                    if let thread = vm.selectedThread {
-                        DetailToolbar(vm: vm, thread: thread)
-                    } else {
-                        ListToolbar(vm: vm)
+                if isCalendarMode {
+                    CalendarView(calendarVM: calendarVM, accounts: vm.accounts)
+                        .transition(.opacity)
+                } else {
+                    Group {
+                        if let thread = vm.selectedThread {
+                            DetailToolbar(vm: vm, thread: thread)
+                        } else {
+                            ListToolbar(vm: vm)
+                        }
                     }
-                }
-                .transition(.opacity)
-                .animation(.easeOut(duration: 0.18), value: vm.selectedThread?.id)
+                    .transition(.opacity)
+                    .animation(.easeOut(duration: 0.18), value: vm.selectedThread?.id)
 
-                Group {
-                    if vm.selectedThread != nil {
-                        ReadingPaneView(vm: vm, calendarVM: calendarVM)
-                            .transition(.opacity.combined(with: .move(edge: .trailing)))
-                    } else if vm.selectedFolder == "drafts" {
-                        DraftsListView(vm: vm)
-                            .transition(.opacity)
-                    } else {
-                        MessageListView(vm: vm)
-                            .transition(.opacity)
+                    Group {
+                        if vm.selectedThread != nil {
+                            ReadingPaneView(vm: vm, calendarVM: calendarVM)
+                                .transition(.opacity.combined(with: .move(edge: .trailing)))
+                        } else if vm.selectedFolder == "drafts" {
+                            DraftsListView(vm: vm)
+                                .transition(.opacity)
+                        } else {
+                            MessageListView(vm: vm)
+                                .transition(.opacity)
+                        }
                     }
+                    .animation(.easeOut(duration: 0.22), value: vm.selectedThread?.id)
                 }
-                .animation(.easeOut(duration: 0.22), value: vm.selectedThread?.id)
             }
+            .animation(.easeOut(duration: 0.18), value: isCalendarMode)
             .frame(minWidth: 320, maxWidth: .infinity)
             .padding(.top, 34)
             .padding(.bottom, 12)
-            }
         }
         .padding(.trailing, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -165,18 +167,22 @@ struct ContentView: View {
 private struct MailCalendarSwitch: View {
     @Binding var isCalendarMode: Bool
     let height: CGFloat
+    @Namespace private var namespace
 
     private var segmentHeight: CGFloat { height - 6 }
 
     var body: some View {
         HStack(spacing: 2) {
-            segment(label: "Mail", icon: "envelope", isSelected: !isCalendarMode) { isCalendarMode = false }
-            segment(label: "Calendar", icon: "calendar", isSelected: isCalendarMode) { isCalendarMode = true }
+            segment(label: "Mail", icon: "envelope", isSelected: !isCalendarMode) {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { isCalendarMode = false }
+            }
+            segment(label: "Calendar", icon: "calendar", isSelected: isCalendarMode) {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { isCalendarMode = true }
+            }
         }
         .padding(3)
         .frame(height: height)
         .background(Color.appSurface, in: Capsule())
-        .animation(.easeOut(duration: 0.18), value: isCalendarMode)
     }
 
     private func segment(label: String, icon: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
@@ -189,7 +195,17 @@ private struct MailCalendarSwitch: View {
             .foregroundStyle(isSelected ? Color.appBackground : .secondary)
             .padding(.horizontal, 20)
             .frame(height: segmentHeight)
-            .background(isSelected ? Color.white.opacity(0.92) : .clear, in: Capsule())
+            .background {
+                // A single highlight capsule that slides between the two
+                // segments via matchedGeometryEffect, instead of each
+                // segment independently popping its own background in and
+                // out — that's what reads as a real sliding switch rather
+                // than a cross-fade.
+                if isSelected {
+                    Capsule().fill(Color.white.opacity(0.92))
+                        .matchedGeometryEffect(id: "highlight", in: namespace)
+                }
+            }
         }
         .buttonStyle(.pointerPlain)
     }
