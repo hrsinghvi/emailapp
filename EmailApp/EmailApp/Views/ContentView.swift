@@ -28,7 +28,7 @@ struct ContentView: View {
             // search bar stays put instead of the whole pane being
             // replaced, matching Gmail rather than a full-screen takeover.
             VStack(spacing: 10) {
-                TopBar(vm: vm)
+                TopBar(vm: vm, isCalendarMode: $isCalendarMode)
                     // Without this, the search dropdown (an overlay
                     // attached inside TopBar) painted *behind* the toolbar
                     // row below it — VStack siblings paint in document
@@ -159,8 +159,41 @@ struct ContentView: View {
     }
 }
 
+/// A two-sided switch (like a segmented iOS-style toggle) in the empty
+/// space next to the search bar — replaces the old sidebar "Calendar" nav
+/// item as the way to get to Calendar.
+private struct MailCalendarSwitch: View {
+    @Binding var isCalendarMode: Bool
+
+    var body: some View {
+        HStack(spacing: 2) {
+            segment(label: "Mail", icon: "envelope", isSelected: !isCalendarMode) { isCalendarMode = false }
+            segment(label: "Calendar", icon: "calendar", isSelected: isCalendarMode) { isCalendarMode = true }
+        }
+        .padding(3)
+        .background(Color.appSurface, in: Capsule())
+        .animation(.easeOut(duration: 0.18), value: isCalendarMode)
+    }
+
+    private func segment(label: String, icon: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                Text(label)
+            }
+            .font(.appCaption.weight(.medium))
+            .foregroundStyle(isSelected ? Color.appBackground : .secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(isSelected ? Color.white.opacity(0.92) : .clear, in: Capsule())
+        }
+        .buttonStyle(.pointerPlain)
+    }
+}
+
 private struct TopBar: View {
     @Bindable var vm: InboxViewModel
+    @Binding var isCalendarMode: Bool
     @FocusState private var isSearchFocused: Bool
     @State private var recentSearches: [String] = RecentSearchesStore.load()
 
@@ -206,6 +239,8 @@ private struct TopBar: View {
                 }
 
                 Spacer()
+
+                MailCalendarSwitch(isCalendarMode: $isCalendarMode)
 
                 ConnectivityIndicator(vm: vm)
             }

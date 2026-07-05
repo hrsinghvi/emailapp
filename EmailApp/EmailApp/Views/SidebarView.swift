@@ -28,12 +28,6 @@ struct SidebarView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 InboxNavItem(vm: vm, isExpanded: $isInboxExpanded, isCalendarMode: $isCalendarMode)
-                NavItem(
-                    label: "Calendar", icon: "calendar", isActive: isCalendarMode,
-                    tint: Color(hex: "#6fa8dc").opacity(0.85)
-                ) {
-                    isCalendarMode = true
-                }
                 ForEach([MessageCategory.promotions, .social, .updates, .forums], id: \.self) { category in
                     CategoryNavItem(vm: vm, category: category, isCalendarMode: $isCalendarMode)
                 }

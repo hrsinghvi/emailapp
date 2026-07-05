@@ -22,7 +22,12 @@ export async function createSubscription(
   clientState: string
 ): Promise<{ id: string; expirationDateTime: string }> {
   const expirationDateTime = new Date(Date.now() + 4230 * 60 * 1000).toISOString();
-  const res = await fetch(`${BASE}/subscriptions`, {
+  // /subscriptions is a top-level Graph resource, NOT nested under /me —
+  // BASE (which includes /me for the /events endpoints below) doesn't
+  // apply here. This mismatch is exactly why createSubscription was
+  // getting a 405 while renewSubscription (already using the correct
+  // top-level URL) would have worked fine.
+  const res = await fetch("https://graph.microsoft.com/v1.0/subscriptions", {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({
