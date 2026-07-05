@@ -685,11 +685,18 @@ final class InboxViewModel {
 
     // MARK: - Delete (soft — Trash / Deleted Items, never permanent)
 
+    /// Cmd-Z within 20s of a delete restores it — see `undoLastDelete`.
+    /// Only the single most recent delete is ever eligible, not a full
+    /// history: pressing Cmd-Z is meant to walk back the action you just
+    /// took, not something from several deletes ago.
+    private var lastDeletion: (message: Message, deletedAt: Date)?
+
     /// Optimistic: message disappears from the current view immediately,
     /// rolled back to its prior folder if the provider call fails.
     func delete(_ message: Message) {
         guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
         let previousFolder = messages[index].folder
+        lastDeletion = (message, Date())
         withAnimation(.easeOut(duration: 0.2)) {
             messages[index].folder = "trash"
         }
@@ -719,6 +726,18 @@ final class InboxViewModel {
                 errorMessage = "Couldn't delete: \(error.localizedDescription)"
             }
         }
+    }
+
+    /// Cmd-Z, handled at the app-content level (see ContentView) — only
+    /// reachable when no text field/editor has focus, so it never fights
+    /// native text-undo while composing. A no-op past the 20s window: the
+    /// entry is dropped either way so a later Cmd-Z can't reach further
+    /// back to an even-older delete.
+    func undoLastDelete() {
+        guard let lastDeletion else { return }
+        self.lastDeletion = nil
+        guard Date().timeIntervalSince(lastDeletion.deletedAt) <= 20 else { return }
+        restore(lastDeletion.message)
     }
 
     /// Moves a trashed message back to Inbox — the inverse of `delete`.
@@ -770,6 +789,16 @@ final class InboxViewModel {
 
     private var selectedMessages: [Message] {
         filteredThreads.filter { selectedThreadKeys.contains($0.id) }.flatMap(\.messages)
+    }
+
+    /// Backs the bulk toolbar's single Mark Read/Unread button — true only
+    /// when every selected message is already unread, matching Gmail's own
+    /// convention: a mixed selection (or an all-read one) defaults to "Mark
+    /// Unread" so the same click always marks the whole selection unread
+    /// consistently, and the button only flips to "Mark Read" once that's
+    /// actually true of the whole selection.
+    var selectedMessagesAllUnread: Bool {
+        !selectedMessages.isEmpty && selectedMessages.allSatisfy { !$0.isRead }
     }
 
     /// Plain click opens the thread as before; Cmd-click toggles just this

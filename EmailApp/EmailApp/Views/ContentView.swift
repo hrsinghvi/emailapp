@@ -105,7 +105,24 @@ struct ContentView: View {
                 vm.composeContext = nil
                 return .handled
             }
+            if !vm.selectedThreadKeys.isEmpty {
+                vm.selectedThreadKeys.removeAll()
+                return .handled
+            }
             return .ignored
+        }
+        .onKeyPress(KeyEquivalent("z"), phases: .down) { (press: KeyPress) -> KeyPress.Result in
+            guard press.modifiers.contains(.command) else { return .ignored }
+            // Only reached at all when no text field/editor has focus —
+            // AppKit's responder chain hands Cmd-Z to a focused NSTextView's
+            // own native undo first, so this never fights typing undo in
+            // Compose (see the shift+cmd+z guard below for why redo is
+            // deliberately NOT handled here: same reasoning, no app-level
+            // redo action exists to conflict with, so it's left alone
+            // entirely rather than intercepted and ignored).
+            guard !press.modifiers.contains(.shift) else { return .ignored }
+            vm.undoLastDelete()
+            return .handled
         }
         .task { await vm.restoreSession() }
         .task { await vm.startRealtimeUpdates() }
@@ -367,8 +384,15 @@ private struct ListToolbar: View {
                     bulkButton("Archive", icon: "archivebox") { vm.bulkArchive() }
                     bulkButton("Delete", icon: "trash") { vm.bulkDelete() }
                 }
-                bulkButton("Mark Read", icon: "envelope.open") { vm.bulkMarkRead(true) }
-                bulkButton("Mark Unread", icon: "envelope.badge") { vm.bulkMarkRead(false) }
+                // One button, not two — its label/action depend on whether
+                // the whole selection is already unread (see
+                // selectedMessagesAllUnread's doc comment for the exact
+                // Gmail-matching rule).
+                if vm.selectedMessagesAllUnread {
+                    bulkButton("Mark Read", icon: "envelope.open") { vm.bulkMarkRead(true) }
+                } else {
+                    bulkButton("Mark Unread", icon: "envelope.badge") { vm.bulkMarkRead(false) }
+                }
 
                 Button { vm.selectedThreadKeys.removeAll() } label: {
                     Image(systemName: "xmark").iconButtonHitArea()
