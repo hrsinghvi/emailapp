@@ -72,6 +72,13 @@ struct AskAIPanel: View {
                     .padding(.vertical, 8)
                     .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 8))
                     .onSubmit { ask() }
+                    // Belt-and-suspenders alongside onSubmit — this app
+                    // already has documented cases (see ContentView's Escape
+                    // monitor) of SwiftUI's FocusState losing sync with
+                    // AppKit's real first responder, which can silently
+                    // swallow onSubmit. ask() itself guards against a
+                    // duplicate call, so both firing once is harmless.
+                    .onKeyPress(.return) { ask(); return .handled }
 
                 Button {
                     ask()
