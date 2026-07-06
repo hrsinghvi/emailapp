@@ -357,101 +357,36 @@ private struct FirstContactBadge: View {
     }
 }
 
-/// 3c — appears in every thread's subject header; one click summarizes
-/// locally via Ollama (never Claude — see plan constraint 1) and shows the
-/// result in a dismissible card below.
-/// Also used by DetailToolbar (ContentView.swift), next to the Ask AI pill.
+/// 3c — toggle button in DetailToolbar (ContentView.swift), next to Ask AI.
+/// Opens `SummarizePanel` in the same full-width slot above the subject
+/// line as `AskAIPanel` — it used to be a small popover anchored to this
+/// button, which rendered clipped/invisible inside the toolbar's bounds.
 struct SummarizeChip: View {
-    let thread: MessageThread
-    @State private var isExpanded = false
-    @State private var summary = ""
-    @State private var isLoading = false
-    @State private var errorText: String?
+    @Bindable var vm: InboxViewModel
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 8) {
-            Button {
-                // Ignore taps while a request is in flight — without this
-                // guard, a second tap during the multi-second Ollama call
-                // toggled isExpanded back off, so the button looked like it
-                // "loaded, then reverted" once the (never-shown) result
-                // eventually arrived.
-                guard !isLoading else { return }
-                if isExpanded {
-                    isExpanded = false
-                } else {
-                    isExpanded = true
-                    if summary.isEmpty { summarize() }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    if isLoading {
-                        ProgressView().controlSize(.mini)
-                    } else {
-                        Image(systemName: "text.line.first.and.arrowtriangle.forward")
-                    }
-                    Text("Summarize")
-                }
-                .font(.appSubheadline.weight(.medium))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Capsule().fill(Color.appHover))
-                .overlay(
-                    Capsule().strokeBorder(
-                        LinearGradient(colors: Color.aiGradientStops, startPoint: .leading, endPoint: .trailing).opacity(0.55),
-                        lineWidth: 1.2
-                    )
+        Button {
+            withAnimation(.easeOut(duration: 0.18)) {
+                vm.isAskAIPanelPresented = false
+                vm.isSummarizePanelPresented.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "text.line.first.and.arrowtriangle.forward")
+                Text("Summarize")
+            }
+            .font(.appSubheadline.weight(.medium))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(Color.appHover))
+            .overlay(
+                Capsule().strokeBorder(
+                    LinearGradient(colors: Color.aiGradientStops, startPoint: .leading, endPoint: .trailing).opacity(0.55),
+                    lineWidth: 1.2
                 )
-            }
-            .buttonStyle(.pointerPlain)
+            )
         }
-        .overlay(alignment: .topTrailing) {
-            if isExpanded {
-                summaryCard
-                    .offset(y: 34)
-                    .frame(width: 320)
-            }
-        }
-    }
-
-    private var summaryCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("qwen2.5 · local")
-                    .font(.appCaption2)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button { isExpanded = false } label: {
-                    Image(systemName: "xmark").iconButtonHitArea(2)
-                }
-                .buttonStyle(.pointerPlain)
-                .foregroundStyle(.secondary)
-            }
-            if let errorText {
-                Text(errorText).font(.appCaption).foregroundStyle(.orange)
-            } else {
-                Text(summary.isEmpty ? "Summarizing…" : summary)
-                    .font(.appCaption)
-                    .textSelection(.enabled)
-            }
-        }
-        .padding(12)
-        .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
-        .aiGradientBorder(cornerRadius: 10)
-        .shadow(color: .black.opacity(0.4), radius: 16, y: 6)
-    }
-
-    private func summarize() {
-        isLoading = true
-        errorText = nil
-        Task {
-            do {
-                summary = try await AIService.summarizeThread(thread.messages)
-            } catch {
-                errorText = "Ollama not running — couldn't summarize."
-            }
-            isLoading = false
-        }
+        .buttonStyle(.pointerPlain)
     }
 }
 

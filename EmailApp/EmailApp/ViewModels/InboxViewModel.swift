@@ -90,6 +90,9 @@ final class InboxViewModel {
     /// and ThreadRow's right-click "Ask about this email" (3e), so opening
     /// from either entry point is the same flag.
     var isAskAIPanelPresented: Bool = false
+    /// Drives `SummarizePanel` — same full-width slot above the subject
+    /// line as `AskAIPanel`, mutually exclusive with it.
+    var isSummarizePanelPresented: Bool = false
     /// Which message inside the open thread is expanded and "focused" for
     /// keyboard actions (reply/forward/archive/toggle-read).
     var expandedMessageIds: Set<UUID> = []

@@ -99,3 +99,72 @@ struct AskAIPanel: View {
         }
     }
 }
+
+/// 3c — same full-width slot above the subject line as `AskAIPanel` (was
+/// previously a small popover anchored to the toolbar button, which read as
+/// "broken" since it could render clipped/offscreen there). Opened from
+/// DetailToolbar's "Summarize" pill; generates immediately on appear.
+struct SummarizePanel: View {
+    @Bindable var vm: InboxViewModel
+    let thread: MessageThread
+
+    @State private var summary = ""
+    @State private var isLoading = false
+    @State private var errorText: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Summarize", systemImage: "text.line.first.and.arrowtriangle.forward")
+                    .font(.appSubheadline.weight(.semibold))
+                Spacer()
+                Text("qwen2.5 · local")
+                    .font(.appCaption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.appHover))
+                Button {
+                    vm.isSummarizePanelPresented = false
+                } label: {
+                    Image(systemName: "xmark").iconButtonHitArea()
+                }
+                .buttonStyle(.pointerPlain)
+                .foregroundStyle(.secondary)
+            }
+
+            if let errorText {
+                Text(errorText).font(.appCaption).foregroundStyle(.orange)
+            } else if isLoading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Summarizing…").font(.appCaption).foregroundStyle(.secondary)
+                }
+            } else {
+                ScrollView {
+                    Text(summary)
+                        .font(.appBody)
+                        .foregroundStyle(.primary.opacity(0.9))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .frame(maxHeight: 160)
+            }
+        }
+        .padding(14)
+        .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 12))
+        .aiGradientBorder(cornerRadius: 12)
+        .task(id: thread.id) { await summarize() }
+    }
+
+    private func summarize() async {
+        isLoading = true
+        errorText = nil
+        do {
+            summary = try await AIService.summarizeThread(thread.messages)
+        } catch {
+            errorText = "Couldn't reach Ollama: \(error.localizedDescription)"
+        }
+        isLoading = false
+    }
+}
