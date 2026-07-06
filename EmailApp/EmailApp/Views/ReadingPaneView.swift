@@ -58,9 +58,6 @@ struct ReadingPaneView: View {
                         Text(thread.latest.subject)
                             .font(.appTitle2.weight(.semibold))
                         Spacer()
-                        if AppSettings.shared.aiFeaturesEnabled {
-                            SummarizeChip(thread: thread)
-                        }
                     }
                     .padding(.horizontal, 4)
 
@@ -363,7 +360,8 @@ private struct FirstContactBadge: View {
 /// 3c — appears in every thread's subject header; one click summarizes
 /// locally via Ollama (never Claude — see plan constraint 1) and shows the
 /// result in a dismissible card below.
-private struct SummarizeChip: View {
+/// Also used by DetailToolbar (ContentView.swift), next to the Ask AI pill.
+struct SummarizeChip: View {
     let thread: MessageThread
     @State private var isExpanded = false
     @State private var summary = ""
@@ -394,9 +392,9 @@ private struct SummarizeChip: View {
                     }
                     Text("Summarize")
                 }
-                .font(.appCaption.weight(.medium))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
+                .font(.appSubheadline.weight(.medium))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
                 .background(Capsule().fill(Color.appHover))
                 .overlay(
                     Capsule().strokeBorder(

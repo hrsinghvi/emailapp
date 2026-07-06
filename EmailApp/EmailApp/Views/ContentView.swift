@@ -651,6 +651,7 @@ private struct DetailToolbar: View {
                 ActionPill(title: "Ask AI", icon: "sparkle", tint: .white, isAI: true) {
                     withAnimation(.easeOut(duration: 0.18)) { vm.isAskAIPanelPresented.toggle() }
                 }
+                SummarizeChip(thread: thread)
             }
             ActionPill(title: "Reply", icon: "arrowshape.turn.up.left", tint: .white) {
                 vm.composeContext = .reply(thread.latest)
