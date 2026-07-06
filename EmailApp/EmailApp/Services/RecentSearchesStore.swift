@@ -18,4 +18,10 @@ enum RecentSearchesStore {
         if list.count > limit { list = Array(list.prefix(limit)) }
         UserDefaults.standard.set(list, forKey: key)
     }
+
+    static func remove(_ query: String) {
+        var list = load()
+        list.removeAll { $0.caseInsensitiveCompare(query) == .orderedSame }
+        UserDefaults.standard.set(list, forKey: key)
+    }
 }

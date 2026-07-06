@@ -79,9 +79,10 @@ struct HTMLBodyView: NSViewRepresentable {
         <html><head>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-        html, body { background: #ffffff; margin: 0; padding: 0; }
+        html, body { background: #ffffff; margin: 0; }
         body { font-family: -apple-system, "Helvetica Neue", sans-serif; font-size: 14px;
-               color: #1d1d1f; word-wrap: break-word; overflow-wrap: break-word; }
+               color: #1d1d1f; word-wrap: break-word; overflow-wrap: break-word;
+               padding: 16px; }
         img { max-width: 100%; height: auto; }
         table { max-width: 100%; }
         * { max-width: 100%; box-sizing: border-box; }

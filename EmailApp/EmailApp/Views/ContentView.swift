@@ -204,6 +204,18 @@ struct ContentView: View {
 private struct TopBar: View {
     @Bindable var vm: InboxViewModel
     @FocusState private var isSearchFocused: Bool
+    /// Separate from `isSearchFocused` on purpose: clicking a row *inside*
+    /// the dropdown (a recent search, a quick filter) can itself briefly
+    /// steal AppKit's real first responder away from the search field,
+    /// which flips `isSearchFocused` false through no fault of the click-
+    /// outside monitor below — and if the dropdown's `if isSearchFocused`
+    /// condition removed it from the view hierarchy at that instant, the
+    /// row's own Button action never got to fire on mouseUp (the view it
+    /// was attached to was already gone), which is why clicking a recent
+    /// search silently did nothing. This flag only ever gets set false by
+    /// code that means it: the click-outside monitor, Escape, or a
+    /// completed commit — never as a side effect of internal focus churn.
+    @State private var isDropdownOpen = false
     @State private var recentSearches: [String] = RecentSearchesStore.load()
     @State private var searchBarFrame: CGRect = .zero
     @State private var dropdownFrame: CGRect = .zero
@@ -249,7 +261,7 @@ private struct TopBar: View {
                         .onChange(of: geo.frame(in: .global)) { _, new in searchBarFrame = new }
                 })
                 .overlay(alignment: .topLeading) {
-                    if isSearchFocused {
+                    if isDropdownOpen {
                         searchDropdown(width: searchBarWidth)
                             .offset(y: searchBarHeight + 4)
                             .transition(.opacity.combined(with: .move(edge: .top)))
@@ -267,11 +279,15 @@ private struct TopBar: View {
             }
         }
         .frame(height: searchBarHeight)
-        .animation(.easeOut(duration: 0.16), value: isSearchFocused)
+        .animation(.easeOut(duration: 0.16), value: isDropdownOpen)
         .onChange(of: isSearchFocused) { _, focused in
-            if !focused {
-                dropdownFrame = .zero
-            } else {
+            // Opening always follows real focus gain. Closing does NOT
+            // follow real focus loss here — see isDropdownOpen's doc
+            // comment on why that would eat clicks on the dropdown's own
+            // rows. Closing is handled explicitly (click-outside monitor,
+            // Escape, commit).
+            if focused {
+                isDropdownOpen = true
                 // Re-read from disk on every reopen — a search can get
                 // recorded from the debounced full-text search in
                 // InboxViewModel (see performFullTextSearch), not only via
@@ -280,6 +296,10 @@ private struct TopBar: View {
                 recentSearches = RecentSearchesStore.load()
             }
         }
+        .onChange(of: isDropdownOpen) { _, open in
+            if !open { dropdownFrame = .zero }
+        }
+        .onChange(of: vm.searchBlurTrigger) { _, _ in isDropdownOpen = false }
         .onAppear { installClickMonitorIfNeeded() }
         .onDisappear {
             if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
@@ -307,13 +327,14 @@ private struct TopBar: View {
     private func installClickMonitorIfNeeded() {
         guard clickMonitor == nil else { return }
         clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
-            if isSearchFocused, let window = event.window {
+            if isDropdownOpen || isSearchFocused, let window = event.window {
                 let windowHeight = window.contentView?.frame.height ?? 0
                 // NSEvent.locationInWindow is bottom-left origin; SwiftUI's
                 // .global coordinate space (captured above) is top-left.
                 let point = CGPoint(x: event.locationInWindow.x, y: windowHeight - event.locationInWindow.y)
                 if !searchBarFrame.contains(point) && !dropdownFrame.contains(point) {
                     isSearchFocused = false
+                    isDropdownOpen = false
                 }
             }
             return event
@@ -349,9 +370,11 @@ private struct TopBar: View {
                 Divider().overlay(Color.appBorder)
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(filteredRecents, id: \.self) { query in
-                        RecentSearchRow(query: query) {
+                        RecentSearchRow(query: query, onSelect: {
                             commitSearch(query)
-                        }
+                        }, onDelete: {
+                            removeRecent(query)
+                        })
                     }
                 }
             }
@@ -368,37 +391,57 @@ private struct TopBar: View {
         vm.searchText = vm.searchText.isEmpty ? token : vm.searchText + " " + token
     }
 
+    private func removeRecent(_ query: String) {
+        RecentSearchesStore.remove(query)
+        recentSearches = RecentSearchesStore.load()
+    }
+
     private func commitSearch(_ query: String) {
         vm.searchText = query
         RecentSearchesStore.record(query)
         recentSearches = RecentSearchesStore.load()
         isSearchFocused = false
+        isDropdownOpen = false
     }
 }
 
 private struct RecentSearchRow: View {
     let query: String
-    let action: () -> Void
+    let onSelect: () -> Void
+    let onDelete: () -> Void
     @State private var isHovering = false
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: "clock")
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
-                Text(query)
-                    .font(.appSubheadline)
-                    .lineLimit(1)
-                Spacer()
+        HStack(spacing: 8) {
+            Button(action: onSelect) {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock")
+                        .font(.appCaption)
+                        .foregroundStyle(.secondary)
+                    Text(query)
+                        .font(.appSubheadline)
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 6).fill(isHovering ? Color.appHover : .clear))
-            .contentShape(Rectangle())
+            .buttonStyle(.pointerPlain)
+
+            if isHovering {
+                Button(action: onDelete) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.appCaption)
+                        .foregroundStyle(.secondary)
+                        .iconButtonHitArea(2)
+                }
+                .buttonStyle(.pointerPlain)
+            }
         }
-        .buttonStyle(.pointerPlain)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 6).fill(isHovering ? Color.appHover : .clear))
+        .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovering)
     }
