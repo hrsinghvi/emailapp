@@ -41,6 +41,11 @@ struct ContentView: View {
                 .transition(.opacity)
                 .animation(.easeOut(duration: 0.18), value: vm.selectedThread?.id)
 
+                if vm.isAskAIPanelPresented, let thread = vm.selectedThread {
+                    AskAIPanel(vm: vm, thread: thread)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
                 Group {
                     if vm.selectedThread != nil {
                         ReadingPaneView(vm: vm)
@@ -172,6 +177,10 @@ struct ContentView: View {
             }
             if vm.composeContext != nil {
                 vm.composeContext = nil
+                return nil
+            }
+            if vm.isAskAIPanelPresented {
+                vm.isAskAIPanelPresented = false
                 return nil
             }
             if !vm.selectedThreadKeys.isEmpty {
@@ -638,6 +647,9 @@ private struct DetailToolbar: View {
 
             Spacer()
 
+            ActionPill(title: "Ask AI", icon: "sparkle", tint: .white) {
+                withAnimation(.easeOut(duration: 0.18)) { vm.isAskAIPanelPresented.toggle() }
+            }
             ActionPill(title: "Reply", icon: "arrowshape.turn.up.left", tint: .white) {
                 vm.composeContext = .reply(thread.latest)
             }

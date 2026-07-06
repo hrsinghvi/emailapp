@@ -31,6 +31,12 @@ struct MessageListView: View {
                                 let flags = NSEvent.modifierFlags
                                 vm.handleRowClick(thread, shift: flags.contains(.shift), command: flags.contains(.command))
                             }
+                            .contextMenu {
+                                Button("Ask about this email") {
+                                    vm.selectedThreadKey = thread.id
+                                    vm.isAskAIPanelPresented = true
+                                }
+                            }
                             .pointerOnHover()
                         }
                         .transition(.driftUp)

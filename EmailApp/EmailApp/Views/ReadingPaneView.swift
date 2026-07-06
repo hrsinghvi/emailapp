@@ -22,6 +22,10 @@ final class AttachmentThumbnailCache {
 
 struct ReadingPaneView: View {
     @Bindable var vm: InboxViewModel
+    /// In-memory only, per message id — dismissal doesn't need to survive
+    /// relaunch. ponytail: no persistence, add to AppSettings if users ask
+    /// for it to stick across launches.
+    @State private var dismissedSummaryCardIds: Set<UUID> = []
 
     var body: some View {
         Group {
@@ -50,9 +54,28 @@ struct ReadingPaneView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(thread.latest.subject)
-                        .font(.appTitle2.weight(.semibold))
-                        .padding(.horizontal, 4)
+                    HStack {
+                        Text(thread.latest.subject)
+                            .font(.appTitle2.weight(.semibold))
+                        Spacer()
+                        if thread.count >= 3 {
+                            SummarizeChip(thread: thread)
+                        }
+                    }
+                    .padding(.horizontal, 4)
+
+                    if !dismissedSummaryCardIds.contains(thread.latest.id) {
+                        let senderSignal = isOwnAccount(thread.latest.senderEmail)
+                            ? SenderReputationService.Signal(isFirstContact: false, priorCount: 0, firstSeen: nil)
+                            : SenderReputationService.signal(for: thread.latest.senderEmail, in: vm.messages, excluding: thread.latest.id)
+                        let signals = EmailSignalScanner.scan(thread.latest, isBcc: false, senderSignal: senderSignal)
+                        if !signals.isEmpty {
+                            AutoSummaryCard(signals: signals) {
+                                dismissedSummaryCardIds.insert(thread.latest.id)
+                            }
+                            .padding(.horizontal, 4)
+                        }
+                    }
 
                     ForEach(thread.messages) { message in
                         if vm.expandedMessageIds.contains(message.id) {
@@ -67,6 +90,12 @@ struct ReadingPaneView: View {
                 .padding(20)
             }
         }
+    }
+
+    /// Never badge/flag the user's own sent mail as "first contact" — that
+    /// signal is only meaningful for other people's addresses.
+    private func isOwnAccount(_ email: String) -> Bool {
+        vm.accounts.contains { $0.email.lowercased() == email.lowercased() }
     }
 
     private func collapsedRow(_ message: Message) -> some View {
@@ -150,6 +179,10 @@ private struct ExpandedMessageCard: View {
                         Text("<\(message.senderEmail)>")
                             .font(.appCaption)
                             .foregroundStyle(.secondary)
+                        if !vm.accounts.contains(where: { $0.email.lowercased() == message.senderEmail.lowercased() }),
+                           SenderReputationService.signal(for: message.senderEmail, in: vm.messages, excluding: message.id).isFirstContact {
+                            FirstContactBadge()
+                        }
                     }
                     Text("to \(recipientSummary)")
                         .font(.appCaption)
@@ -301,6 +334,145 @@ private struct ExpandedMessageCard: View {
         }
     }
 
+}
+
+/// Subtle icon next to a first-contact sender's name (3f) — click for a
+/// popover with the signal detail. No network; purely from the local
+/// message cache via SenderReputationService.
+private struct FirstContactBadge: View {
+    @State private var isPresented = false
+
+    var body: some View {
+        Button {
+            isPresented = true
+        } label: {
+            Image(systemName: "questionmark.circle")
+                .font(.appCaption)
+                .foregroundStyle(.orange.opacity(0.85))
+        }
+        .buttonStyle(.pointerPlain)
+        .popover(isPresented: $isPresented) {
+            Text("First message you've received from this sender.")
+                .font(.appCaption)
+                .padding(10)
+                .frame(width: 220)
+        }
+    }
+}
+
+/// 3c — appears in the subject header once a thread has 3+ messages; one
+/// click summarizes locally via Ollama (never Claude — see plan constraint
+/// 1) and shows the result in a dismissible card below.
+private struct SummarizeChip: View {
+    let thread: MessageThread
+    @State private var isExpanded = false
+    @State private var summary = ""
+    @State private var isLoading = false
+    @State private var errorText: String?
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            Button {
+                if isExpanded {
+                    isExpanded = false
+                } else {
+                    isExpanded = true
+                    if summary.isEmpty { summarize() }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    if isLoading {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: "text.line.first.and.arrowtriangle.forward")
+                    }
+                    Text("Summarize")
+                }
+                .font(.appCaption.weight(.medium))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(Color.appHover))
+            }
+            .buttonStyle(.pointerPlain)
+        }
+        .overlay(alignment: .topTrailing) {
+            if isExpanded {
+                summaryCard
+                    .offset(y: 34)
+                    .frame(width: 320)
+            }
+        }
+    }
+
+    private var summaryCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("qwen2.5 · local")
+                    .font(.appCaption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button { isExpanded = false } label: {
+                    Image(systemName: "xmark").iconButtonHitArea(2)
+                }
+                .buttonStyle(.pointerPlain)
+                .foregroundStyle(.secondary)
+            }
+            if let errorText {
+                Text(errorText).font(.appCaption).foregroundStyle(.orange)
+            } else {
+                Text(summary.isEmpty ? "Summarizing…" : summary)
+                    .font(.appCaption)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(12)
+        .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.appBorder))
+        .shadow(color: .black.opacity(0.4), radius: 16, y: 6)
+    }
+
+    private func summarize() {
+        isLoading = true
+        errorText = nil
+        Task {
+            do {
+                summary = try await AIService.summarizeThread(thread.messages)
+            } catch {
+                errorText = "Ollama not running — couldn't summarize."
+            }
+            isLoading = false
+        }
+    }
+}
+
+/// 3h — compact, dismissible card at the top of the reading pane when
+/// EmailSignalScanner finds at least one signal; absent entirely otherwise.
+private struct AutoSummaryCard: View {
+    let signals: [EmailSignalScanner.Signal]
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "sparkle.magnifyingglass")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(signals) { signal in
+                    Text(signal.text)
+                        .font(.appCaption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Button(action: onDismiss) {
+                Image(systemName: "xmark").iconButtonHitArea(2)
+            }
+            .buttonStyle(.pointerPlain)
+            .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.appBorder))
+    }
 }
 
 /// Shared with DetailToolbar's Reply/Reply All/Forward row — that row used

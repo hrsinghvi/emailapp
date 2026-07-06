@@ -10,6 +10,111 @@ import AppKit
 final class RichTextEditorController {
     weak var textView: NSTextView?
 
+    /// Set by ComposeView so ghost-text completion has the subject as
+    /// context — the controller doesn't otherwise know it.
+    var subjectProvider: () -> String = { "" }
+
+    // MARK: - Ghost-text autocomplete (3g)
+
+    /// The ghost suggestion's range in `textStorage`, when one is showing.
+    /// Never reflected to `attributedText`/autosave/send — see `insertGhost`
+    /// and `acceptGhost`'s doc comments for why.
+    private var ghostRange: NSRange?
+    private var completionTask: Task<Void, Never>?
+
+    var hasGhost: Bool { ghostRange != nil }
+
+    /// Removes any showing ghost text directly from storage WITHOUT calling
+    /// `didChangeText()` — the insert never notified the delegate either
+    /// (see `insertGhost`), so removing it the same way keeps the round
+    /// trip invisible to `NSTextViewDelegate.textDidChange`, which is what
+    /// `attributedText`/autosave/send all read from. If this ever called
+    /// `didChangeText()`, a ghost that was inserted-then-removed on the
+    /// same keystroke would still emit a spurious empty edit notification.
+    func clearGhost() {
+        guard let range = ghostRange, let storage = textView?.textStorage, NSMaxRange(range) <= storage.length else {
+            ghostRange = nil
+            return
+        }
+        storage.beginEditing()
+        storage.deleteCharacters(in: range)
+        storage.endEditing()
+        ghostRange = nil
+    }
+
+    /// Debounced entry point — called after every real (non-ghost) text
+    /// change. Cancels any in-flight request, waits out the pause, then
+    /// only proceeds if nothing else changed the caret/ghost state in the
+    /// meantime.
+    func scheduleGhostSuggestion() {
+        completionTask?.cancel()
+        guard AppSettings.shared.autocompleteEnabled, let tv = textView else { return }
+        completionTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, let self else { return }
+            guard await AIService.isAvailable() else { return }
+            guard let tv = self.textView, let storage = tv.textStorage else { return }
+            let caret = tv.selectedRange()
+            guard caret.length == 0 else { return }
+            let full = storage.string as NSString
+            let start = max(0, caret.location - 500)
+            let preceding = full.substring(with: NSRange(location: start, length: caret.location - start))
+            guard !preceding.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            let suggestion: String
+            do {
+                suggestion = try await AIService.completeSentence(subject: self.subjectProvider(), precedingText: preceding)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, !suggestion.isEmpty else { return }
+            // Caret may have moved while we were awaiting the network call
+            // (more typing, a click) — stale suggestions for a stale
+            // position are worse than no suggestion.
+            guard tv.selectedRange() == caret, self.ghostRange == nil else { return }
+            self.insertGhost(suggestion, at: caret.location)
+        }
+    }
+
+    /// Inserted directly into storage, deliberately WITHOUT `didChangeText()`
+    /// — layout still redraws the gray text (NSTextView redraws on any
+    /// storage edit regardless), but skipping the delegate notification is
+    /// what keeps this suggestion out of `textDidChange` -> `attributedText`
+    /// -> autosave/send. The suggestion only ever becomes real content via
+    /// `acceptGhost()`, which explicitly re-colors it and *does* call
+    /// `didChangeText()`.
+    private func insertGhost(_ text: String, at location: Int) {
+        guard let tv = textView, let storage = tv.textStorage else { return }
+        let attributed = NSAttributedString(string: text, attributes: [
+            .font: currentTypingFont(),
+            .foregroundColor: NSColor.white.withAlphaComponent(0.4),
+        ])
+        storage.beginEditing()
+        storage.insert(attributed, at: location)
+        storage.endEditing()
+        ghostRange = NSRange(location: location, length: (text as NSString).length)
+        tv.setSelectedRange(NSRange(location: location, length: 0))
+    }
+
+    /// Tab / Right-arrow when a ghost is showing: turns it into real typed
+    /// content (white, caret moved past it, delegate notified so it
+    /// actually saves/sends from here on). Returns false when there's
+    /// nothing to accept, so the caller falls back to the key's normal
+    /// behavior (real tab / real caret move).
+    @discardableResult
+    func acceptGhost() -> Bool {
+        guard let range = ghostRange, let tv = textView, let storage = tv.textStorage, NSMaxRange(range) <= storage.length else {
+            ghostRange = nil
+            return false
+        }
+        storage.beginEditing()
+        storage.addAttribute(.foregroundColor, value: NSColor.white, range: range)
+        storage.endEditing()
+        ghostRange = nil
+        tv.setSelectedRange(NSRange(location: range.location + range.length, length: 0))
+        tv.didChangeText()
+        return true
+    }
+
     private func withStorage(_ body: (NSTextStorage, NSRange) -> Void) {
         guard let tv = textView, let storage = tv.textStorage else { return }
         let range = tv.selectedRange()

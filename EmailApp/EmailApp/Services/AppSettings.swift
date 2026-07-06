@@ -52,6 +52,7 @@ final class AppSettings {
         static let hasMigratedStarredImportant = "settings.hasMigratedStarredImportant"
         static let hasBackfilledSearchIndex = "settings.hasBackfilledSearchIndex"
         static let cachedAccountIds = "settings.cachedAccountIds"
+        static let autocompleteEnabled = "settings.autocompleteEnabled"
     }
 
     private let defaults = UserDefaults.standard
@@ -168,6 +169,13 @@ final class AppSettings {
         didSet { defaults.set(cachedAccountIds, forKey: Key.cachedAccountIds) }
     }
 
+    /// Gates 3g's ghost-text autocomplete. Stored property only — no
+    /// Settings row yet, that's Phase 4 (wire an existing toggle to this
+    /// key, don't add a new one).
+    var autocompleteEnabled: Bool {
+        didSet { defaults.set(autocompleteEnabled, forKey: Key.autocompleteEnabled) }
+    }
+
     private init() {
         launchAtLogin = defaults.object(forKey: Key.launchAtLogin) as? Bool ?? false
         keepAwakeDuringSync = defaults.object(forKey: Key.keepAwakeDuringSync) as? Bool ?? false
@@ -187,6 +195,7 @@ final class AppSettings {
         hasMigratedStarredImportant = defaults.object(forKey: Key.hasMigratedStarredImportant) as? Bool ?? false
         hasBackfilledSearchIndex = defaults.object(forKey: Key.hasBackfilledSearchIndex) as? Bool ?? false
         cachedAccountIds = defaults.dictionary(forKey: Key.cachedAccountIds) as? [String: String] ?? [:]
+        autocompleteEnabled = defaults.object(forKey: Key.autocompleteEnabled) as? Bool ?? true
     }
 
     /// Registers/unregisters with `SMAppService` — the real macOS login-item

@@ -86,6 +86,10 @@ final class InboxViewModel {
 
     /// Which thread is open in the reading pane.
     var selectedThreadKey: String?
+    /// Drives `AskAIPanel` — shared by DetailToolbar's "Ask AI" pill (3b)
+    /// and ThreadRow's right-click "Ask about this email" (3e), so opening
+    /// from either entry point is the same flag.
+    var isAskAIPanelPresented: Bool = false
     /// Which message inside the open thread is expanded and "focused" for
     /// keyboard actions (reply/forward/archive/toggle-read).
     var expandedMessageIds: Set<UUID> = []

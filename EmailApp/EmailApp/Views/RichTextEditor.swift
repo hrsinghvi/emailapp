@@ -53,7 +53,14 @@ struct RichTextEditor: NSViewRepresentable {
         controller.textView = textView
         // Only push external changes in (e.g. loading a draft) — don't
         // stomp on the user's live typing/cursor position every re-render.
-        if !context.coordinator.isEditingInternally, textView.attributedString() != attributedText {
+        // Also skipped while a ghost suggestion (3g) is showing — it lives
+        // directly in `textStorage` without ever reaching `attributedText`
+        // (see RichTextEditorController.insertGhost's doc comment), so
+        // comparing the two here always "differs" while a ghost is up; if
+        // this stomped it back to `attributedText` mid-display, `ghostRange`
+        // would still point at the now-deleted characters and the next
+        // clearGhost()/acceptGhost() would mutate out of bounds.
+        if !context.coordinator.isEditingInternally, !controller.hasGhost, textView.attributedString() != attributedText {
             textView.textStorage?.setAttributedString(attributedText)
         }
     }
@@ -73,10 +80,29 @@ struct RichTextEditor: NSViewRepresentable {
             isEditingInternally = false
         }
 
+        /// Tab / Right-arrow accept a showing ghost suggestion (3g) instead
+        /// of their normal effect — these are commands, not text, so they
+        /// never reach `shouldChangeTextIn` below.
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            guard parent.controller.hasGhost else { return false }
+            if commandSelector == #selector(NSResponder.insertTab(_:)) || commandSelector == #selector(NSResponder.moveRight(_:)) {
+                return parent.controller.acceptGhost()
+            }
+            return false
+        }
+
         /// Live markdown-shortcut conversion: on space or return, checks the
         /// text just typed for a markdown pattern and replaces it with the
         /// equivalent formatting — same trigger convention as Notion/Slack.
         func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange, replacementString: String?) -> Bool {
+            // Any real keystroke clears a showing ghost first (3g) — the
+            // user's typed character should land in a clean document, not
+            // interleaved with unaccepted suggestion text. Tab/Right-arrow
+            // never reach here (they're commands, handled in
+            // doCommandBy above), so this only fires for genuine edits.
+            parent.controller.clearGhost()
+            defer { parent.controller.scheduleGhostSuggestion() }
+
             guard let trigger = replacementString, trigger == " " || trigger == "\n" else { return true }
             guard let storage = textView.textStorage else { return true }
             let full = storage.string as NSString

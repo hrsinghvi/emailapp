@@ -26,6 +26,12 @@ struct ComposeView: View {
     @State private var editorController = RichTextEditorController()
     @State private var escapeMonitor: Any?
 
+    // 3d — Draft with AI
+    @State private var isDraftPromptShown = false
+    @State private var draftInstructions = ""
+    @State private var isDrafting = false
+    @State private var draftError: String?
+
     private var titleText: String {
         switch context {
         case .new: return "New Message"
@@ -91,6 +97,32 @@ struct ComposeView: View {
 
             FormattingToolbar(controller: editorController, onInsertLink: { showLinkPrompt = true }, onInsertImage: pickInlineImage, onAttachFile: pickAttachments)
 
+            if isDraftPromptShown {
+                HStack(spacing: 8) {
+                    TextField("What should this email say?", text: $draftInstructions)
+                        .textFieldStyle(.plain)
+                        .font(.appSubheadline)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 8))
+                        .onSubmit { draftWithAI() }
+                    Button {
+                        draftWithAI()
+                    } label: {
+                        if isDrafting {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Text("Draft").font(.appSubheadline.weight(.medium))
+                        }
+                    }
+                    .buttonStyle(.pointerPlain)
+                    .disabled(draftInstructions.isEmpty || isDrafting)
+                }
+                if let draftError {
+                    Text(draftError).font(.appCaption).foregroundStyle(.orange)
+                }
+            }
+
             // maxHeight caps how far the compose card itself grows — past
             // this, the NSScrollView already wrapping the editor (see
             // RichTextEditor) takes over and scrolls internally, same as
@@ -136,6 +168,15 @@ struct ComposeView: View {
                 }
                 .buttonStyle(.pointerPlain)
 
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { isDraftPromptShown.toggle() }
+                } label: {
+                    Label("Draft with AI", systemImage: "sparkle")
+                        .font(.appSubheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.pointerPlain)
+
                 Spacer()
                 Button("Cancel") { onClose() }
                     .buttonStyle(.pointerPlain)
@@ -160,6 +201,7 @@ struct ComposeView: View {
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.appBorder))
         .shadow(color: .black.opacity(0.4), radius: 24, y: 8)
         .onAppear(perform: prefill)
+        .onAppear { editorController.subjectProvider = { subject } }
         .onAppear {
             // SwiftUI's .onKeyPress doesn't reliably see Escape when focus
             // is inside the rich text editor's underlying NSTextView (it's
@@ -270,6 +312,56 @@ struct ComposeView: View {
                 origin: origin, lastModified: Date()
             )
         )
+    }
+
+    /// The message this compose session is replying to/forwarding, if any —
+    /// quoted for AI drafting context. Empty for a brand-new message.
+    private var quotedThreadMessage: [Message] {
+        switch context {
+        case .reply(let message), .replyAll(let message), .forward(let message): return [message]
+        case .new, .draft: return []
+        }
+    }
+
+    /// A few of the user's own past sent messages to the current "To"
+    /// recipient(s), pulled from the local cache — no network round trip
+    /// (see plan 3d: "prefer local").
+    private var pastSentMessages: [Message] {
+        guard !toEmails.isEmpty else { return [] }
+        let myEmails = Set(vm.accounts.map { $0.email.lowercased() })
+        let recipients = Set(toEmails.map { $0.lowercased() })
+        return vm.messages
+            .filter { myEmails.contains($0.senderEmail.lowercased()) && $0.toRecipients.contains { recipients.contains($0.lowercased()) } }
+            .sorted { $0.receivedAt > $1.receivedAt }
+            .prefix(3)
+            .map { $0 }
+    }
+
+    private func draftWithAI() {
+        guard !draftInstructions.isEmpty, !isDrafting else { return }
+        isDrafting = true
+        draftError = nil
+        let instructions = draftInstructions
+        let quoted = quotedThreadMessage
+        let pastSent = pastSentMessages
+        Task {
+            do {
+                let text = try await AIService.draftEmail(instructions: instructions, quotedThread: quoted, pastSentToRecipient: pastSent)
+                let attributed = NSAttributedString(
+                    string: text,
+                    attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.white]
+                )
+                let combined = NSMutableAttributedString(attributedString: attributedBody)
+                if combined.length > 0 { combined.append(NSAttributedString(string: "\n\n")) }
+                combined.append(attributed)
+                attributedBody = combined
+                isDraftPromptShown = false
+                draftInstructions = ""
+            } catch {
+                draftError = "Couldn't reach Ollama: \(error.localizedDescription)"
+            }
+            isDrafting = false
+        }
     }
 
     private func pickAttachments() {
