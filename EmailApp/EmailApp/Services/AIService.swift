@@ -34,10 +34,20 @@ enum AIService {
 
     /// 3d — drafts a reply/new email body from a natural-language prompt,
     /// optionally with quoted thread context and a few past sent messages
-    /// to the same recipient for tone matching.
+    /// to the same recipient for tone matching. Grounds itself with a
+    /// keyless web search on the instructions first — qwen2.5:7b's training
+    /// data is frozen at some past date, so anything current-events-shaped
+    /// ("who won X yesterday") is wrong more often than not without it.
     static func draftEmail(instructions: String, quotedThread: [Message], pastSentToRecipient: [Message]) async throws -> String {
-        let system = "You are an email assistant. Write only the email body, no subject line, no greeting placeholders unless natural. Match the tone of past sent messages if provided."
+        var system = "You are an email assistant. Write only the email body, no subject line, no greeting placeholders unless natural. Match the tone of past sent messages if provided."
         var prompt = "Instructions: \(instructions)"
+
+        let searchResults = await WebSearchService.search(instructions)
+        if !searchResults.isEmpty {
+            system += " If web search results are provided below, trust them over your own knowledge for facts, dates, and current events — your training data may be outdated."
+            let block = searchResults.map { "- \($0.title): \($0.snippet)" }.joined(separator: "\n")
+            prompt += "\n\nWeb search results:\n\(block)"
+        }
         if !quotedThread.isEmpty {
             prompt += "\n\nThread being replied to:\n\(threadContext(quotedThread, limit: 4))"
         }
@@ -45,6 +55,43 @@ enum AIService {
             prompt += "\n\nPast messages I've sent this recipient (for tone):\n\(threadContext(pastSentToRecipient, limit: 3))"
         }
         return try await OllamaService.generate(prompt: prompt, system: system, maxTokens: 400)
+    }
+
+    enum RewriteStyle: String, CaseIterable {
+        case polish, formalize, friendly, shorten
+
+        var icon: String {
+            switch self {
+            case .polish: return "wand.and.stars"
+            case .formalize: return "briefcase"
+            case .friendly: return "hand.wave"
+            case .shorten: return "arrow.down.right.and.arrow.up.left"
+            }
+        }
+        var label: String {
+            switch self {
+            case .polish: return "Polish"
+            case .formalize: return "Formalize"
+            case .friendly: return "Friendly"
+            case .shorten: return "Shorten"
+            }
+        }
+        var instruction: String {
+            switch self {
+            case .polish: return "Polish this email for clarity and flow without changing its meaning or facts."
+            case .formalize: return "Rewrite this email in a more formal, professional tone."
+            case .friendly: return "Rewrite this email in a warmer, more casual and friendly tone."
+            case .shorten: return "Shorten this email to only its essential points, keeping the same meaning."
+            }
+        }
+    }
+
+    /// One-tap quick edits on the current draft body (Gmail "Help me write"
+    /// style refine icons) — rewrites the whole body, doesn't append.
+    static func rewrite(text: String, style: RewriteStyle) async throws -> String {
+        let system = "You are an email editing assistant. Output ONLY the rewritten email body — no preamble, no explanation, no quotes around it."
+        let prompt = "\(style.instruction)\n\nEmail body:\n\(text)"
+        return try await OllamaService.generate(prompt: prompt, system: system, maxTokens: 500)
     }
 
     /// 3g — short ghost-text continuation of what's currently being typed.

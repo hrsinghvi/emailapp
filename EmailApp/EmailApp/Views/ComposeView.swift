@@ -31,6 +31,9 @@ struct ComposeView: View {
     @State private var draftInstructions = ""
     @State private var isDrafting = false
     @State private var draftError: String?
+    @State private var draftTask: Task<Void, Never>?
+    @State private var bodyUndoStack: [NSAttributedString] = []
+    @State private var bodyRedoStack: [NSAttributedString] = []
 
     private var titleText: String {
         switch context {
@@ -59,8 +62,10 @@ struct ComposeView: View {
         }
     }
 
+    private var isSendDisabled: Bool { toEmails.isEmpty || subject.isEmpty }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(titleText)
                     .font(.appSubheadline.weight(.semibold))
@@ -98,26 +103,89 @@ struct ComposeView: View {
             FormattingToolbar(controller: editorController, onInsertLink: { showLinkPrompt = true }, onInsertImage: pickInlineImage, onAttachFile: pickAttachments)
 
             if isDraftPromptShown {
-                HStack(spacing: 8) {
-                    TextField("What should this email say?", text: $draftInstructions)
-                        .textFieldStyle(.plain)
-                        .font(.appSubheadline)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 8))
-                        .onSubmit { draftWithAI() }
-                    Button {
-                        draftWithAI()
-                    } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "sparkle")
+                            .font(.appCaption)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 8)
+
                         if isDrafting {
-                            ProgressView().controlSize(.small)
+                            Text("Generating…")
+                                .font(.appSubheadline)
+                                .foregroundStyle(.secondary)
+                                .padding(.vertical, 8)
+                            Spacer()
+                            Button {
+                                draftTask?.cancel()
+                                draftTask = nil
+                                isDrafting = false
+                            } label: {
+                                Image(systemName: "stop.fill")
+                                    .font(.appCaption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(6)
+                                    .background(Circle().fill(Color.appHover))
+                            }
+                            .buttonStyle(.pointerPlain)
                         } else {
-                            Text("Draft").font(.appSubheadline.weight(.medium))
+                            // axis: .vertical + lineLimit lets this grow with
+                            // its content instead of scrolling a fixed-height
+                            // single line, matching Gmail's Help-me-write box.
+                            TextField("Describe your change", text: $draftInstructions, axis: .vertical)
+                                .textFieldStyle(.plain)
+                                .font(.appSubheadline)
+                                .lineLimit(1...6)
+                                .onSubmit { draftWithAI() }
+
+                            Button {
+                                draftWithAI()
+                            } label: {
+                                Image(systemName: "arrow.up")
+                                    .font(.appCaption.weight(.semibold))
+                                    .foregroundStyle(draftInstructions.isEmpty ? .secondary : Color.black)
+                                    .padding(6)
+                                    .background(Circle().fill(draftInstructions.isEmpty ? Color.appHover : Color.appAccent))
+                            }
+                            .buttonStyle(.pointerPlain)
+                            .disabled(draftInstructions.isEmpty)
                         }
                     }
-                    .buttonStyle(.pointerPlain)
-                    .disabled(draftInstructions.isEmpty || isDrafting)
+
+                    if !isDrafting {
+                        HStack(spacing: 14) {
+                            ForEach(AIService.RewriteStyle.allCases, id: \.self) { style in
+                                Button { rewriteBody(style) } label: {
+                                    Image(systemName: style.icon)
+                                        .font(.appCaption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.pointerPlain)
+                                .disabled(attributedBody.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .help(style.label)
+                            }
+                            Spacer()
+                            Button { undoDraftEdit() } label: {
+                                Image(systemName: "arrow.uturn.backward")
+                                    .font(.appCaption)
+                                    .foregroundStyle(bodyUndoStack.isEmpty ? Color.secondary.opacity(0.4) : .secondary)
+                            }
+                            .buttonStyle(.pointerPlain)
+                            .disabled(bodyUndoStack.isEmpty)
+                            Button { redoDraftEdit() } label: {
+                                Image(systemName: "arrow.uturn.forward")
+                                    .font(.appCaption)
+                                    .foregroundStyle(bodyRedoStack.isEmpty ? Color.secondary.opacity(0.4) : .secondary)
+                            }
+                            .buttonStyle(.pointerPlain)
+                            .disabled(bodyRedoStack.isEmpty)
+                        }
+                    }
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 14))
+
                 if let draftError {
                     Text(draftError).font(.appCaption).foregroundStyle(.orange)
                 }
@@ -131,7 +199,7 @@ struct ComposeView: View {
             // background, pushing Cancel/Send below the visible card
             // entirely instead of ever engaging that internal scroll.
             RichTextEditor(attributedText: $attributedBody, controller: editorController)
-                .frame(minHeight: 180, maxHeight: 320)
+                .frame(minHeight: 180, maxHeight: .infinity)
                 .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
 
             if !attachments.isEmpty {
@@ -188,13 +256,13 @@ struct ComposeView: View {
                 } label: {
                     Text("Send")
                         .font(.appSubheadline.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(isSendDisabled ? .secondary : Color.black)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(Capsule().fill(Color.appAccent.opacity(0.9)))
+                        .background(Capsule().fill(isSendDisabled ? Color.appHover : Color.appAccent))
                 }
                 .buttonStyle(.pointerPlain)
-                .disabled(toEmails.isEmpty || subject.isEmpty)
+                .disabled(isSendDisabled)
             }
         }
         .padding(20)
@@ -346,24 +414,74 @@ struct ComposeView: View {
         let instructions = draftInstructions
         let quoted = quotedThreadMessage
         let pastSent = pastSentMessages
-        Task {
+        let previousBody = attributedBody
+        draftTask = Task {
             do {
                 let text = try await AIService.draftEmail(instructions: instructions, quotedThread: quoted, pastSentToRecipient: pastSent)
+                try Task.checkCancellation()
                 let attributed = NSAttributedString(
                     string: text,
                     attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.white]
                 )
-                let combined = NSMutableAttributedString(attributedString: attributedBody)
+                let combined = NSMutableAttributedString(attributedString: previousBody)
                 if combined.length > 0 { combined.append(NSAttributedString(string: "\n\n")) }
                 combined.append(attributed)
+                pushUndo(previousBody)
                 attributedBody = combined
                 isDraftPromptShown = false
                 draftInstructions = ""
+            } catch is CancellationError {
+                // user hit stop — leave the body untouched
             } catch {
                 draftError = "Couldn't reach Ollama: \(error.localizedDescription)"
             }
             isDrafting = false
+            draftTask = nil
         }
+    }
+
+    /// Gmail-style quick-edit icons (polish/formalize/friendly/shorten) —
+    /// rewrites the whole body in place rather than appending.
+    private func rewriteBody(_ style: AIService.RewriteStyle) {
+        guard !isDrafting else { return }
+        let currentText = attributedBody.string
+        guard !currentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        isDrafting = true
+        draftError = nil
+        let previousBody = attributedBody
+        draftTask = Task {
+            do {
+                let text = try await AIService.rewrite(text: currentText, style: style)
+                try Task.checkCancellation()
+                pushUndo(previousBody)
+                attributedBody = NSAttributedString(
+                    string: text,
+                    attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.white]
+                )
+            } catch is CancellationError {
+            } catch {
+                draftError = "Couldn't reach Ollama: \(error.localizedDescription)"
+            }
+            isDrafting = false
+            draftTask = nil
+        }
+    }
+
+    private func pushUndo(_ previous: NSAttributedString) {
+        bodyUndoStack.append(previous)
+        bodyRedoStack.removeAll()
+    }
+
+    private func undoDraftEdit() {
+        guard let previous = bodyUndoStack.popLast() else { return }
+        bodyRedoStack.append(attributedBody)
+        attributedBody = previous
+    }
+
+    private func redoDraftEdit() {
+        guard let next = bodyRedoStack.popLast() else { return }
+        bodyUndoStack.append(attributedBody)
+        attributedBody = next
     }
 
     private func pickAttachments() {
