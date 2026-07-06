@@ -1642,7 +1642,14 @@ final class InboxViewModel {
                 let texts = items.map { embedText(subject: $0.subject ?? "", senderName: $0.sender_name ?? "", body: $0.body ?? "") }
                 let vectors = try await OllamaService.embed(texts, kind: .document)
                 let pairs = zip(items, vectors).map { (id: $0.id, embedding: $1) }
-                try await BackendAPI.storeEmbeddings(pairs)
+                let stored = try await BackendAPI.storeEmbeddings(pairs)
+                // A 200 response that updated zero rows means an id/cast
+                // mismatch server-side, not "nothing to do" — looping again
+                // would just re-fetch the same rows forever.
+                guard stored > 0 else {
+                    AppLog.sync.error("embedding backfill: store_embeddings updated 0 of \(pairs.count) rows, stopping")
+                    return
+                }
             } catch {
                 AppLog.sync.error("embedding backfill store failed: \(error.localizedDescription)")
                 return

@@ -23,14 +23,26 @@ import { supabase } from "../../lib/supabase";
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { query, accountIds: providedIds, accounts: requestedAccounts, limit } = (req.body ?? {}) as {
+  const {
+    query,
+    accountIds: providedIds,
+    accounts: requestedAccounts,
+    limit,
+    embedding,
+    mode = "keyword",
+  } = (req.body ?? {}) as {
     query?: string;
     accountIds?: string[];
     accounts?: Array<{ provider?: "gmail" | "outlook"; email?: string }>;
     limit?: number;
+    embedding?: number[];
+    mode?: "keyword" | "semantic" | "hybrid";
   };
   if (!query || !query.trim()) {
     return res.status(400).json({ error: "query required" });
+  }
+  if ((mode === "semantic" || mode === "hybrid") && (!Array.isArray(embedding) || embedding.length !== 768)) {
+    return res.status(400).json({ error: "768-dim embedding required for semantic/hybrid mode" });
   }
 
   let accountIds: string[] = Array.isArray(providedIds) ? providedIds.filter((id) => !!id) : [];
@@ -49,14 +61,64 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   if (accountIds.length === 0) return res.status(200).json({ results: [] });
 
-  const { data, error } = await supabase.rpc("search_messages", {
-    p_query: query,
-    p_account_ids: accountIds,
-    p_limit: Math.min(limit ?? 200, 500),
-  });
-  if (error) {
-    console.error("search_messages rpc failed", error);
-    return res.status(500).json({ error: String(error.message ?? error) });
+  const capped = Math.min(limit ?? 200, 500);
+
+  if (mode === "keyword") {
+    const { data, error } = await supabase.rpc("search_messages", {
+      p_query: query,
+      p_account_ids: accountIds,
+      p_limit: capped,
+    });
+    if (error) {
+      console.error("search_messages rpc failed", error);
+      return res.status(500).json({ error: String(error.message ?? error) });
+    }
+    return res.status(200).json({ results: data ?? [] });
   }
-  return res.status(200).json({ results: data ?? [] });
+
+  if (mode === "semantic") {
+    const { data, error } = await supabase.rpc("semantic_search_messages", {
+      p_embedding: embedding,
+      p_account_ids: accountIds,
+      p_limit: capped,
+    });
+    if (error) {
+      console.error("semantic_search_messages rpc failed", error);
+      return res.status(500).json({ error: String(error.message ?? error) });
+    }
+    // Same {id, rank} response shape as keyword search — reuse `rank` for
+    // the similarity score so the Swift client's SearchResult decoding
+    // doesn't need a mode-specific variant.
+    const results = (data ?? []).map((r: { id: string; similarity: number }) => ({ id: r.id, rank: r.similarity }));
+    return res.status(200).json({ results });
+  }
+
+  // hybrid: run both, merge with Reciprocal Rank Fusion — simple, no score
+  // normalization needed since only rank position matters.
+  const [keywordRes, semanticRes] = await Promise.all([
+    supabase.rpc("search_messages", { p_query: query, p_account_ids: accountIds, p_limit: capped }),
+    supabase.rpc("semantic_search_messages", { p_embedding: embedding, p_account_ids: accountIds, p_limit: capped }),
+  ]);
+  if (keywordRes.error) {
+    console.error("search_messages rpc failed", keywordRes.error);
+    return res.status(500).json({ error: String(keywordRes.error.message ?? keywordRes.error) });
+  }
+  if (semanticRes.error) {
+    console.error("semantic_search_messages rpc failed", semanticRes.error);
+    return res.status(500).json({ error: String(semanticRes.error.message ?? semanticRes.error) });
+  }
+
+  const rrfScores = new Map<string, number>();
+  const k = 60;
+  (keywordRes.data ?? []).forEach((row: { id: string }, i: number) => {
+    rrfScores.set(row.id, (rrfScores.get(row.id) ?? 0) + 1 / (k + i + 1));
+  });
+  (semanticRes.data ?? []).forEach((row: { id: string }, i: number) => {
+    rrfScores.set(row.id, (rrfScores.get(row.id) ?? 0) + 1 / (k + i + 1));
+  });
+  const results = Array.from(rrfScores.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, capped)
+    .map(([id, rank]) => ({ id, rank }));
+  return res.status(200).json({ results });
 }
