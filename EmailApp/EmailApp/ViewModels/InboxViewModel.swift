@@ -143,6 +143,12 @@ final class InboxViewModel {
     /// handler (see ContentView) so it can close the dropdown even though
     /// the FocusState driving it is private to TopBar.
     var searchBlurTrigger = 0
+    /// Mirrors TopBar's private isDropdownOpen state — lets the app-level
+    /// Escape handler know whether there's actually a dropdown to close,
+    /// independent of whether any text has been typed yet (clicking the
+    /// search bar opens the dropdown with an empty query, and Escape should
+    /// still close it in that case).
+    var isSearchDropdownOpen = false
 
     /// Gmail-style "1-50 of N" pagination for the message list.
     var listPageIndex: Int = 0

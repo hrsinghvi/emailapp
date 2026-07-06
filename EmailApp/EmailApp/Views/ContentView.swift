@@ -186,12 +186,11 @@ struct ContentView: View {
                 vm.selectedThreadKey = nil
                 return nil
             }
-            // Viewing search results (search bar itself may no longer even
-            // be focused at this point) — back out to whatever the list
-            // showed before searching, same as the other branches above
-            // dismiss whatever's currently "on top." searchBlurTrigger
-            // closes the dropdown too, if it's still open.
-            if !vm.searchText.isEmpty {
+            // The dropdown can be open with nothing typed yet (just clicked
+            // into the search bar) — close it either way, and only clear an
+            // actual query/results if one exists, same as the other
+            // branches above dismiss whatever's currently "on top."
+            if vm.isSearchDropdownOpen || !vm.searchText.isEmpty {
                 vm.searchText = ""
                 vm.searchBlurTrigger += 1
                 return nil
@@ -297,6 +296,7 @@ private struct TopBar: View {
             }
         }
         .onChange(of: isDropdownOpen) { _, open in
+            vm.isSearchDropdownOpen = open
             if !open { dropdownFrame = .zero }
         }
         .onChange(of: vm.searchBlurTrigger) { _, _ in isDropdownOpen = false }
