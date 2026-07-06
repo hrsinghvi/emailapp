@@ -51,6 +51,7 @@ final class AppSettings {
         static let hasMigratedOutlookImmutableIds = "settings.hasMigratedOutlookImmutableIds"
         static let hasMigratedStarredImportant = "settings.hasMigratedStarredImportant"
         static let hasBackfilledSearchIndex = "settings.hasBackfilledSearchIndex"
+        static let cachedAccountIds = "settings.cachedAccountIds"
     }
 
     private let defaults = UserDefaults.standard
@@ -159,6 +160,14 @@ final class AppSettings {
         didSet { defaults.set(hasBackfilledSearchIndex, forKey: Key.hasBackfilledSearchIndex) }
     }
 
+    /// Keyed by "provider:email" -> Supabase accounts.id (string form) —
+    /// persisted so search never needs a network round trip to resolve
+    /// which account is which, not even on the very first search of a new
+    /// launch. See InboxViewModel.resolvedAccountIds.
+    var cachedAccountIds: [String: String] {
+        didSet { defaults.set(cachedAccountIds, forKey: Key.cachedAccountIds) }
+    }
+
     private init() {
         launchAtLogin = defaults.object(forKey: Key.launchAtLogin) as? Bool ?? false
         keepAwakeDuringSync = defaults.object(forKey: Key.keepAwakeDuringSync) as? Bool ?? false
@@ -177,6 +186,7 @@ final class AppSettings {
         hasMigratedOutlookImmutableIds = defaults.object(forKey: Key.hasMigratedOutlookImmutableIds) as? Bool ?? false
         hasMigratedStarredImportant = defaults.object(forKey: Key.hasMigratedStarredImportant) as? Bool ?? false
         hasBackfilledSearchIndex = defaults.object(forKey: Key.hasBackfilledSearchIndex) as? Bool ?? false
+        cachedAccountIds = defaults.dictionary(forKey: Key.cachedAccountIds) as? [String: String] ?? [:]
     }
 
     /// Registers/unregisters with `SMAppService` — the real macOS login-item

@@ -178,6 +178,14 @@ struct ContentView: View {
                 vm.selectedThreadKeys.removeAll()
                 return nil
             }
+            // An open thread takes priority over dismissing search — closing
+            // the reading pane first (back to the list) is what "go back"
+            // means when a message is open, matching every other branch
+            // here: dismiss whatever's currently on top, one layer at a time.
+            if vm.selectedThreadKey != nil {
+                vm.selectedThreadKey = nil
+                return nil
+            }
             // Viewing search results (search bar itself may no longer even
             // be focused at this point) — back out to whatever the list
             // showed before searching, same as the other branches above

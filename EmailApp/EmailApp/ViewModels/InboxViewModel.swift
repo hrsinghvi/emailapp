@@ -110,7 +110,7 @@ final class InboxViewModel {
             // skip past normal typing speed without feeling laggy once
             // you pause.
             searchTask = Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(300))
+                try? await Task.sleep(for: .milliseconds(180))
                 guard !Task.isCancelled else { return }
                 await self?.performFullTextSearch()
             }
@@ -190,6 +190,7 @@ final class InboxViewModel {
     init() {
         accounts = []
         messages = []
+        resolvedAccountIds = AppSettings.shared.cachedAccountIds.compactMapValues(UUID.init)
         drafts = DraftStore.loadAll()
         offlineQueue = OfflineActionQueueStore.load()
         NetworkMonitor.shared.onBecomeOnline = { [weak self] in
@@ -419,25 +420,34 @@ final class InboxViewModel {
         }
     }
 
-    /// Populated once per session (see performAccountIdResolutionIfNeeded)
-    /// so search skips the (provider, email) -> accounts.id lookup on every
-    /// keystroke-triggered search — that repeated lookup, not the actual
-    /// ts_rank query (~2ms even across full history), was most of why
-    /// search felt slow. Keyed by "provider:email".
-    private var resolvedAccountIds: [String: UUID] = [:]
+    /// Cached across launches (see AppSettings.cachedAccountIds) so search
+    /// skips the (provider, email) -> accounts.id lookup entirely on every
+    /// keystroke-triggered search, from the very first search of a session —
+    /// that repeated lookup, not the actual ts_rank query (~2ms even across
+    /// full history), was most of why search felt slow. Keyed by
+    /// "provider:email". Seeded from disk in init(), refreshed whenever a
+    /// resolution succeeds.
+    private var resolvedAccountIds: [String: UUID]
+    private var isResolvingAccountIds = false
 
-    /// One-time-per-session account id resolution — fire-and-forget from
-    /// restoreSession, non-blocking. A search started before this
-    /// completes just falls back to the slower server-side-resolved path
-    /// for that one request (still correct, just not yet fast).
+    /// Resolves whichever connected accounts aren't already cached. Called
+    /// once at startup (fire-and-forget from restoreSession) AND retried
+    /// from performFullTextSearch whenever a search finds the cache
+    /// incomplete — a transient failure at launch (flaky wifi right as the
+    /// app opens) used to strand every later search on the slow path for
+    /// the rest of the session, since nothing ever asked again.
     private func performAccountIdResolutionIfNeeded() async {
-        guard resolvedAccountIds.isEmpty, !accounts.isEmpty else { return }
+        let missing = accounts.filter { resolvedAccountIds["\($0.provider.rawValue):\($0.email.lowercased())"] == nil }
+        guard !missing.isEmpty, !isResolvingAccountIds else { return }
+        isResolvingAccountIds = true
+        defer { isResolvingAccountIds = false }
         do {
-            let refs = accounts.map { BackendAPI.AccountRef(provider: $0.provider.rawValue, email: $0.email) }
+            let refs = missing.map { BackendAPI.AccountRef(provider: $0.provider.rawValue, email: $0.email) }
             let resolved = try await BackendAPI.resolveAccountIds(refs)
             for account in resolved {
                 resolvedAccountIds["\(account.provider):\(account.email.lowercased())"] = account.id
             }
+            AppSettings.shared.cachedAccountIds = resolvedAccountIds.mapValues(\.uuidString)
         } catch {
             AppLog.sync.error("account id resolution failed: \(error.localizedDescription)")
         }
@@ -451,6 +461,9 @@ final class InboxViewModel {
         let query = searchFreeText
         guard !query.isEmpty, !accounts.isEmpty else { return }
         isSearching = true
+        if accounts.contains(where: { resolvedAccountIds["\($0.provider.rawValue):\($0.email.lowercased())"] == nil }) {
+            await performAccountIdResolutionIfNeeded()
+        }
         do {
             let cachedIds = accounts.compactMap { resolvedAccountIds["\($0.provider.rawValue):\($0.email.lowercased())"] }
             let results: [BackendAPI.SearchResult]
