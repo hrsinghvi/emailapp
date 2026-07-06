@@ -1629,6 +1629,21 @@ final class InboxViewModel {
     /// message that slipped through (Ollama was down last launch, a
     /// realtime-embed call failed) gets caught on the next one; once
     /// nothing's pending it's a single fast no-op request.
+    /// Count of messages still missing an embedding, for the Settings >
+    /// Advanced backfill status row. `fetchPendingEmbeddings` has no
+    /// offset/cursor and embeddings.ts clamps `limit` server-side to 500,
+    /// so this is one capped fetch, not true pagination — good enough for
+    /// a status row (exact count only matters near zero). Hitting the cap
+    /// is reported to the caller so the row can show "500+" instead of a
+    /// number that understates the real backlog.
+    func pendingEmbeddingCount() async -> (count: Int, isCapped: Bool) {
+        let cachedIds = accounts.compactMap { resolvedAccountIds["\($0.provider.rawValue):\($0.email.lowercased())"] }
+        guard !cachedIds.isEmpty else { return (0, false) }
+        let cap = 500
+        let items = (try? await BackendAPI.fetchPendingEmbeddings(accountIds: cachedIds, limit: cap)) ?? []
+        return (items.count, items.count >= cap)
+    }
+
     private func performEmbeddingBackfillIfNeeded() async {
         guard await OllamaService.isAvailable() else { return }
         let cachedIds = accounts.compactMap { resolvedAccountIds["\($0.provider.rawValue):\($0.email.lowercased())"] }

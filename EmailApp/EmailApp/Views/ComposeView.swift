@@ -168,14 +168,16 @@ struct ComposeView: View {
                 }
                 .buttonStyle(.pointerPlain)
 
-                Button {
-                    withAnimation(.easeOut(duration: 0.15)) { isDraftPromptShown.toggle() }
-                } label: {
-                    Label("Draft with AI", systemImage: "sparkle")
-                        .font(.appSubheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
+                if AppSettings.shared.aiFeaturesEnabled {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.15)) { isDraftPromptShown.toggle() }
+                    } label: {
+                        Label("Draft with AI", systemImage: "sparkle")
+                            .font(.appSubheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.pointerPlain)
                 }
-                .buttonStyle(.pointerPlain)
 
                 Spacer()
                 Button("Cancel") { onClose() }

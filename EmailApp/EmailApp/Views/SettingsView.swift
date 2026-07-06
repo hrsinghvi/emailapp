@@ -487,11 +487,61 @@ private struct ShortcutsSettingsSection: View {
 
 private struct AdvancedSettingsSection: View {
     let vm: InboxViewModel
+    @Bindable private var settings = AppSettings.shared
     @State private var didClear = false
+    @State private var ollamaAvailable = false
+    @State private var ollamaModels: [String] = []
+    @State private var isCheckingOllama = true
+    @State private var pendingEmbeddings: (count: Int, isCapped: Bool)?
+    @State private var isCheckingBackfill = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             SettingsHeader(title: "Advanced")
+
+            SettingsRow(title: "AI features", subtitle: "Master switch for Ask AI, thread summaries, draft assist, and autocomplete — all local via Ollama, nothing leaves your Mac") {
+                Toggle("", isOn: $settings.aiFeaturesEnabled).labelsHidden().toggleStyle(.switch)
+            }
+            Divider().overlay(Color.appBorder)
+
+            SettingsRow(title: "Ghost-text autocomplete", subtitle: "Inline suggestions while composing, driven by the local qwen2.5 model") {
+                Toggle("", isOn: $settings.autocompleteEnabled).labelsHidden().toggleStyle(.switch)
+            }
+            Divider().overlay(Color.appBorder)
+
+            SettingsRow(
+                title: "Ollama",
+                subtitle: isCheckingOllama ? "Checking localhost:11434…" : (ollamaAvailable ? "Running — \(ollamaModels.isEmpty ? "no models reported" : ollamaModels.joined(separator: ", "))" : "Not running — start Ollama to enable AI features")
+            ) {
+                Circle()
+                    .fill(isCheckingOllama ? Color.secondary : (ollamaAvailable ? Color.green : Color.red))
+                    .frame(width: 8, height: 8)
+            }
+            .task {
+                isCheckingOllama = true
+                ollamaAvailable = await OllamaService.isAvailable()
+                ollamaModels = ollamaAvailable ? await OllamaService.listModels() : []
+                isCheckingOllama = false
+            }
+            Divider().overlay(Color.appBorder)
+
+            SettingsRow(
+                title: "Semantic search backfill",
+                subtitle: "Messages still missing an embedding — the app fills these in the background whenever Ollama is running"
+            ) {
+                if isCheckingBackfill {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text(pendingEmbeddings.map { $0.count == 0 ? "Up to date" : "\($0.isCapped ? "\($0.count)+" : "\($0.count)") pending" } ?? "Unknown")
+                        .font(.appCaption).foregroundStyle(.secondary)
+                }
+            }
+            .task {
+                isCheckingBackfill = true
+                pendingEmbeddings = await vm.pendingEmbeddingCount()
+                isCheckingBackfill = false
+            }
+            Divider().overlay(Color.appBorder)
 
             SettingsRow(title: "Local cache", subtitle: "Drops the on-disk message cache and prewarmed HTML, then refetches. Drafts and queued offline actions aren't touched.") {
                 Button(didClear ? "Cleared" : "Clear local cache") {

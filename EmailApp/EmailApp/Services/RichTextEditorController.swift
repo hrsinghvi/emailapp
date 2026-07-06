@@ -48,7 +48,7 @@ final class RichTextEditorController {
     /// meantime.
     func scheduleGhostSuggestion() {
         completionTask?.cancel()
-        guard AppSettings.shared.autocompleteEnabled, let tv = textView else { return }
+        guard AppSettings.shared.aiFeaturesEnabled, AppSettings.shared.autocompleteEnabled, let tv = textView else { return }
         completionTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled, let self else { return }

@@ -137,4 +137,19 @@ enum OllamaService {
         cachedAvailability = (available, Date())
         return available
     }
+
+    /// Model names from /api/tags, for the Settings status row — best
+    /// effort, empty on any failure (caller already shows availability
+    /// separately via `isAvailable`).
+    static func listModels() async -> [String] {
+        struct TagsResponse: Decodable { struct Model: Decodable { let name: String }; let models: [Model] }
+        do {
+            var req = URLRequest(url: URL(string: "\(baseURL)/api/tags")!)
+            req.timeoutInterval = 3
+            let (data, _) = try await URLSession.shared.data(for: req)
+            return try JSONDecoder().decode(TagsResponse.self, from: data).models.map(\.name)
+        } catch {
+            return []
+        }
+    }
 }

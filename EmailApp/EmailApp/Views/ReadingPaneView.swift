@@ -58,7 +58,7 @@ struct ReadingPaneView: View {
                         Text(thread.latest.subject)
                             .font(.appTitle2.weight(.semibold))
                         Spacer()
-                        if thread.count >= 3 {
+                        if thread.count >= 3 && AppSettings.shared.aiFeaturesEnabled {
                             SummarizeChip(thread: thread)
                         }
                     }

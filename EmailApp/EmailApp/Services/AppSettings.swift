@@ -53,6 +53,7 @@ final class AppSettings {
         static let hasBackfilledSearchIndex = "settings.hasBackfilledSearchIndex"
         static let cachedAccountIds = "settings.cachedAccountIds"
         static let autocompleteEnabled = "settings.autocompleteEnabled"
+        static let aiFeaturesEnabled = "settings.aiFeaturesEnabled"
     }
 
     private let defaults = UserDefaults.standard
@@ -176,6 +177,13 @@ final class AppSettings {
         didSet { defaults.set(autocompleteEnabled, forKey: Key.autocompleteEnabled) }
     }
 
+    /// Master switch for all Ollama-backed AI UI (Ask AI panel, summarize
+    /// chip, draft-with-AI, ghost-text autocomplete). Off hides every entry
+    /// point; autocomplete additionally checks its own toggle.
+    var aiFeaturesEnabled: Bool {
+        didSet { defaults.set(aiFeaturesEnabled, forKey: Key.aiFeaturesEnabled) }
+    }
+
     private init() {
         launchAtLogin = defaults.object(forKey: Key.launchAtLogin) as? Bool ?? false
         keepAwakeDuringSync = defaults.object(forKey: Key.keepAwakeDuringSync) as? Bool ?? false
@@ -196,6 +204,7 @@ final class AppSettings {
         hasBackfilledSearchIndex = defaults.object(forKey: Key.hasBackfilledSearchIndex) as? Bool ?? false
         cachedAccountIds = defaults.dictionary(forKey: Key.cachedAccountIds) as? [String: String] ?? [:]
         autocompleteEnabled = defaults.object(forKey: Key.autocompleteEnabled) as? Bool ?? true
+        aiFeaturesEnabled = defaults.object(forKey: Key.aiFeaturesEnabled) as? Bool ?? true
     }
 
     /// Registers/unregisters with `SMAppService` — the real macOS login-item
