@@ -43,10 +43,10 @@ struct ContentView: View {
 
                 if vm.isAskAIPanelPresented, let thread = vm.selectedThread {
                     AskAIPanel(vm: vm, thread: thread)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                 } else if vm.isSummarizePanelPresented, let thread = vm.selectedThread {
                     SummarizePanel(vm: vm, thread: thread)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                 }
 
                 Group {
