@@ -58,7 +58,7 @@ struct ReadingPaneView: View {
                         Text(thread.latest.subject)
                             .font(.appTitle2.weight(.semibold))
                         Spacer()
-                        if thread.count >= 3 && AppSettings.shared.aiFeaturesEnabled {
+                        if AppSettings.shared.aiFeaturesEnabled {
                             SummarizeChip(thread: thread)
                         }
                     }
@@ -360,9 +360,9 @@ private struct FirstContactBadge: View {
     }
 }
 
-/// 3c — appears in the subject header once a thread has 3+ messages; one
-/// click summarizes locally via Ollama (never Claude — see plan constraint
-/// 1) and shows the result in a dismissible card below.
+/// 3c — appears in every thread's subject header; one click summarizes
+/// locally via Ollama (never Claude — see plan constraint 1) and shows the
+/// result in a dismissible card below.
 private struct SummarizeChip: View {
     let thread: MessageThread
     @State private var isExpanded = false
@@ -373,6 +373,12 @@ private struct SummarizeChip: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
             Button {
+                // Ignore taps while a request is in flight — without this
+                // guard, a second tap during the multi-second Ollama call
+                // toggled isExpanded back off, so the button looked like it
+                // "loaded, then reverted" once the (never-shown) result
+                // eventually arrived.
+                guard !isLoading else { return }
                 if isExpanded {
                     isExpanded = false
                 } else {
@@ -392,6 +398,12 @@ private struct SummarizeChip: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(Capsule().fill(Color.appHover))
+                .overlay(
+                    Capsule().strokeBorder(
+                        LinearGradient(colors: Color.aiGradientStops, startPoint: .leading, endPoint: .trailing).opacity(0.55),
+                        lineWidth: 1.2
+                    )
+                )
             }
             .buttonStyle(.pointerPlain)
         }
@@ -427,7 +439,7 @@ private struct SummarizeChip: View {
         }
         .padding(12)
         .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.appBorder))
+        .aiGradientBorder(cornerRadius: 10)
         .shadow(color: .black.opacity(0.4), radius: 16, y: 6)
     }
 
@@ -471,7 +483,7 @@ private struct AutoSummaryCard: View {
         }
         .padding(10)
         .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.appBorder))
+        .aiGradientBorder(cornerRadius: 10)
     }
 }
 
@@ -483,6 +495,9 @@ struct ActionPill: View {
     let icon: String
     let tint: Color
     var filled: Bool = false
+    /// Marks this as an AI-powered action (Ask AI) with the faint gradient
+    /// outline used across every AI surface in the app.
+    var isAI: Bool = false
     let action: () -> Void
 
     var body: some View {
@@ -497,6 +512,13 @@ struct ActionPill: View {
             .padding(.vertical, 8)
             .background(
                 Capsule().fill(filled ? tint.opacity(0.18) : Color.appHover)
+            )
+            .overlay(
+                Capsule().strokeBorder(
+                    LinearGradient(colors: Color.aiGradientStops, startPoint: .leading, endPoint: .trailing)
+                        .opacity(isAI ? 0.55 : 0),
+                    lineWidth: 1.2
+                )
             )
         }
         .buttonStyle(.pointerPlain)

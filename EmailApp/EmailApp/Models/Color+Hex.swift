@@ -35,4 +35,27 @@ extension Color {
     static let appHover = Color.white.opacity(0.06)
     /// Fixed — no accent-color picker anymore, just plain white.
     static let appAccent = Color.white
+
+    /// Subtle multi-stop gradient identifying an AI-powered surface (Ask AI,
+    /// Summarize, Draft with AI) — kept low-opacity so it reads as a quiet
+    /// signal, not a bright decoration, against the flat dark theme.
+    static let aiGradientStops: [Color] = [
+        Color(hex: "#8AB4FF"), Color(hex: "#C79CFF"), Color(hex: "#FF9CC7"),
+    ]
+}
+
+extension View {
+    /// A faint gradient outline marking a view as an AI feature. `lineWidth`
+    /// stays hairline and opacity low by design — noticeable on close look,
+    /// invisible from a glance across the UI.
+    func aiGradientBorder(cornerRadius: CGFloat = 12, lineWidth: CGFloat = 1.2, opacity: Double = 0.55) -> some View {
+        overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(colors: Color.aiGradientStops, startPoint: .leading, endPoint: .trailing)
+                        .opacity(opacity),
+                    lineWidth: lineWidth
+                )
+        )
+    }
 }

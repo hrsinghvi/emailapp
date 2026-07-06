@@ -648,7 +648,7 @@ private struct DetailToolbar: View {
             Spacer()
 
             if AppSettings.shared.aiFeaturesEnabled {
-                ActionPill(title: "Ask AI", icon: "sparkle", tint: .white) {
+                ActionPill(title: "Ask AI", icon: "sparkle", tint: .white, isAI: true) {
                     withAnimation(.easeOut(duration: 0.18)) { vm.isAskAIPanelPresented.toggle() }
                 }
             }

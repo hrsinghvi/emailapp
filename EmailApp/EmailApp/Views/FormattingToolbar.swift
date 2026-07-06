@@ -59,20 +59,21 @@ struct FormattingToolbar: View {
                 Button("Attach File…") { onAttachFile() }
             } label: {
                 Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 15, weight: .medium))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
         .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func toolButton(_ systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.custom("Inter", size: 10))
-                .frame(width: 22, height: 22)
+                .font(.system(size: 15, weight: .medium))
+                .frame(width: 26, height: 26)
         }
         .buttonStyle(.pointerPlain)
         .foregroundStyle(.secondary)

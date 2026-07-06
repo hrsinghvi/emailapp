@@ -77,7 +77,7 @@ struct AskAIPanel: View {
         }
         .padding(14)
         .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.appBorder))
+        .aiGradientBorder(cornerRadius: 12)
         .task { ollamaAvailable = await AIService.isAvailable() }
         .onAppear { isFieldFocused = true }
     }

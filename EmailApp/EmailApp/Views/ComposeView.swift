@@ -1,4 +1,6 @@
 import AppKit
+import PDFKit
+import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -34,6 +36,7 @@ struct ComposeView: View {
     @State private var draftTask: Task<Void, Never>?
     @State private var bodyUndoStack: [NSAttributedString] = []
     @State private var bodyRedoStack: [NSAttributedString] = []
+    @State private var outgoingPreviewURL: URL?
 
     private var titleText: String {
         switch context {
@@ -102,95 +105,6 @@ struct ComposeView: View {
 
             FormattingToolbar(controller: editorController, onInsertLink: { showLinkPrompt = true }, onInsertImage: pickInlineImage, onAttachFile: pickAttachments)
 
-            if isDraftPromptShown {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: "sparkle")
-                            .font(.appCaption)
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 8)
-
-                        if isDrafting {
-                            Text("Generating…")
-                                .font(.appSubheadline)
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, 8)
-                            Spacer()
-                            Button {
-                                draftTask?.cancel()
-                                draftTask = nil
-                                isDrafting = false
-                            } label: {
-                                Image(systemName: "stop.fill")
-                                    .font(.appCaption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(6)
-                                    .background(Circle().fill(Color.appHover))
-                            }
-                            .buttonStyle(.pointerPlain)
-                        } else {
-                            // axis: .vertical + lineLimit lets this grow with
-                            // its content instead of scrolling a fixed-height
-                            // single line, matching Gmail's Help-me-write box.
-                            TextField("Describe your change", text: $draftInstructions, axis: .vertical)
-                                .textFieldStyle(.plain)
-                                .font(.appSubheadline)
-                                .lineLimit(1...6)
-                                .onSubmit { draftWithAI() }
-
-                            Button {
-                                draftWithAI()
-                            } label: {
-                                Image(systemName: "arrow.up")
-                                    .font(.appCaption.weight(.semibold))
-                                    .foregroundStyle(draftInstructions.isEmpty ? .secondary : Color.black)
-                                    .padding(6)
-                                    .background(Circle().fill(draftInstructions.isEmpty ? Color.appHover : Color.appAccent))
-                            }
-                            .buttonStyle(.pointerPlain)
-                            .disabled(draftInstructions.isEmpty)
-                        }
-                    }
-
-                    if !isDrafting {
-                        HStack(spacing: 14) {
-                            ForEach(AIService.RewriteStyle.allCases, id: \.self) { style in
-                                Button { rewriteBody(style) } label: {
-                                    Image(systemName: style.icon)
-                                        .font(.appCaption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.pointerPlain)
-                                .disabled(attributedBody.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                                .help(style.label)
-                            }
-                            Spacer()
-                            Button { undoDraftEdit() } label: {
-                                Image(systemName: "arrow.uturn.backward")
-                                    .font(.appCaption)
-                                    .foregroundStyle(bodyUndoStack.isEmpty ? Color.secondary.opacity(0.4) : .secondary)
-                            }
-                            .buttonStyle(.pointerPlain)
-                            .disabled(bodyUndoStack.isEmpty)
-                            Button { redoDraftEdit() } label: {
-                                Image(systemName: "arrow.uturn.forward")
-                                    .font(.appCaption)
-                                    .foregroundStyle(bodyRedoStack.isEmpty ? Color.secondary.opacity(0.4) : .secondary)
-                            }
-                            .buttonStyle(.pointerPlain)
-                            .disabled(bodyRedoStack.isEmpty)
-                        }
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 14))
-
-                if let draftError {
-                    Text(draftError).font(.appCaption).foregroundStyle(.orange)
-                }
-            }
-
             // maxHeight caps how far the compose card itself grows — past
             // this, the NSScrollView already wrapping the editor (see
             // RichTextEditor) takes over and scrolls internally, same as
@@ -198,9 +112,108 @@ struct ComposeView: View {
             // just kept growing the whole fixed-height card past its own
             // background, pushing Cancel/Send below the visible card
             // entirely instead of ever engaging that internal scroll.
-            RichTextEditor(attributedText: $attributedBody, controller: editorController)
-                .frame(minHeight: 180, maxHeight: .infinity)
-                .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
+            //
+            // The Draft-with-AI bar floats as a bottom-anchored overlay on
+            // top of the editor (Gmail's Help-me-write placement) instead of
+            // pushing the text down as a sibling — it appears/disappears
+            // without reflowing anything else in the compose window.
+            ZStack(alignment: .bottom) {
+                RichTextEditor(attributedText: $attributedBody, controller: editorController)
+                    .frame(minHeight: 180, maxHeight: .infinity)
+                    .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
+
+                if isDraftPromptShown {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "sparkle")
+                                .font(.appCaption)
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 8)
+
+                            if isDrafting {
+                                Text("Generating…")
+                                    .font(.appSubheadline)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.vertical, 8)
+                                Spacer()
+                                Button {
+                                    draftTask?.cancel()
+                                    draftTask = nil
+                                    isDrafting = false
+                                } label: {
+                                    Image(systemName: "stop.fill")
+                                        .font(.appCaption)
+                                        .foregroundStyle(.secondary)
+                                        .padding(6)
+                                        .background(Circle().fill(Color.appHover))
+                                }
+                                .buttonStyle(.pointerPlain)
+                            } else {
+                                // axis: .vertical + lineLimit lets this grow
+                                // with its content instead of scrolling a
+                                // fixed-height single line.
+                                TextField("Describe your change", text: $draftInstructions, axis: .vertical)
+                                    .textFieldStyle(.plain)
+                                    .font(.appSubheadline)
+                                    .lineLimit(1...6)
+                                    .onSubmit { draftWithAI() }
+
+                                Button {
+                                    draftWithAI()
+                                } label: {
+                                    Image(systemName: "arrow.up")
+                                        .font(.appCaption.weight(.semibold))
+                                        .foregroundStyle(draftInstructions.isEmpty ? .secondary : Color.black)
+                                        .padding(6)
+                                        .background(Circle().fill(draftInstructions.isEmpty ? Color.appHover : Color.appAccent))
+                                }
+                                .buttonStyle(.pointerPlain)
+                                .disabled(draftInstructions.isEmpty)
+                            }
+                        }
+
+                        if !isDrafting {
+                            HStack(spacing: 14) {
+                                ForEach(AIService.RewriteStyle.allCases, id: \.self) { style in
+                                    Button { rewriteBody(style) } label: {
+                                        Image(systemName: style.icon)
+                                            .font(.appCaption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.pointerPlain)
+                                    .disabled(attributedBody.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                    .help(style.label)
+                                }
+                                Spacer()
+                                Button { undoDraftEdit() } label: {
+                                    Image(systemName: "arrow.uturn.backward")
+                                        .font(.appCaption)
+                                        .foregroundStyle(bodyUndoStack.isEmpty ? Color.secondary.opacity(0.4) : .secondary)
+                                }
+                                .buttonStyle(.pointerPlain)
+                                .disabled(bodyUndoStack.isEmpty)
+                                Button { redoDraftEdit() } label: {
+                                    Image(systemName: "arrow.uturn.forward")
+                                        .font(.appCaption)
+                                        .foregroundStyle(bodyRedoStack.isEmpty ? Color.secondary.opacity(0.4) : .secondary)
+                                }
+                                .buttonStyle(.pointerPlain)
+                                .disabled(bodyRedoStack.isEmpty)
+                            }
+                        }
+
+                        if let draftError {
+                            Text(draftError).font(.appCaption).foregroundStyle(.orange)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 14))
+                    .aiGradientBorder(cornerRadius: 14)
+                    .shadow(color: .black.opacity(0.35), radius: 14, y: 4)
+                    .padding(10)
+                }
+            }
 
             if !attachments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -218,6 +231,12 @@ struct ComposeView: View {
                                 }
                             )
                             .transition(.scale(scale: 0.85).combined(with: .opacity))
+                            // Same click-to-preview convention as incoming
+                            // attachments in ReadingPaneView — these bytes
+                            // are already in memory (picked from disk), so
+                            // no fetch step, just a temp file for QuickLook.
+                            .onTapGesture { previewAttachment(attachment) }
+                            .pointerOnHover()
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -243,8 +262,17 @@ struct ComposeView: View {
                         Label("Draft with AI", systemImage: "sparkle")
                             .font(.appSubheadline.weight(.medium))
                             .foregroundStyle(.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
                     }
                     .buttonStyle(.pointerPlain)
+                    .background(Capsule().fill(Color.appHover))
+                    .overlay(
+                        Capsule().strokeBorder(
+                            LinearGradient(colors: Color.aiGradientStops, startPoint: .leading, endPoint: .trailing).opacity(0.55),
+                            lineWidth: 1.2
+                        )
+                    )
                 }
 
                 Spacer()
@@ -270,6 +298,7 @@ struct ComposeView: View {
         .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.appBorder))
         .shadow(color: .black.opacity(0.4), radius: 24, y: 8)
+        .quickLookPreview($outgoingPreviewURL)
         .onAppear(perform: prefill)
         .onAppear { editorController.subjectProvider = { subject } }
         .onAppear {
@@ -507,9 +536,27 @@ struct ComposeView: View {
         editorController.insertImage(image)
     }
 
+    /// Real thumbnails for images/PDFs (same two types ReadingPaneView
+    /// renders), everything else keeps its generic doc icon.
     private func thumbnail(for attachment: OutgoingAttachment) -> NSImage? {
+        if attachment.mimeType == "application/pdf" {
+            return PDFDocument(data: attachment.data)?.page(at: 0)?.thumbnail(of: CGSize(width: 168, height: 120), for: .cropBox)
+        }
         guard attachment.mimeType.hasPrefix("image/") else { return nil }
         return NSImage(data: attachment.data)
+    }
+
+    /// Writes the already-in-memory attachment bytes to a temp file and
+    /// hands it to QuickLook — no network fetch needed since, unlike an
+    /// incoming attachment, this data was already read from disk when
+    /// picked (see `AttachmentPreviewController` for the fetch-then-cache
+    /// version incoming attachments need).
+    private func previewAttachment(_ attachment: OutgoingAttachment) {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ThreadwellOutgoingPreviews", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("\(attachment.id.uuidString)-\(attachment.filename)")
+        guard (try? attachment.data.write(to: url, options: .atomic)) != nil else { return }
+        outgoingPreviewURL = url
     }
 
     /// Send is deliberately delayed 8s (Undo Send) — see
