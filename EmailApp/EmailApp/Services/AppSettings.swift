@@ -50,6 +50,7 @@ final class AppSettings {
         static let hasBackfilledCategoryMail = "settings.hasBackfilledCategoryMail"
         static let hasMigratedOutlookImmutableIds = "settings.hasMigratedOutlookImmutableIds"
         static let hasMigratedStarredImportant = "settings.hasMigratedStarredImportant"
+        static let hasBackfilledSearchIndex = "settings.hasBackfilledSearchIndex"
     }
 
     private let defaults = UserDefaults.standard
@@ -149,6 +150,15 @@ final class AppSettings {
         didSet { defaults.set(hasMigratedStarredImportant, forKey: Key.hasMigratedStarredImportant) }
     }
 
+    /// One-time bulk-index of every already-synced message into Postgres
+    /// for full-text search — the regular sync path never routed message
+    /// content into Supabase at all (only the realtime-webhook path did),
+    /// so search had nothing to query against for existing mail until this
+    /// runs once.
+    var hasBackfilledSearchIndex: Bool {
+        didSet { defaults.set(hasBackfilledSearchIndex, forKey: Key.hasBackfilledSearchIndex) }
+    }
+
     private init() {
         launchAtLogin = defaults.object(forKey: Key.launchAtLogin) as? Bool ?? false
         keepAwakeDuringSync = defaults.object(forKey: Key.keepAwakeDuringSync) as? Bool ?? false
@@ -166,6 +176,7 @@ final class AppSettings {
         hasBackfilledCategoryMail = defaults.object(forKey: Key.hasBackfilledCategoryMail) as? Bool ?? false
         hasMigratedOutlookImmutableIds = defaults.object(forKey: Key.hasMigratedOutlookImmutableIds) as? Bool ?? false
         hasMigratedStarredImportant = defaults.object(forKey: Key.hasMigratedStarredImportant) as? Bool ?? false
+        hasBackfilledSearchIndex = defaults.object(forKey: Key.hasBackfilledSearchIndex) as? Bool ?? false
     }
 
     /// Registers/unregisters with `SMAppService` — the real macOS login-item

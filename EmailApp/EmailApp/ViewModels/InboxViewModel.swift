@@ -96,7 +96,41 @@ final class InboxViewModel {
     /// Gmail-style category tab — only meaningful (and only shown) for the
     /// inbox; other folders show every category mixed together.
     var categoryFilter: MessageCategory = .primary { didSet { listPageIndex = 0; recomputeFilteredThreads() } }
-    var searchText: String = "" { didSet { listPageIndex = 0; recomputeFilteredThreads() } }
+    var searchText: String = "" {
+        didSet {
+            listPageIndex = 0
+            searchTask?.cancel()
+            guard !searchFreeText.isEmpty else {
+                searchResultIds = nil
+                recomputeFilteredThreads()
+                return
+            }
+            // Debounced — a real network round trip per keystroke would
+            // both hammer the backend and race itself; 300ms is enough to
+            // skip past normal typing speed without feeling laggy once
+            // you pause.
+            searchTask = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+                await self?.performFullTextSearch()
+            }
+        }
+    }
+    private var searchTask: Task<Void, Never>?
+    /// Ranked message ids from the last completed Postgres full-text
+    /// search, best match first — nil when no free-text query is active
+    /// (operator-only searches like `has:attachment` alone never touch
+    /// this). Never populated by local substring matching, by design: on
+    /// a request failure this is set to `[]` (no matches) rather than
+    /// falling back to `.contains()`.
+    private(set) var searchResultIds: [UUID]? {
+        didSet { searchResultIdSet = searchResultIds.map(Set.init) }
+    }
+    /// Mirrors searchResultIds — membership checks in filteredMessages run
+    /// per-message on every recompute, so this avoids an O(n) array scan
+    /// per message against a list that can run into the hundreds.
+    private var searchResultIdSet: Set<UUID>?
+    private(set) var isSearching = false
     var composeContext: ComposeContext?
     /// Settings is an in-window dimmed modal (Claude-desktop style), not a
     /// separate NSWindow — this is the only state it needs.
@@ -354,10 +388,44 @@ final class InboxViewModel {
 
     private func recomputeFilteredThreads() {
         let grouped = Dictionary(grouping: filteredMessages, by: \.threadKey)
-        filteredThreads = grouped.map { key, messages in
+        let threads = grouped.map { key, messages in
             MessageThread(id: key, messages: messages.sorted { $0.receivedAt < $1.receivedAt })
         }
-        .sorted { $0.latest.receivedAt > $1.latest.receivedAt }
+        if !searchFreeText.isEmpty, let ids = searchResultIds {
+            // Relevance order, not date order — ts_rank already sorted
+            // `ids` best-match-first; a thread's rank is its best-ranked
+            // message's position in that list.
+            let rankOf = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($1, $0) })
+            filteredThreads = threads.sorted { a, b in
+                let aRank = a.messages.compactMap { rankOf[$0.id] }.min() ?? Int.max
+                let bRank = b.messages.compactMap { rankOf[$0.id] }.min() ?? Int.max
+                return aRank < bRank
+            }
+        } else {
+            filteredThreads = threads.sorted { $0.latest.receivedAt > $1.latest.receivedAt }
+        }
+    }
+
+    /// Real Postgres full-text search (tsvector/tsquery + ts_rank against
+    /// the GIN-indexed search_vector column) — never local substring
+    /// matching. A failure surfaces as "no matches" (searchResultIds = []),
+    /// not a silent fallback to `.contains()`.
+    private func performFullTextSearch() async {
+        let query = searchFreeText
+        guard !query.isEmpty, !accounts.isEmpty else { return }
+        isSearching = true
+        do {
+            let refs = accounts.map { BackendAPI.AccountRef(provider: $0.provider.rawValue, email: $0.email) }
+            let results = try await BackendAPI.searchMessages(query: query, accounts: refs)
+            guard query == searchFreeText else { return } // superseded by a newer keystroke
+            searchResultIds = results.map(\.id)
+        } catch {
+            guard query == searchFreeText else { return }
+            AppLog.sync.error("full-text search failed: \(error.localizedDescription)")
+            searchResultIds = []
+        }
+        isSearching = false
+        recomputeFilteredThreads()
     }
 
     /// "1-50 of N" — clamped so switching to a shorter filtered set never
@@ -420,10 +488,14 @@ final class InboxViewModel {
                 if searchFromMe, !accounts.contains(where: { $0.email.caseInsensitiveCompare(message.senderEmail) == .orderedSame }) { return false }
                 if searchNewerThan7Days, message.receivedAt < sevenDaysAgo { return false }
                 guard !searchFreeText.isEmpty else { return true }
-                let q = searchFreeText.lowercased()
-                return message.subject.lowercased().contains(q)
-                    || message.senderName.lowercased().contains(q)
-                    || message.snippet.lowercased().contains(q)
+                // Real Postgres full-text search (tsvector/tsquery +
+                // ts_rank), never local substring matching — see
+                // performFullTextSearch. nil means the debounced search
+                // hasn't resolved yet; show nothing until it does rather
+                // than a misleading "no results" flash or a `.contains()`
+                // fallback.
+                guard let ids = searchResultIdSet else { return false }
+                return ids.contains(message.id)
             }
     }
 
@@ -1022,6 +1094,7 @@ final class InboxViewModel {
         await performOneTimeCategoryMailBackfillIfNeeded()
         await performOutlookImmutableIdMigrationIfNeeded()
         await performStarredImportantMigrationIfNeeded()
+        await performSearchIndexBackfillIfNeeded()
     }
 
     /// Runs once ever (per install): pulls a much deeper history than the
@@ -1452,5 +1525,70 @@ final class InboxViewModel {
         // new this merge, never the whole re-fetched batch, or refreshing
         // would double-count everyone's frequency on every sync.
         Task { await ContactsIndexService.recordContacts(from: newMessages) }
+        // Keeps the Postgres search index current for mail synced after the
+        // one-time backfill — without this, full-text search would only
+        // ever cover whatever existed at backfill time. Best-effort: a
+        // failure here doesn't affect mail display at all, only how soon
+        // this particular batch becomes searchable.
+        guard !newMessages.isEmpty else { return }
+        Task {
+            do { try await BackendAPI.indexForSearch(newMessages.map { searchIndexEntry(for: $0) }) }
+            catch { AppLog.sync.error("search index update failed: \(error.localizedDescription)") }
+        }
+    }
+
+    private func searchIndexEntry(for message: Message) -> BackendAPI.SearchIndexEntry {
+        BackendAPI.SearchIndexEntry(
+            accountEmail: accounts.first(where: { $0.id == message.accountId })?.email ?? "",
+            provider: message.provider.rawValue,
+            providerMessageId: message.providerId,
+            threadId: message.threadId,
+            messageIdHeader: message.messageIdHeader,
+            referencesHeader: message.references,
+            senderName: message.senderName,
+            senderEmail: message.senderEmail,
+            subject: message.subject,
+            snippet: message.snippet,
+            body: message.body,
+            receivedAt: message.receivedAt,
+            isRead: message.isRead,
+            folder: message.folder,
+            hasAttachments: !message.attachments.isEmpty
+        )
+    }
+
+    /// One-time bulk-index of every already-synced message for full-text
+    /// search — everything fetched normally (regular sync, backfills)
+    /// never touched Supabase's messages table at all before this existed,
+    /// only the realtime-webhook path did. Chunked to keep each request a
+    /// reasonable size against a serverless function's payload/time limits.
+    ///
+    /// Reads MessageCacheStore.loadAll(), not the in-memory `messages`
+    /// array — `messages` is seeded from the launch-time cache load, which
+    /// is deliberately capped (see its doc comment) to keep startup fast,
+    /// so it doesn't reflect true full history once a mailbox has synced
+    /// past that cap. The full history is still sitting in the local
+    /// SQLite cache either way; this just reads all of it for the one
+    /// backfill that actually needs it, instead of the necessarily-limited
+    /// in-memory copy.
+    private func performSearchIndexBackfillIfNeeded() async {
+        guard !AppSettings.shared.hasBackfilledSearchIndex else { return }
+        guard NetworkMonitor.shared.isOnline else { return }
+        let allMessages = await MessageCacheStore.loadAll()
+        guard !allMessages.isEmpty else { return }
+        AppSettings.shared.hasBackfilledSearchIndex = true
+
+        let entries = allMessages.map { searchIndexEntry(for: $0) }
+        let chunkSize = 300
+        var index = 0
+        while index < entries.count {
+            let chunk = Array(entries[index..<min(index + chunkSize, entries.count)])
+            do {
+                try await BackendAPI.indexForSearch(chunk)
+            } catch {
+                AppLog.sync.error("search index backfill chunk failed: \(error.localizedDescription)")
+            }
+            index += chunkSize
+        }
     }
 }

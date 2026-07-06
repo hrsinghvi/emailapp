@@ -33,4 +33,82 @@ enum BackendAPI {
             throw BackendError.requestFailed(code, String(data: data, encoding: .utf8) ?? "")
         }
     }
+
+    /// One row of the payload `indexForSearch` sends — mirrors the backend's
+    /// `messages` table columns closely enough for full-text search, not a
+    /// full message mirror (no htmlBody/attachments; search only needs
+    /// subject/sender/snippet, which is exactly what search_vector indexes).
+    /// Deliberately no accountId: this app's local Account.id has no
+    /// relationship to Supabase's DB-generated accounts.id (see backend's
+    /// backfill.ts doc comment) — the backend resolves the real account
+    /// from (provider, accountEmail) itself.
+    struct SearchIndexEntry: Encodable {
+        let accountEmail: String
+        let provider: String
+        let providerMessageId: String
+        let threadId: String?
+        let messageIdHeader: String?
+        let referencesHeader: String?
+        let senderName: String
+        let senderEmail: String
+        let subject: String
+        let snippet: String
+        let body: String
+        let receivedAt: Date
+        let isRead: Bool
+        let folder: String
+        let hasAttachments: Bool
+    }
+
+    /// Bulk-upserts message metadata into Postgres for full-text search —
+    /// called by the one-time search-index backfill migration and, on an
+    /// ongoing basis, whenever a regular sync merges in genuinely new mail
+    /// (see InboxViewModel.merge), so the index never goes stale for mail
+    /// synced after the initial backfill. Fire-and-forget from the caller's
+    /// perspective is fine here — a failed index update just means that
+    /// batch of mail is temporarily unsearchable via full-text search until
+    /// the next successful call, not a data-loss risk (the local cache,
+    /// which is what actually renders messages, is untouched either way).
+    static func indexForSearch(_ entries: [SearchIndexEntry]) async throws {
+        guard !entries.isEmpty else { return }
+        var req = URLRequest(url: URL(string: "\(Config.backendBaseURL)/api/messages/backfill")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        req.httpBody = try encoder.encode(["messages": entries])
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw BackendError.requestFailed(code, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
+    struct SearchResult: Decodable {
+        let id: UUID
+        let rank: Double
+    }
+
+    struct AccountRef: Encodable { let provider: String; let email: String }
+
+    /// Real Postgres full-text search (tsvector/tsquery + ts_rank) — never
+    /// falls back to local substring matching. Returns ranked ids only;
+    /// InboxViewModel maps them back onto its already-cached Message
+    /// objects for display, using the returned order. Takes (provider,
+    /// email) pairs rather than accountIds for the same reason
+    /// SearchIndexEntry doesn't carry one — see its doc comment.
+    static func searchMessages(query: String, accounts: [AccountRef], limit: Int = 200) async throws -> [SearchResult] {
+        struct Request: Encodable { let query: String; let accounts: [AccountRef]; let limit: Int }
+        var req = URLRequest(url: URL(string: "\(Config.backendBaseURL)/api/messages/search")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(Request(query: query, accounts: accounts, limit: limit))
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw BackendError.requestFailed(code, String(data: data, encoding: .utf8) ?? "")
+        }
+        struct Response: Decodable { let results: [SearchResult] }
+        return try JSONDecoder().decode(Response.self, from: data).results
+    }
 }

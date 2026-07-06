@@ -66,6 +66,28 @@ private actor MessageCacheStorage {
         return results
     }
 
+    /// Unbounded — every message ever cached, not just the most recent
+    /// `recentLoadLimit`. Only for the one-time search-index backfill,
+    /// which needs true full history, not what launch-time loads for
+    /// speed. Never call this on the normal launch path.
+    func loadAll() -> [Message] {
+        guard let db else { return [] }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        sqlite3_prepare_v2(db, "SELECT json FROM messages ORDER BY received_at DESC;", -1, &statement, nil)
+
+        let decoder = JSONDecoder()
+        var results: [Message] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let cString = sqlite3_column_text(statement, 0) else { continue }
+            let data = Data(String(cString: cString).utf8)
+            if let message = try? decoder.decode(Message.self, from: data) {
+                results.append(message)
+            }
+        }
+        return results
+    }
+
     /// Upserts each message as its own row in one transaction — cheap
     /// regardless of total mailbox size, unlike rewriting one giant file.
     func save(_ messages: [Message]) {
@@ -99,6 +121,10 @@ private actor MessageCacheStorage {
 enum MessageCacheStore {
     static func load() async -> [Message] {
         await MessageCacheStorage.shared.load()
+    }
+
+    static func loadAll() async -> [Message] {
+        await MessageCacheStorage.shared.loadAll()
     }
 
     /// Fire-and-forget from every call site (star/read/archive toggles,
