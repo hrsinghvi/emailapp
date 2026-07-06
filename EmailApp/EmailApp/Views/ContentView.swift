@@ -48,6 +48,12 @@ struct ContentView: View {
                     SummarizePanel(vm: vm, thread: thread)
                         .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                 }
+                // Ask AI/Summarize are per-thread — leaving thread A (either
+                // to thread B or back to the list) must close whichever is
+                // open. Without this, the panel silently persisted with its
+                // stale content, and SummarizePanel's `.task(id: thread.id)`
+                // then re-triggered a brand-new summarize call for whatever
+                // thread B happened to be, with no button ever clicked.
 
                 Group {
                     if vm.selectedThread != nil {
@@ -62,6 +68,10 @@ struct ContentView: View {
                     }
                 }
                 .animation(.easeOut(duration: 0.22), value: vm.selectedThread?.id)
+            }
+            .onChange(of: vm.selectedThreadKey) { _, _ in
+                vm.isAskAIPanelPresented = false
+                vm.isSummarizePanelPresented = false
             }
             .frame(minWidth: 320, maxWidth: .infinity)
             .padding(.top, 34)

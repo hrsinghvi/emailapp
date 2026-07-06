@@ -85,14 +85,19 @@ struct AskAIPanel: View {
             }
 
             if isStreaming || !answer.isEmpty {
-                ScrollView {
-                    Text(markdownFriendly(answer))
-                        .font(.appBody)
-                        .foregroundStyle(.primary.opacity(0.9))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                }
-                .frame(maxHeight: 160)
+                // No ScrollView here on purpose — a ScrollView always
+                // greedily fills whatever height it's given regardless of
+                // content, which is what left dead space under a short
+                // answer. maxTokens already caps how long this can get, so
+                // a plain Text that hugs its own content (with a generous
+                // ceiling for the rare long one) is simpler and correct.
+                Text(markdownFriendly(answer))
+                    .font(.appBody)
+                    .foregroundStyle(.primary.opacity(0.9))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxHeight: 220)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
         }
         .padding(14)
@@ -161,14 +166,16 @@ struct SummarizePanel: View {
                     Text("Summarizing…").font(.appCaption).foregroundStyle(.secondary)
                 }
             } else {
-                ScrollView {
-                    Text(markdownFriendly(summary))
-                        .font(.appBody)
-                        .foregroundStyle(.primary.opacity(0.9))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                }
-                .frame(maxHeight: 160)
+                // See AskAIPanel's matching comment — no ScrollView, it
+                // greedily fills its frame and left dead space under a
+                // short summary.
+                Text(markdownFriendly(summary))
+                    .font(.appBody)
+                    .foregroundStyle(.primary.opacity(0.9))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxHeight: 220)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
         }
         .padding(14)
