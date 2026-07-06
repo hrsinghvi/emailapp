@@ -257,21 +257,27 @@ export async function listSentTo(
   recipient: string,
   limit: number
 ): Promise<{ providerMessageId: string; subject: string; snippet: string; receivedAt: string }[]> {
+  // Graph rejects combining $filter and $orderby on different properties
+  // ("restriction or sort order is too complex") — fetch filtered-only and
+  // sort client-side instead.
   const filter = encodeURIComponent(
     `toRecipients/any(r: r/emailAddress/address eq '${recipient.replace(/'/g, "''")}')`
   );
-  const url = `${BASE}/me/mailFolders/sentitems/messages?$filter=${filter}&$top=${limit}&$select=id,subject,bodyPreview,receivedDateTime&$orderby=receivedDateTime desc`;
+  const url = `${BASE}/me/mailFolders/sentitems/messages?$filter=${filter}&$top=${limit}&$select=id,subject,bodyPreview,receivedDateTime`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) throw new Error(`Graph sent search failed (${res.status}): ${await res.text()}`);
   const json = (await res.json()) as {
     value?: { id: string; subject?: string; bodyPreview?: string; receivedDateTime?: string }[];
   };
-  return (json.value ?? []).map((m) => ({
-    providerMessageId: m.id,
-    subject: m.subject ?? "",
-    snippet: decodeEntities(m.bodyPreview ?? ""),
-    receivedAt: m.receivedDateTime ?? new Date().toISOString(),
-  }));
+  return (json.value ?? [])
+    .map((m) => ({
+      providerMessageId: m.id,
+      subject: m.subject ?? "",
+      snippet: decodeEntities(m.bodyPreview ?? ""),
+      receivedAt: m.receivedDateTime ?? new Date().toISOString(),
+    }))
+    .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
+    .slice(0, limit);
 }
 
 function stripHtml(html: string): string {

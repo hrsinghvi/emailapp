@@ -303,12 +303,23 @@ async function getThreadRows(threadId: string): Promise<MessageRow[]> {
     .order("received_at", { ascending: true });
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as MessageRow[];
+  // A thread is always a single account in practice, but cache per
+  // account_id rather than assume it, so one refresh covers every empty-body
+  // row instead of one refresh per row.
+  const accountCache = new Map<string, Promise<{ account: AccountRow; accessToken: string }>>();
+  const authFor = (accountId: string) => {
+    let cached = accountCache.get(accountId);
+    if (!cached) {
+      cached = findAccountById(accountId).then(async (account) => ({ account, accessToken: await accessTokenFor(account) }));
+      accountCache.set(accountId, cached);
+    }
+    return cached;
+  };
   return Promise.all(
     rows.map(async (row) => {
       if (row.body && row.body.trim().length > 0) return row;
       try {
-        const account = await findAccountById(row.account_id);
-        const accessToken = await accessTokenFor(account);
+        const { account, accessToken } = await authFor(row.account_id);
         const msg =
           account.provider === "gmail"
             ? await gmail.getMessage(accessToken, row.provider_message_id)
@@ -352,9 +363,10 @@ export async function searchBySender({ email_or_domain, date_range }: {
   email_or_domain: string;
   date_range?: { from?: string; to?: string };
 }) {
-  const isDomainOnly = !email_or_domain.includes("@") || email_or_domain.startsWith("@");
-  const domain = email_or_domain.replace(/^@/, "");
-  const pattern = isDomainOnly ? `%@${domain}` : `%${email_or_domain}%`;
+  const escaped = email_or_domain.replace(/[%_]/g, (c) => `\\${c}`);
+  const isDomainOnly = !escaped.includes("@") || escaped.startsWith("@");
+  const domain = escaped.replace(/^@/, "");
+  const pattern = isDomainOnly ? `%@${domain}` : `%${escaped}%`;
   let q = supabase
     .from("messages")
     .select(MESSAGE_LIST_COLUMNS)
@@ -493,8 +505,13 @@ export async function getMessageMetadata({ message_id }: { message_id: string })
       ? await gmail.getMessage(accessToken, row.provider_message_id)
       : await graph.getMessage(accessToken, row.provider_message_id);
 
-  const replyToDomain = msg.replyTo.split("@")[1]?.toLowerCase().trim();
-  const senderDomain = msg.senderEmail.split("@")[1]?.toLowerCase().trim();
+  // Gmail's Reply-To/To/Cc headers may carry a display name ("Support
+  // <support@example.com>"); Graph's are already bare addresses. Extract the
+  // bare address either way before doing domain comparisons, or a trailing
+  // ">" makes every mismatch check false-positive.
+  const bareAddress = (raw: string) => (raw.match(/<([^>]+)>/)?.[1] ?? raw).trim();
+  const replyToDomain = bareAddress(msg.replyTo).split("@")[1]?.toLowerCase();
+  const senderDomain = msg.senderEmail.split("@")[1]?.toLowerCase();
   const replyToMismatch = Boolean(msg.replyTo && replyToDomain && senderDomain && replyToDomain !== senderDomain);
 
   return {
