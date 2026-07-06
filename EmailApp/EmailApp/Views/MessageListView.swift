@@ -116,7 +116,7 @@ private struct ThreadRow: View {
                 .buttonStyle(.pointerPlain)
                 .frame(width: importantClusterWidth, alignment: .leading)
 
-                Text(message.senderName)
+                highlightedText(message.senderName, terms: vm.searchHighlightTerms)
                     .font(.appSubheadline.weight(thread.hasUnread ? .semibold : .regular))
                     .lineLimit(1)
                     .frame(width: 150, alignment: .leading)
@@ -133,9 +133,10 @@ private struct ThreadRow: View {
                 }
 
                 (
-                    Text(message.subject).font(.appSubheadline.weight(thread.hasUnread ? .semibold : .regular))
+                    highlightedText(message.subject, terms: vm.searchHighlightTerms)
+                        .font(.appSubheadline.weight(thread.hasUnread ? .semibold : .regular))
                     + Text("  —  ").foregroundColor(.secondary)
-                    + Text(message.snippet).foregroundColor(.secondary)
+                    + highlightedText(message.snippet, terms: vm.searchHighlightTerms).foregroundColor(.secondary)
                 )
                 .lineLimit(1)
                 .truncationMode(.tail)

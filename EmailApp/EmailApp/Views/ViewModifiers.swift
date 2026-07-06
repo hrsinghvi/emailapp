@@ -61,6 +61,28 @@ private struct DriftUpModifier: ViewModifier {
     }
 }
 
+/// Builds a `Text` with every case-insensitive occurrence of any `terms`
+/// highlighted — the same idea as Gmail bolding the words in a subject/
+/// snippet that matched your search, but a pastel yellow background instead
+/// of bold (easier to notice at a glance, per explicit request). Terms are
+/// matched independently and can overlap in the source text — each match is
+/// found via `range(of:options:.caseInsensitive)` scanning left to right, so
+/// multiple different search words all get highlighted, not just the first.
+func highlightedText(_ text: String, terms: [String]) -> Text {
+    guard !terms.isEmpty else { return Text(text) }
+    var attributed = AttributedString(text)
+    for term in terms {
+        var searchRange = text.startIndex..<text.endIndex
+        while let found = text.range(of: term, options: .caseInsensitive, range: searchRange) {
+            if let attrRange = Range(found, in: attributed) {
+                attributed[attrRange].backgroundColor = Color.yellow.opacity(0.45)
+            }
+            searchRange = found.upperBound..<text.endIndex
+        }
+    }
+    return Text(attributed)
+}
+
 extension AnyTransition {
     /// A small fade + upward drift for rows appearing in a list (message
     /// rows, search results) — deliberately subtle (6pt, not a full

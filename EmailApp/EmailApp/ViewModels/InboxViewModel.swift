@@ -577,6 +577,15 @@ final class InboxViewModel {
             .trimmingCharacters(in: .whitespaces)
     }
 
+    /// Words from the active free-text search — MessageListView highlights
+    /// every occurrence of each one in the sender/subject/snippet, the same
+    /// way Gmail bolds what matched. Empty (no highlighting) when there's no
+    /// active search, so results shown before a search never get highlighted.
+    var searchHighlightTerms: [String] {
+        guard searchResultIdSet != nil else { return [] }
+        return searchFreeText.split(separator: " ").map(String.init).filter { !$0.isEmpty }
+    }
+
     /// Opens a thread: focuses + expands its most recent message, marks it read.
     func select(_ thread: MessageThread) {
         selectedThreadKey = thread.id
