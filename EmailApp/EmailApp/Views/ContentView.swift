@@ -109,6 +109,14 @@ struct ContentView: View {
                 vm.selectedThreadKeys.removeAll()
                 return .handled
             }
+            // Viewing search results (search bar itself may no longer even
+            // be focused at this point) — back out to whatever the list
+            // showed before searching, same as the other branches above
+            // dismiss whatever's currently "on top."
+            if !vm.searchText.isEmpty {
+                vm.searchText = ""
+                return .handled
+            }
             return .ignored
         }
         .onKeyPress(KeyEquivalent("z"), phases: .down) { (press: KeyPress) -> KeyPress.Result in
@@ -192,6 +200,12 @@ private struct TopBar: View {
                         .onChange(of: vm.searchFocusTrigger) { _, _ in isSearchFocused = true }
                         .onSubmit { commitSearch(vm.searchText) }
                         .onKeyPress(.escape) {
+                            // Clearing an already-empty query is a harmless
+                            // no-op, so this doesn't need to distinguish
+                            // "dropdown open, nothing typed yet" from
+                            // "actively viewing search results" — either
+                            // way, escape backs all the way out.
+                            vm.searchText = ""
                             isSearchFocused = false
                             return .handled
                         }
