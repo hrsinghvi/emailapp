@@ -1,5 +1,25 @@
 import SwiftUI
 
+/// qwen2.5 reliably emits Markdown (### headings, "- " bullets, **bold**)
+/// even though we never asked for it — `Text(String)` renders that as
+/// literal hashes/dashes. `Text(LocalizedStringKey)` already understands
+/// inline emphasis (**bold**, *italic*), so this only needs to translate
+/// the two block-level constructs it doesn't handle (headings, bullets)
+/// into something LocalizedStringKey renders correctly, then let SwiftUI
+/// parse the rest.
+func markdownFriendly(_ raw: String) -> LocalizedStringKey {
+    let lines = raw.components(separatedBy: "\n").map { line -> String in
+        if let range = line.range(of: #"^#{1,6}\s+"#, options: .regularExpression) {
+            return "**\(line[range.upperBound...])**"
+        }
+        if let range = line.range(of: #"^[-*]\s+"#, options: .regularExpression) {
+            return "• \(line[range.upperBound...])"
+        }
+        return line
+    }
+    return LocalizedStringKey(lines.joined(separator: "\n"))
+}
+
 /// Inline panel (not a sheet/popover) below the toolbar, same window —
 /// opened from DetailToolbar's "Ask AI" pill (3b) or ThreadRow's right-click
 /// "Ask about this email" (3e). Context is always the currently open
@@ -66,7 +86,7 @@ struct AskAIPanel: View {
 
             if isStreaming || !answer.isEmpty {
                 ScrollView {
-                    Text(answer)
+                    Text(markdownFriendly(answer))
                         .font(.appBody)
                         .foregroundStyle(.primary.opacity(0.9))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -142,7 +162,7 @@ struct SummarizePanel: View {
                 }
             } else {
                 ScrollView {
-                    Text(summary)
+                    Text(markdownFriendly(summary))
                         .font(.appBody)
                         .foregroundStyle(.primary.opacity(0.9))
                         .frame(maxWidth: .infinity, alignment: .leading)
