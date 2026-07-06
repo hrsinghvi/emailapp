@@ -191,6 +191,10 @@ private struct TopBar: View {
                         .focused($isSearchFocused)
                         .onChange(of: vm.searchFocusTrigger) { _, _ in isSearchFocused = true }
                         .onSubmit { commitSearch(vm.searchText) }
+                        .onKeyPress(.escape) {
+                            isSearchFocused = false
+                            return .handled
+                        }
                     if !vm.searchText.isEmpty {
                         Button { vm.searchText = "" } label: {
                             Image(systemName: "xmark.circle.fill").iconButtonHitArea(2)
@@ -228,7 +232,16 @@ private struct TopBar: View {
         .frame(height: searchBarHeight)
         .animation(.easeOut(duration: 0.16), value: isSearchFocused)
         .onChange(of: isSearchFocused) { _, focused in
-            if !focused { dropdownFrame = .zero }
+            if !focused {
+                dropdownFrame = .zero
+            } else {
+                // Re-read from disk on every reopen — a search can get
+                // recorded from the debounced full-text search in
+                // InboxViewModel (see performFullTextSearch), not only via
+                // this view's own commitSearch, so this instance's
+                // `recentSearches` can otherwise go stale between opens.
+                recentSearches = RecentSearchesStore.load()
+            }
         }
         .onAppear { installClickMonitorIfNeeded() }
         .onDisappear {

@@ -16,7 +16,6 @@ import SQLite3
 private actor MessageCacheStorage {
     static let shared = MessageCacheStorage()
 
-    private let recentLoadLimit = 1500
     private let db: OpaquePointer?
 
     private init() {
@@ -43,33 +42,11 @@ private actor MessageCacheStorage {
         db = handle
     }
 
-    /// Loads only the most recent `recentLoadLimit` messages — bounded
-    /// regardless of total mailbox size, so launch time doesn't grow
-    /// forever the longer this app is used.
-    func load() -> [Message] {
-        guard let db else { return [] }
-        var statement: OpaquePointer?
-        defer { sqlite3_finalize(statement) }
-        sqlite3_prepare_v2(
-            db, "SELECT json FROM messages ORDER BY received_at DESC LIMIT ?;", -1, &statement, nil)
-        sqlite3_bind_int(statement, 1, Int32(recentLoadLimit))
-
-        let decoder = JSONDecoder()
-        var results: [Message] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
-            guard let cString = sqlite3_column_text(statement, 0) else { continue }
-            let data = Data(String(cString: cString).utf8)
-            if let message = try? decoder.decode(Message.self, from: data) {
-                results.append(message)
-            }
-        }
-        return results
-    }
-
-    /// Unbounded — every message ever cached, not just the most recent
-    /// `recentLoadLimit`. Only for the one-time search-index backfill,
-    /// which needs true full history, not what launch-time loads for
-    /// speed. Never call this on the normal launch path.
+    /// Every message ever cached — this mailbox's actual size (a few
+    /// thousand) decodes in well under a second, so there's no longer a
+    /// real speed tradeoff to capping it. It used to be capped at 1500,
+    /// which made folders like "All Mail" show a fraction of the real
+    /// count and read as data loss rather than a deliberate tradeoff.
     func loadAll() -> [Message] {
         guard let db else { return [] }
         var statement: OpaquePointer?
@@ -119,10 +96,6 @@ private actor MessageCacheStorage {
 /// stays fully readable across a relaunch with no network at all. See
 /// `MessageCacheStorage` above for why this is actor-isolated underneath.
 enum MessageCacheStore {
-    static func load() async -> [Message] {
-        await MessageCacheStorage.shared.load()
-    }
-
     static func loadAll() async -> [Message] {
         await MessageCacheStorage.shared.loadAll()
     }

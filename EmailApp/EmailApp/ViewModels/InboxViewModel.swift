@@ -419,6 +419,11 @@ final class InboxViewModel {
             let results = try await BackendAPI.searchMessages(query: query, accounts: refs)
             guard query == searchFreeText else { return } // superseded by a newer keystroke
             searchResultIds = results.map(\.id)
+            // Recorded here (once a search actually completes), not only on
+            // Enter — the debounced search this backs runs whether or not
+            // the user ever explicitly submits, so tying "recent searches"
+            // solely to .onSubmit missed most real searches.
+            RecentSearchesStore.record(query)
         } catch {
             guard query == searchFreeText else { return }
             AppLog.sync.error("full-text search failed: \(error.localizedDescription)")
@@ -1064,8 +1069,14 @@ final class InboxViewModel {
         // Populate from local cache first so previously-synced mail is
         // visible instantly and works fully offline — the in-memory
         // `messages` array alone doesn't survive a relaunch with no network.
+        // loadAll(), not the capped load() — at this mailbox's actual size
+        // (a few thousand messages) decoding everything is still well
+        // under a second, and capping it made folders like "All Mail" show
+        // a fraction of the real count (1,317 shown vs. 4,500+ actually
+        // synced), which read as data loss rather than a deliberate speed
+        // tradeoff.
         if messages.isEmpty {
-            messages = await MessageCacheStore.load()
+            messages = await MessageCacheStore.loadAll()
         }
         // Same fix as the cached-messages line above, for the account list:
         // show accounts as connected the instant we know about them from
@@ -1562,23 +1573,13 @@ final class InboxViewModel {
     /// never touched Supabase's messages table at all before this existed,
     /// only the realtime-webhook path did. Chunked to keep each request a
     /// reasonable size against a serverless function's payload/time limits.
-    ///
-    /// Reads MessageCacheStore.loadAll(), not the in-memory `messages`
-    /// array — `messages` is seeded from the launch-time cache load, which
-    /// is deliberately capped (see its doc comment) to keep startup fast,
-    /// so it doesn't reflect true full history once a mailbox has synced
-    /// past that cap. The full history is still sitting in the local
-    /// SQLite cache either way; this just reads all of it for the one
-    /// backfill that actually needs it, instead of the necessarily-limited
-    /// in-memory copy.
     private func performSearchIndexBackfillIfNeeded() async {
         guard !AppSettings.shared.hasBackfilledSearchIndex else { return }
         guard NetworkMonitor.shared.isOnline else { return }
-        let allMessages = await MessageCacheStore.loadAll()
-        guard !allMessages.isEmpty else { return }
+        guard !messages.isEmpty else { return }
         AppSettings.shared.hasBackfilledSearchIndex = true
 
-        let entries = allMessages.map { searchIndexEntry(for: $0) }
+        let entries = messages.map { searchIndexEntry(for: $0) }
         let chunkSize = 300
         var index = 0
         while index < entries.count {
