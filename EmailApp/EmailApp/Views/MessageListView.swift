@@ -78,7 +78,7 @@ private struct ThreadRow: View {
         let message = thread.latest
 
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
                 Color.clear.frame(width: leadingInset)
 
                 Button(action: onToggleCheck) {
@@ -92,7 +92,6 @@ private struct ThreadRow: View {
                 }
                 .buttonStyle(.pointerPlain)
                 .frame(width: checkboxClusterWidth, alignment: .leading)
-                .padding(.top, 2)
 
                 Button { withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) { vm.toggleStarred(message) } } label: {
                     Image(systemName: message.isStarred ? "star.fill" : "star")
@@ -104,7 +103,6 @@ private struct ThreadRow: View {
                 }
                 .buttonStyle(.pointerPlain)
                 .frame(width: starClusterWidth, alignment: .leading)
-                .padding(.top, 2)
                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: message.isStarred)
 
                 Button { withAnimation(.easeOut(duration: 0.18)) { vm.toggleImportant(message) } } label: {
@@ -117,7 +115,6 @@ private struct ThreadRow: View {
                 }
                 .buttonStyle(.pointerPlain)
                 .frame(width: importantClusterWidth, alignment: .leading)
-                .padding(.top, 2)
 
                 Text(message.senderName)
                     .font(.appSubheadline.weight(thread.hasUnread ? .semibold : .regular))

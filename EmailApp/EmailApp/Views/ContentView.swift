@@ -165,6 +165,9 @@ private struct TopBar: View {
     @Bindable var vm: InboxViewModel
     @FocusState private var isSearchFocused: Bool
     @State private var recentSearches: [String] = RecentSearchesStore.load()
+    @State private var searchBarFrame: CGRect = .zero
+    @State private var dropdownFrame: CGRect = .zero
+    @State private var clickMonitor: Any?
 
     private let quickFilters: [(label: String, token: String)] = [
         ("Has attachment", "has:attachment"),
@@ -199,11 +202,21 @@ private struct TopBar: View {
                 .padding(.horizontal, 16)
                 .frame(width: searchBarWidth, height: searchBarHeight)
                 .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 22))
+                .background(GeometryReader { geo in
+                    Color.clear
+                        .onAppear { searchBarFrame = geo.frame(in: .global) }
+                        .onChange(of: geo.frame(in: .global)) { _, new in searchBarFrame = new }
+                })
                 .overlay(alignment: .topLeading) {
                     if isSearchFocused {
                         searchDropdown(width: searchBarWidth)
                             .offset(y: searchBarHeight + 4)
                             .transition(.opacity.combined(with: .move(edge: .top)))
+                            .background(GeometryReader { geo in
+                                Color.clear
+                                    .onAppear { dropdownFrame = geo.frame(in: .global) }
+                                    .onChange(of: geo.frame(in: .global)) { _, new in dropdownFrame = new }
+                            })
                     }
                 }
 
@@ -214,6 +227,47 @@ private struct TopBar: View {
         }
         .frame(height: searchBarHeight)
         .animation(.easeOut(duration: 0.16), value: isSearchFocused)
+        .onChange(of: isSearchFocused) { _, focused in
+            if !focused { dropdownFrame = .zero }
+        }
+        .onAppear { installClickMonitorIfNeeded() }
+        .onDisappear {
+            if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+            clickMonitor = nil
+        }
+    }
+
+    /// SwiftUI's automatic "resign focus when something else is clicked"
+    /// doesn't reliably fire in this app — there are several
+    /// NSViewRepresentable-hosted views elsewhere (the HTML reading pane,
+    /// the compose rich text editor) that can grab AppKit's real first
+    /// responder without SwiftUI's FocusState ever finding out, which is
+    /// exactly what caused both reported symptoms: the dropdown staying
+    /// open after clicking elsewhere, and — worse — isSearchFocused getting
+    /// stuck at `true` internally so a later click back on the search field
+    /// was a no-op (SwiftUI saw "already focused", so no new focus request
+    /// ever went to AppKit) until switching apps forced a full responder-
+    /// chain reset. Explicitly resigning on every click outside the search
+    /// bar/dropdown — rather than hoping the implicit behavior kicks in —
+    /// fixes both: the dropdown reliably closes, and every subsequent click
+    /// on the search field is a genuine false->true transition SwiftUI
+    /// actually acts on. The monitor never consumes the event (always
+    /// returns it unmodified), so a click on some other button still
+    /// performs that button's own action too.
+    private func installClickMonitorIfNeeded() {
+        guard clickMonitor == nil else { return }
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            if isSearchFocused, let window = event.window {
+                let windowHeight = window.contentView?.frame.height ?? 0
+                // NSEvent.locationInWindow is bottom-left origin; SwiftUI's
+                // .global coordinate space (captured above) is top-left.
+                let point = CGPoint(x: event.locationInWindow.x, y: windowHeight - event.locationInWindow.y)
+                if !searchBarFrame.contains(point) && !dropdownFrame.contains(point) {
+                    isSearchFocused = false
+                }
+            }
+            return event
+        }
     }
 
     private var filteredRecents: [String] {
