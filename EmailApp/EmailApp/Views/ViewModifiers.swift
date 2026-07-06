@@ -51,3 +51,22 @@ struct PointerButtonStyle: ButtonStyle {
 extension ButtonStyle where Self == PointerButtonStyle {
     static var pointerPlain: PointerButtonStyle { PointerButtonStyle() }
 }
+
+private struct DriftUpModifier: ViewModifier {
+    let isActive: Bool
+    func body(content: Content) -> some View {
+        content
+            .offset(y: isActive ? 6 : 0)
+            .opacity(isActive ? 0 : 1)
+    }
+}
+
+extension AnyTransition {
+    /// A small fade + upward drift for rows appearing in a list (message
+    /// rows, search results) — deliberately subtle (6pt, not a full
+    /// off-screen slide) so it reads as a light polish rather than a
+    /// distracting swoop.
+    static var driftUp: AnyTransition {
+        .modifier(active: DriftUpModifier(isActive: true), identity: DriftUpModifier(isActive: false))
+    }
+}

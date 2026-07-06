@@ -9,28 +9,43 @@ import { supabase } from "../../lib/supabase";
  * has the full message content cached locally and just needs to know
  * which ids matched and in what order.
  *
- * Takes (provider, email) pairs, not accountIds — see backfill.ts's doc
- * comment for why a client-supplied accountId isn't trustworthy here (the
- * Swift app's local Account.id has no relationship to this table's
- * DB-generated accounts.id).
+ * Prefers a pre-resolved `accountIds` (real Supabase accounts.id, from
+ * api/accounts/resolve.ts, cached client-side for the session) — that's
+ * the fast path with zero lookup overhead. Falls back to resolving
+ * `accounts` (provider, email) pairs server-side for a client that hasn't
+ * resolved yet. Never trusts a client-supplied id blindly for WRITES (see
+ * backfill.ts's doc comment on why the Swift app's local Account.id isn't
+ * trustworthy there) — but this endpoint is read-only, so a stale/wrong
+ * cached id here only means a search returns nothing, not a data
+ * integrity problem, which is an acceptable tradeoff for cutting this
+ * endpoint's own latency to just the search query itself.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { query, accounts: requestedAccounts, limit } = (req.body ?? {}) as {
+  const { query, accountIds: providedIds, accounts: requestedAccounts, limit } = (req.body ?? {}) as {
     query?: string;
+    accountIds?: string[];
     accounts?: Array<{ provider?: "gmail" | "outlook"; email?: string }>;
     limit?: number;
   };
-  if (!query || !query.trim() || !Array.isArray(requestedAccounts) || requestedAccounts.length === 0) {
-    return res.status(400).json({ error: "query and accounts required" });
+  if (!query || !query.trim()) {
+    return res.status(400).json({ error: "query required" });
   }
 
-  const accountIds: string[] = [];
-  for (const { provider, email } of requestedAccounts) {
-    if (!provider || !email) continue;
-    const { data } = await supabase.from("accounts").select("id").eq("provider", provider).ilike("email", email).single();
-    if (data) accountIds.push(data.id);
+  let accountIds: string[] = Array.isArray(providedIds) ? providedIds.filter((id) => !!id) : [];
+  if (accountIds.length === 0) {
+    if (!Array.isArray(requestedAccounts) || requestedAccounts.length === 0) {
+      return res.status(400).json({ error: "accountIds or accounts required" });
+    }
+    const resolved = await Promise.all(
+      requestedAccounts.map(async ({ provider, email }) => {
+        if (!provider || !email) return null;
+        const { data } = await supabase.from("accounts").select("id").eq("provider", provider).ilike("email", email).single();
+        return data?.id as string | undefined;
+      })
+    );
+    accountIds = resolved.filter((id): id is string => !!id);
   }
   if (accountIds.length === 0) return res.status(200).json({ results: [] });
 

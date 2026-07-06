@@ -91,18 +91,54 @@ enum BackendAPI {
 
     struct AccountRef: Encodable { let provider: String; let email: String }
 
+    struct ResolvedAccount: Decodable { let provider: String; let email: String; let id: UUID }
+
+    /// Resolves (provider, email) pairs to their real Supabase accounts.id
+    /// — call once per session (InboxViewModel caches the result) so every
+    /// search after the first skips this lookup. See resolve.ts's doc
+    /// comment: this was most of what made search feel slow, since it used
+    /// to happen on every single keystroke-triggered search instead of once.
+    static func resolveAccountIds(_ accounts: [AccountRef]) async throws -> [ResolvedAccount] {
+        guard !accounts.isEmpty else { return [] }
+        struct Request: Encodable { let accounts: [AccountRef] }
+        var req = URLRequest(url: URL(string: "\(Config.backendBaseURL)/api/accounts/resolve")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(Request(accounts: accounts))
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw BackendError.requestFailed(code, String(data: data, encoding: .utf8) ?? "")
+        }
+        struct Response: Decodable { let accounts: [ResolvedAccount] }
+        return try JSONDecoder().decode(Response.self, from: data).accounts
+    }
+
     /// Real Postgres full-text search (tsvector/tsquery + ts_rank) — never
     /// falls back to local substring matching. Returns ranked ids only;
     /// InboxViewModel maps them back onto its already-cached Message
-    /// objects for display, using the returned order. Takes (provider,
-    /// email) pairs rather than accountIds for the same reason
-    /// SearchIndexEntry doesn't carry one — see its doc comment.
-    static func searchMessages(query: String, accounts: [AccountRef], limit: Int = 200) async throws -> [SearchResult] {
-        struct Request: Encodable { let query: String; let accounts: [AccountRef]; let limit: Int }
+    /// objects for display, using the returned order. Prefers pre-resolved
+    /// accountIds (fast path, no server-side lookup); falls back to
+    /// resolving (provider, email) pairs if none are cached yet.
+    static func searchMessages(
+        query: String, accountIds: [UUID] = [], accounts: [AccountRef] = [], limit: Int = 200
+    ) async throws -> [SearchResult] {
+        struct Request: Encodable {
+            let query: String
+            let accountIds: [String]?
+            let accounts: [AccountRef]?
+            let limit: Int
+        }
         var req = URLRequest(url: URL(string: "\(Config.backendBaseURL)/api/messages/search")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(Request(query: query, accounts: accounts, limit: limit))
+        let idStrings = accountIds.map(\.uuidString)
+        req.httpBody = try JSONEncoder().encode(Request(
+            query: query,
+            accountIds: idStrings.isEmpty ? nil : idStrings,
+            accounts: idStrings.isEmpty ? accounts : nil,
+            limit: limit
+        ))
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1

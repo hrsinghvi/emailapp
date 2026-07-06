@@ -138,6 +138,11 @@ final class InboxViewModel {
     var errorMessage: String?
     /// Bumped to request the search field take keyboard focus (Cmd+K).
     var searchFocusTrigger = 0
+    /// Bumped to request the search field give up keyboard focus — the
+    /// mirror image of searchFocusTrigger, used by the app-level Escape
+    /// handler (see ContentView) so it can close the dropdown even though
+    /// the FocusState driving it is private to TopBar.
+    var searchBlurTrigger = 0
 
     /// Gmail-style "1-50 of N" pagination for the message list.
     var listPageIndex: Int = 0
@@ -391,18 +396,50 @@ final class InboxViewModel {
         let threads = grouped.map { key, messages in
             MessageThread(id: key, messages: messages.sorted { $0.receivedAt < $1.receivedAt })
         }
+        let sorted: [MessageThread]
         if !searchFreeText.isEmpty, let ids = searchResultIds {
             // Relevance order, not date order — ts_rank already sorted
             // `ids` best-match-first; a thread's rank is its best-ranked
             // message's position in that list.
             let rankOf = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($1, $0) })
-            filteredThreads = threads.sorted { a, b in
+            sorted = threads.sorted { a, b in
                 let aRank = a.messages.compactMap { rankOf[$0.id] }.min() ?? Int.max
                 let bRank = b.messages.compactMap { rankOf[$0.id] }.min() ?? Int.max
                 return aRank < bRank
             }
         } else {
-            filteredThreads = threads.sorted { $0.latest.receivedAt > $1.latest.receivedAt }
+            sorted = threads.sorted { $0.latest.receivedAt > $1.latest.receivedAt }
+        }
+        // Was a plain assignment — MessageListView's row .transition() only
+        // ever plays inside an animated context, and nothing here provided
+        // one, so search results (and any other filter change) just
+        // snapped into place instantly instead of animating in.
+        withAnimation(.easeOut(duration: 0.22)) {
+            filteredThreads = sorted
+        }
+    }
+
+    /// Populated once per session (see performAccountIdResolutionIfNeeded)
+    /// so search skips the (provider, email) -> accounts.id lookup on every
+    /// keystroke-triggered search — that repeated lookup, not the actual
+    /// ts_rank query (~2ms even across full history), was most of why
+    /// search felt slow. Keyed by "provider:email".
+    private var resolvedAccountIds: [String: UUID] = [:]
+
+    /// One-time-per-session account id resolution — fire-and-forget from
+    /// restoreSession, non-blocking. A search started before this
+    /// completes just falls back to the slower server-side-resolved path
+    /// for that one request (still correct, just not yet fast).
+    private func performAccountIdResolutionIfNeeded() async {
+        guard resolvedAccountIds.isEmpty, !accounts.isEmpty else { return }
+        do {
+            let refs = accounts.map { BackendAPI.AccountRef(provider: $0.provider.rawValue, email: $0.email) }
+            let resolved = try await BackendAPI.resolveAccountIds(refs)
+            for account in resolved {
+                resolvedAccountIds["\(account.provider):\(account.email.lowercased())"] = account.id
+            }
+        } catch {
+            AppLog.sync.error("account id resolution failed: \(error.localizedDescription)")
         }
     }
 
@@ -415,8 +452,14 @@ final class InboxViewModel {
         guard !query.isEmpty, !accounts.isEmpty else { return }
         isSearching = true
         do {
-            let refs = accounts.map { BackendAPI.AccountRef(provider: $0.provider.rawValue, email: $0.email) }
-            let results = try await BackendAPI.searchMessages(query: query, accounts: refs)
+            let cachedIds = accounts.compactMap { resolvedAccountIds["\($0.provider.rawValue):\($0.email.lowercased())"] }
+            let results: [BackendAPI.SearchResult]
+            if cachedIds.count == accounts.count {
+                results = try await BackendAPI.searchMessages(query: query, accountIds: cachedIds)
+            } else {
+                let refs = accounts.map { BackendAPI.AccountRef(provider: $0.provider.rawValue, email: $0.email) }
+                results = try await BackendAPI.searchMessages(query: query, accounts: refs)
+            }
             guard query == searchFreeText else { return } // superseded by a newer keystroke
             searchResultIds = results.map(\.id)
             // Recorded here (once a search actually completes), not only on
@@ -1090,6 +1133,12 @@ final class InboxViewModel {
                 accounts.append(account)
             }
         }
+        // Fire-and-forget, deliberately not awaited here — resolving
+        // account ids doesn't need to block the rest of session restore,
+        // it just needs to finish before the user's first search (which is
+        // realistically always more than a network round trip away from
+        // app launch). See performFullTextSearch for why this matters.
+        Task { await performAccountIdResolutionIfNeeded() }
         PowerAssertionService.beginSyncIfEnabled()
         defer { PowerAssertionService.endSync() }
         for account in await OAuthManager.shared.restoreAccounts() {

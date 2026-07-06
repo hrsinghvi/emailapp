@@ -33,7 +33,7 @@ struct MessageListView: View {
                             }
                             .pointerOnHover()
                         }
-                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                        .transition(.driftUp)
                         Divider().overlay(Color.appBorder)
                     }
                 }

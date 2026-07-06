@@ -1,8 +1,10 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
     @Bindable var vm: InboxViewModel
     @FocusState private var isContentFocused: Bool
+    @State private var escapeMonitor: Any?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -93,31 +95,10 @@ struct ContentView: View {
         .onKeyPress(.return) { vm.openSelected(); return .handled }
         .onKeyPress(.delete) { vm.archiveFocused(); return .handled }
         .onKeyPress(.deleteForward) { vm.archiveFocused(); return .handled }
-        .onKeyPress(.escape) {
-            // Whatever's currently on top dismisses first — Settings, then
-            // compose. Escape is the universal "close whatever just popped
-            // up" key throughout the app.
-            if vm.isSettingsPresented {
-                vm.isSettingsPresented = false
-                return .handled
-            }
-            if vm.composeContext != nil {
-                vm.composeContext = nil
-                return .handled
-            }
-            if !vm.selectedThreadKeys.isEmpty {
-                vm.selectedThreadKeys.removeAll()
-                return .handled
-            }
-            // Viewing search results (search bar itself may no longer even
-            // be focused at this point) — back out to whatever the list
-            // showed before searching, same as the other branches above
-            // dismiss whatever's currently "on top."
-            if !vm.searchText.isEmpty {
-                vm.searchText = ""
-                return .handled
-            }
-            return .ignored
+        .onAppear { installEscapeMonitorIfNeeded() }
+        .onDisappear {
+            if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+            escapeMonitor = nil
         }
         .onKeyPress(KeyEquivalent("z"), phases: .down) { (press: KeyPress) -> KeyPress.Result in
             guard press.modifiers.contains(.command) else { return .ignored }
@@ -167,6 +148,49 @@ struct ContentView: View {
             Text(vm.errorMessage ?? "")
         }
     }
+
+    /// SwiftUI's .onKeyPress(.escape) only fires when a SwiftUI-tracked
+    /// view actually holds focus — after clicking the search field then
+    /// clicking away (or anything else that leaves AppKit's real first
+    /// responder out of sync with SwiftUI's FocusState, the same class of
+    /// bug documented on TopBar's click-outside monitor), nothing in
+    /// SwiftUI's focus chain is left to dispatch the key to, so Escape
+    /// silently did nothing until some other click restored focus. A local
+    /// NSEvent monitor intercepts Escape at the AppKit level regardless of
+    /// which — if anything — currently holds focus, matching the same
+    /// approach ComposeView already uses for exactly this reason.
+    private func installEscapeMonitorIfNeeded() {
+        guard escapeMonitor == nil else { return }
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 53 else { return event }
+            // Whatever's currently on top dismisses first — Settings, then
+            // compose. Escape is the universal "close whatever just popped
+            // up" key throughout the app.
+            if vm.isSettingsPresented {
+                vm.isSettingsPresented = false
+                return nil
+            }
+            if vm.composeContext != nil {
+                vm.composeContext = nil
+                return nil
+            }
+            if !vm.selectedThreadKeys.isEmpty {
+                vm.selectedThreadKeys.removeAll()
+                return nil
+            }
+            // Viewing search results (search bar itself may no longer even
+            // be focused at this point) — back out to whatever the list
+            // showed before searching, same as the other branches above
+            // dismiss whatever's currently "on top." searchBlurTrigger
+            // closes the dropdown too, if it's still open.
+            if !vm.searchText.isEmpty {
+                vm.searchText = ""
+                vm.searchBlurTrigger += 1
+                return nil
+            }
+            return event
+        }
+    }
 }
 
 private struct TopBar: View {
@@ -198,17 +222,8 @@ private struct TopBar: View {
                         .font(.appSubheadline)
                         .focused($isSearchFocused)
                         .onChange(of: vm.searchFocusTrigger) { _, _ in isSearchFocused = true }
+                        .onChange(of: vm.searchBlurTrigger) { _, _ in isSearchFocused = false }
                         .onSubmit { commitSearch(vm.searchText) }
-                        .onKeyPress(.escape) {
-                            // Clearing an already-empty query is a harmless
-                            // no-op, so this doesn't need to distinguish
-                            // "dropdown open, nothing typed yet" from
-                            // "actively viewing search results" — either
-                            // way, escape backs all the way out.
-                            vm.searchText = ""
-                            isSearchFocused = false
-                            return .handled
-                        }
                     if !vm.searchText.isEmpty {
                         Button { vm.searchText = "" } label: {
                             Image(systemName: "xmark.circle.fill").iconButtonHitArea(2)
