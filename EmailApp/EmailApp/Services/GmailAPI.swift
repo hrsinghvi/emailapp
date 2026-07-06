@@ -260,6 +260,17 @@ enum GmailAPI {
             "\(base)/messages/send", accessToken: accessToken, json: Body(raw: raw, threadId: threadId))
     }
 
+    /// Saves a brand-new message as a draft (POST /drafts) — never sends.
+    /// Used only for the MCP `save_draft` tool's approval execution path.
+    nonisolated static func createDraft(
+        to: String, subject: String, body: String, isHTML: Bool = false, accessToken: String
+    ) async throws {
+        let raw = buildRawMessage(to: to, subject: subject, body: body, isHTML: isHTML)
+        struct Message: Encodable { let raw: String }
+        struct Body: Encodable { let message: Message }
+        _ = try await post("\(base)/drafts", accessToken: accessToken, json: Body(message: Message(raw: raw)))
+    }
+
     // MARK: - Attachments
 
     /// Fetches the raw bytes of a single attachment on demand (never pulled

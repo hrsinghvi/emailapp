@@ -83,8 +83,12 @@ struct RemoteMCPSettings: Decodable {
 /// Every known MCP tool — used to render the enable/disable checklist even
 /// for tools currently disabled (so they're not just missing from the list).
 enum MCPToolCatalog {
-    static let all = ["get_recent_emails", "get_email_body", "search_emails", "send_email", "reply_email", "archive_email", "mark_read"]
-    static let writeTools: Set<String> = ["send_email", "reply_email", "archive_email", "mark_read"]
+    static let all = [
+        "get_recent_emails", "get_email_body", "search_emails", "send_email", "reply_email", "archive_email", "mark_read",
+        "get_thread", "list_accounts", "search_by_sender", "summarize_thread", "extract_dates_deadlines",
+        "get_unread_count", "save_draft", "get_message_metadata", "check_sender_reputation", "get_reply_context",
+    ]
+    static let writeTools: Set<String> = ["send_email", "reply_email", "archive_email", "mark_read", "save_draft"]
 }
 
 /// Reads/writes the `app_settings`, `mcp_pending_actions`, and

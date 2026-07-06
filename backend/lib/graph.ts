@@ -9,6 +9,12 @@ export interface ParsedMessage {
   body: string;
   receivedAt: string;
   isRead: boolean;
+  to: string;
+  cc: string;
+  bcc: string;
+  replyTo: string;
+  listUnsubscribe: string | null;
+  precedence: string | null;
 }
 
 export async function refreshAccessToken(refreshToken: string): Promise<string> {
@@ -63,7 +69,7 @@ export async function renewSubscription(
 }
 
 export async function getMessage(accessToken: string, id: string): Promise<ParsedMessage> {
-  const url = `${BASE}/me/messages/${id}?$select=id,subject,bodyPreview,body,from,receivedDateTime,isRead`;
+  const url = `${BASE}/me/messages/${id}?$select=id,subject,bodyPreview,body,from,receivedDateTime,isRead,toRecipients,ccRecipients,bccRecipients,replyTo,internetMessageHeaders`;
   // IdType="ImmutableId": without this, this id and the id the Swift app's
   // own direct Graph fetches use for the identical message are different
   // strings (Graph's default id format is tied to the message's folder) —
@@ -90,6 +96,11 @@ export async function getMessage(accessToken: string, id: string): Promise<Parse
     from?: { emailAddress?: { name?: string; address?: string } };
     receivedDateTime?: string;
     isRead?: boolean;
+    toRecipients?: { emailAddress?: { address?: string } }[];
+    ccRecipients?: { emailAddress?: { address?: string } }[];
+    bccRecipients?: { emailAddress?: { address?: string } }[];
+    replyTo?: { emailAddress?: { address?: string } }[];
+    internetMessageHeaders?: { name: string; value: string }[];
   };
   const senderName = raw.from?.emailAddress?.name ?? raw.from?.emailAddress?.address ?? "";
   const senderEmail = raw.from?.emailAddress?.address ?? "";
@@ -97,6 +108,10 @@ export async function getMessage(accessToken: string, id: string): Promise<Parse
     raw.body?.contentType?.toLowerCase() === "html"
       ? stripHtml(raw.body.content ?? "")
       : raw.body?.content ?? raw.bodyPreview ?? "";
+  const joinAddrs = (list?: { emailAddress?: { address?: string } }[]) =>
+    (list ?? []).map((r) => r.emailAddress?.address).filter(Boolean).join(", ");
+  const header = (name: string) =>
+    raw.internetMessageHeaders?.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
 
   return {
     providerMessageId: raw.id,
@@ -107,6 +122,12 @@ export async function getMessage(accessToken: string, id: string): Promise<Parse
     body: plainBody,
     receivedAt: raw.receivedDateTime ?? new Date().toISOString(),
     isRead: raw.isRead ?? true,
+    to: joinAddrs(raw.toRecipients),
+    cc: joinAddrs(raw.ccRecipients),
+    bcc: joinAddrs(raw.bccRecipients),
+    replyTo: joinAddrs(raw.replyTo),
+    listUnsubscribe: header("List-Unsubscribe"),
+    precedence: header("Precedence"),
   };
 }
 
@@ -211,6 +232,46 @@ export async function reply(
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!sendRes.ok) throw new Error(`Graph send draft failed (${sendRes.status}): ${await sendRes.text()}`);
+}
+
+/** Creates a Graph draft message (POST /me/messages) — never sends. */
+export async function createDraft(
+  accessToken: string,
+  params: { to: string[]; subject: string; body: string; isHtml?: boolean }
+): Promise<void> {
+  const res = await fetch(`${BASE}/me/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      subject: params.subject,
+      body: { contentType: params.isHtml ? "HTML" : "Text", content: params.body },
+      toRecipients: params.to.map((address) => ({ emailAddress: { address } })),
+    }),
+  });
+  if (!res.ok) throw new Error(`Graph draft create failed (${res.status}): ${await res.text()}`);
+}
+
+/** Recent messages sent to `recipient` from the SentItems folder. */
+export async function listSentTo(
+  accessToken: string,
+  recipient: string,
+  limit: number
+): Promise<{ providerMessageId: string; subject: string; snippet: string; receivedAt: string }[]> {
+  const filter = encodeURIComponent(
+    `toRecipients/any(r: r/emailAddress/address eq '${recipient.replace(/'/g, "''")}')`
+  );
+  const url = `${BASE}/me/mailFolders/sentitems/messages?$filter=${filter}&$top=${limit}&$select=id,subject,bodyPreview,receivedDateTime&$orderby=receivedDateTime desc`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!res.ok) throw new Error(`Graph sent search failed (${res.status}): ${await res.text()}`);
+  const json = (await res.json()) as {
+    value?: { id: string; subject?: string; bodyPreview?: string; receivedDateTime?: string }[];
+  };
+  return (json.value ?? []).map((m) => ({
+    providerMessageId: m.id,
+    subject: m.subject ?? "",
+    snippet: decodeEntities(m.bodyPreview ?? ""),
+    receivedAt: m.receivedDateTime ?? new Date().toISOString(),
+  }));
 }
 
 function stripHtml(html: string): string {

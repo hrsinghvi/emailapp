@@ -463,6 +463,24 @@ final class InboxViewModel {
     /// the GIN-indexed search_vector column) — never local substring
     /// matching. A failure surfaces as "no matches" (searchResultIds = []),
     /// not a silent fallback to `.contains()`.
+    /// Keyword vs. semantic vs. hybrid — per the plan's routing heuristic.
+    /// Operator-shaped or very short queries (`from:amazon`, 1-2 words)
+    /// almost always mean "find this specific thing", where exact
+    /// full-text matching wins; longer/question-shaped queries are where
+    /// semantic search actually helps ("invoice from Acme last quarter").
+    /// Ollama down => always keyword (today's behavior, no embedding
+    /// available to send).
+    private func searchMode(for query: String, ollamaAvailable: Bool) -> BackendAPI.SearchMode {
+        guard ollamaAvailable else { return .keyword }
+        let lower = query.lowercased()
+        let hasOperator = lower.contains(":") || query.contains("\"")
+        let wordCount = query.split(separator: " ").count
+        if hasOperator || wordCount <= 2 { return .keyword }
+        let isQuestionShaped = lower.hasSuffix("?") || ["who", "what", "when", "where", "why", "how"].contains { lower.hasPrefix($0 + " ") }
+        if wordCount >= 4 || isQuestionShaped { return .semantic }
+        return .hybrid
+    }
+
     private func performFullTextSearch() async {
         let query = searchFreeText
         guard !query.isEmpty, !accounts.isEmpty else { return }
@@ -472,12 +490,16 @@ final class InboxViewModel {
         }
         do {
             let cachedIds = accounts.compactMap { resolvedAccountIds["\($0.provider.rawValue):\($0.email.lowercased())"] }
+            let ollamaAvailable = await OllamaService.isAvailable()
+            let mode = searchMode(for: query, ollamaAvailable: ollamaAvailable)
+            let embedding: [Double]? = mode == .keyword ? nil : try? await OllamaService.embed([query], kind: .query).first
+
             let results: [BackendAPI.SearchResult]
             if cachedIds.count == accounts.count {
-                results = try await BackendAPI.searchMessages(query: query, accountIds: cachedIds)
+                results = try await BackendAPI.searchMessages(query: query, accountIds: cachedIds, embedding: embedding, mode: embedding == nil ? .keyword : mode)
             } else {
                 let refs = accounts.map { BackendAPI.AccountRef(provider: $0.provider.rawValue, email: $0.email) }
-                results = try await BackendAPI.searchMessages(query: query, accounts: refs)
+                results = try await BackendAPI.searchMessages(query: query, accounts: refs, embedding: embedding, mode: embedding == nil ? .keyword : mode)
             }
             guard query == searchFreeText else { return } // superseded by a newer keystroke
             searchResultIds = results.map(\.id)
@@ -1038,6 +1060,20 @@ final class InboxViewModel {
         }
     }
 
+    /// Saves a brand-new message as a draft (never sends) — mirrors `sendFrom`.
+    /// Only reachable via approving a queued MCP `save_draft` action.
+    func saveDraftFrom(accountEmail: String?, to: String, subject: String, bodyHTML: String) async throws {
+        let account = accountEmail.flatMap { email in accounts.first { $0.email == email } } ?? accounts.first
+        guard let account else { throw SendError.noAccount }
+        let token = try await OAuthManager.shared.validAccessToken(for: account)
+        switch account.provider {
+        case .gmail:
+            try await GmailAPI.createDraft(to: to, subject: subject, body: bodyHTML, isHTML: true, accessToken: token)
+        case .outlook:
+            try await GraphAPI.createDraft(to: to, subject: subject, body: bodyHTML, isHTML: true, accessToken: token)
+        }
+    }
+
     /// Sends a threaded reply-to-sender from the account the original message arrived on.
     func reply(to message: Message, cc: String = "", bcc: String = "", bodyHTML: String, attachments: [OutgoingAttachment] = []) async throws {
         let token = try await accessToken(for: message)
@@ -1166,7 +1202,10 @@ final class InboxViewModel {
         // it just needs to finish before the user's first search (which is
         // realistically always more than a network round trip away from
         // app launch). See performFullTextSearch for why this matters.
-        Task { await performAccountIdResolutionIfNeeded() }
+        Task {
+            await performAccountIdResolutionIfNeeded()
+            await performEmbeddingBackfillIfNeeded()
+        }
         PowerAssertionService.beginSyncIfEnabled()
         defer { PowerAssertionService.endSync() }
         for account in await OAuthManager.shared.restoreAccounts() {
@@ -1505,6 +1544,14 @@ final class InboxViewModel {
             }
             try await reply(to: message, bodyHTML: body)
 
+        case "save_draft":
+            guard let to = args["to"]?.arrayValue?.compactMap(\.stringValue), !to.isEmpty,
+                  let subject = args["subject"]?.stringValue, let body = args["body"]?.stringValue,
+                  let account = args["account"]?.stringValue else {
+                throw MCPActionError.missingArgs
+            }
+            try await saveDraftFrom(accountEmail: account, to: to.joined(separator: ", "), subject: subject, bodyHTML: body)
+
         default:
             throw MCPActionError.missingArgs
         }
@@ -1545,6 +1592,61 @@ final class InboxViewModel {
         let settings = AppSettings.shared
         if settings.notificationsEnabled, !settings.mutedAccountEmails.contains(row.accountEmail) {
             NotificationService.notifyNewMail(message)
+        }
+        // Fire-and-forget: keeps semantic search current for mail that
+        // arrives after the one-time backfill finishes, same reasoning as
+        // indexForSearch in merge() below. A failure just leaves this one
+        // message embeddingless until the next backfill pass catches it.
+        Task { await embedAndStore(message) }
+    }
+
+    /// Composes the same text (subject + sender + body, truncated) for both
+    /// the backfill loop and this realtime path — nomic-embed-text's
+    /// retrieval quality depends on document embeddings being produced
+    /// consistently, not just present.
+    private func embedText(subject: String, senderName: String, body: String) -> String {
+        [subject, senderName, body].joined(separator: "\n").prefix(2000).description
+    }
+
+    private func embedAndStore(_ message: Message) async {
+        guard await OllamaService.isAvailable() else { return }
+        do {
+            let text = embedText(subject: message.subject, senderName: message.senderName, body: message.body)
+            guard let vector = try await OllamaService.embed([text], kind: .document).first else { return }
+            try await BackendAPI.storeEmbeddings([(id: message.id, embedding: vector)])
+        } catch {
+            AppLog.sync.error("realtime embed failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Backfills embeddings for every already-synced message missing one —
+    /// pending/store loop against embeddings.ts, chunked at 100/request.
+    /// Runs once per launch (not gated behind a permanent done-flag) so a
+    /// message that slipped through (Ollama was down last launch, a
+    /// realtime-embed call failed) gets caught on the next one; once
+    /// nothing's pending it's a single fast no-op request.
+    private func performEmbeddingBackfillIfNeeded() async {
+        guard await OllamaService.isAvailable() else { return }
+        let cachedIds = accounts.compactMap { resolvedAccountIds["\($0.provider.rawValue):\($0.email.lowercased())"] }
+        guard !cachedIds.isEmpty else { return }
+        while true {
+            let items: [BackendAPI.PendingEmbeddingItem]
+            do {
+                items = try await BackendAPI.fetchPendingEmbeddings(accountIds: cachedIds, limit: 100)
+            } catch {
+                AppLog.sync.error("embedding backfill fetch failed: \(error.localizedDescription)")
+                return
+            }
+            guard !items.isEmpty else { return }
+            do {
+                let texts = items.map { embedText(subject: $0.subject ?? "", senderName: $0.sender_name ?? "", body: $0.body ?? "") }
+                let vectors = try await OllamaService.embed(texts, kind: .document)
+                let pairs = zip(items, vectors).map { (id: $0.id, embedding: $1) }
+                try await BackendAPI.storeEmbeddings(pairs)
+            } catch {
+                AppLog.sync.error("embedding backfill store failed: \(error.localizedDescription)")
+                return
+            }
         }
     }
 

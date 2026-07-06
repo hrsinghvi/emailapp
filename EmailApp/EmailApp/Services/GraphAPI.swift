@@ -241,6 +241,21 @@ enum GraphAPI {
         _ = try await post("\(base)/me/sendMail", accessToken: accessToken, json: payload)
     }
 
+    /// Creates a brand-new draft message (POST /me/messages) — never sends.
+    /// Used only for the MCP `save_draft` tool's approval execution path.
+    nonisolated static func createDraft(
+        to: String, subject: String, body: String, isHTML: Bool = false, accessToken: String
+    ) async throws {
+        struct Content: Encodable { let contentType: String; let content: String }
+        struct DraftMessage: Encodable { let subject: String; let body: Content; let toRecipients: [Recipient] }
+        let payload = DraftMessage(
+            subject: subject,
+            body: Content(contentType: isHTML ? "HTML" : "Text", content: body),
+            toRecipients: recipients(to)
+        )
+        _ = try await post("\(base)/me/messages", accessToken: accessToken, json: payload)
+    }
+
     /// Graph's /reply endpoint threads (References/In-Reply-To/conversationId) automatically.
     nonisolated static func reply(
         to message: Message, cc: String = "", bcc: String = "", body: String,

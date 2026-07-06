@@ -727,6 +727,10 @@ private struct MCPSettingsSectionView: View {
         case "mark_read":
             let read = action.args["is_read"]?.boolValue ?? true
             return read ? "Mark as read" : "Mark as unread"
+        case "save_draft":
+            let to = action.args["to"]?.arrayValue?.compactMap(\.stringValue).joined(separator: ", ") ?? "?"
+            let subject = action.args["subject"]?.stringValue ?? ""
+            return "Draft to \(to) — \(subject)"
         default:
             return ""
         }

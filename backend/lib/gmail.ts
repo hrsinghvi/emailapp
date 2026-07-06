@@ -14,6 +14,12 @@ export interface ParsedMessage {
   body: string;
   receivedAt: string;
   isRead: boolean;
+  to: string;
+  cc: string;
+  bcc: string;
+  replyTo: string;
+  listUnsubscribe: string | null;
+  precedence: string | null;
 }
 
 export async function refreshAccessToken(refreshToken: string): Promise<string> {
@@ -89,6 +95,12 @@ export async function getMessage(accessToken: string, id: string): Promise<Parse
     body: extractBody(raw.payload) ?? raw.snippet ?? "",
     receivedAt,
     isRead: !(raw.labelIds ?? []).includes("UNREAD"),
+    to: header("To"),
+    cc: header("Cc"),
+    bcc: header("Bcc"),
+    replyTo: header("Reply-To"),
+    listUnsubscribe: header("List-Unsubscribe") || null,
+    precedence: header("Precedence") || null,
   };
 }
 
@@ -249,6 +261,47 @@ async function sendRaw(accessToken: string, raw: string, threadId: string | null
     body: JSON.stringify({ raw, threadId: threadId ?? undefined }),
   });
   if (!res.ok) throw new Error(`Gmail send failed (${res.status}): ${await res.text()}`);
+}
+
+/** Creates a Gmail draft (POST /drafts) — never sends. */
+export async function createDraft(
+  accessToken: string,
+  params: { to: string; subject: string; body: string; isHtml?: boolean }
+): Promise<void> {
+  const raw = buildRawMessage(params);
+  const res = await fetch(`${BASE}/drafts`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ message: { raw } }),
+  });
+  if (!res.ok) throw new Error(`Gmail draft create failed (${res.status}): ${await res.text()}`);
+}
+
+/** Recent messages sent to `recipient` from the Sent folder (subject + snippet). */
+export async function listSentTo(
+  accessToken: string,
+  recipient: string,
+  limit: number
+): Promise<{ providerMessageId: string; subject: string; snippet: string; receivedAt: string }[]> {
+  const q = encodeURIComponent(`in:sent to:${recipient}`);
+  const listRes = await fetch(`${BASE}/messages?q=${q}&maxResults=${limit}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!listRes.ok) throw new Error(`Gmail sent search failed (${listRes.status}): ${await listRes.text()}`);
+  const listJson = (await listRes.json()) as { messages?: { id: string }[] };
+  const ids = (listJson.messages ?? []).slice(0, limit).map((m) => m.id);
+  const messages = await Promise.all(
+    ids.map(async (id) => {
+      const msg = await getMessage(accessToken, id);
+      return {
+        providerMessageId: msg.providerMessageId,
+        subject: msg.subject,
+        snippet: msg.snippet,
+        receivedAt: msg.receivedAt,
+      };
+    })
+  );
+  return messages;
 }
 
 function base64UrlEncode(s: string): string {
