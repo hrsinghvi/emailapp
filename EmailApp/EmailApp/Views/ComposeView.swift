@@ -450,7 +450,7 @@ struct ComposeView: View {
                 try Task.checkCancellation()
                 let attributed = NSAttributedString(
                     string: text,
-                    attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.white]
+                    attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.labelColor]
                 )
                 let combined = NSMutableAttributedString(attributedString: previousBody)
                 if combined.length > 0 { combined.append(NSAttributedString(string: "\n\n")) }
@@ -485,7 +485,7 @@ struct ComposeView: View {
                 pushUndo(previousBody)
                 attributedBody = NSAttributedString(
                     string: text,
-                    attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.white]
+                    attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.labelColor]
                 )
             } catch is CancellationError {
             } catch {

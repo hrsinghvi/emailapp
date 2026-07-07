@@ -184,16 +184,33 @@ final class OAuthManager: NSObject {
         return restored
     }
 
+    /// One in-flight refresh `Task` per account — callers for the same
+    /// account that arrive while a refresh is already running just await
+    /// that same Task instead of firing their own concurrent refresh.
+    /// Without this, two near-simultaneous calls (e.g. a foreground fetch
+    /// racing offline-queue replay) could both POST the same refresh token;
+    /// for providers that rotate/invalidate it on use, the loser gets an
+    /// `invalid_grant` even though the account is otherwise healthy.
+    private var refreshTasks: [String: Task<OAuthTokens, Error>] = [:]
+
     /// Returns a non-expired access token, refreshing (and re-saving) if needed.
     func validAccessToken(for account: Account) async throws -> String {
         let key = keychainAccount(provider: account.provider, email: account.email)
-        guard var tokens = try KeychainService.load(account: key) else {
+        guard let tokens = try KeychainService.load(account: key) else {
             throw OAuthError.notAuthenticated
         }
-        if tokens.isExpired {
-            tokens = try await refresh(tokens, provider: account.provider, keychainKey: key)
+        guard tokens.isExpired else { return tokens.accessToken }
+
+        if let inFlight = refreshTasks[key] {
+            return try await inFlight.value.accessToken
         }
-        return tokens.accessToken
+        let task = Task<OAuthTokens, Error> { [weak self] in
+            defer { self?.refreshTasks[key] = nil }
+            guard let self else { throw OAuthError.notAuthenticated }
+            return try await self.refresh(tokens, provider: account.provider, keychainKey: key)
+        }
+        refreshTasks[key] = task
+        return try await task.value.accessToken
     }
 
     // MARK: - Authorization (ASWebAuthenticationSession)

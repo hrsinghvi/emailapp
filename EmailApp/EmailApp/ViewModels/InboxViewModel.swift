@@ -733,8 +733,16 @@ final class InboxViewModel {
                 enqueueOffline(.markRead(messageId: message.id, read: read))
                 return
             }
-            messages[index].isRead = previous
-            MessageCacheStore.save(messages)
+            guard !isNotFoundError(error) else {
+                AppLog.sync.error("setRead 404 for \(message.id), keeping optimistic update: \(error.localizedDescription)")
+                return
+            }
+            // Re-lookup rather than reuse `index` — the array can shift
+            // (removals/merges elsewhere) across the `await` above.
+            if let idx = messages.firstIndex(where: { $0.id == message.id }) {
+                messages[idx].isRead = previous
+                MessageCacheStore.save(messages)
+            }
             AppLog.sync.error("setRead failed for \(message.id): \(error.localizedDescription)")
             errorMessage = "Couldn't update read status: \(error.localizedDescription)"
         }
@@ -1436,7 +1444,7 @@ final class InboxViewModel {
     private func performOneTimeHistoryBackfillIfNeeded() async {
         guard !AppSettings.shared.hasBackfilledMailHistory else { return }
         guard NetworkMonitor.shared.isOnline else { return }
-        AppSettings.shared.hasBackfilledMailHistory = true
+        var allSucceeded = true
         for account in accounts {
             do {
                 let token = try await OAuthManager.shared.validAccessToken(for: account)
@@ -1455,9 +1463,15 @@ final class InboxViewModel {
                 }
                 merge(account: account, fetched: fetched)
             } catch {
+                allSucceeded = false
                 AppLog.sync.error("History backfill failed for \(account.email): \(error.localizedDescription)")
             }
         }
+        // Only mark done once every account actually backfilled — setting
+        // this unconditionally up front meant a failure on first launch
+        // (flaky wifi, expired token) permanently skipped the backfill for
+        // that install, since the flag never gets a second chance to flip.
+        if allSucceeded { AppSettings.shared.hasBackfilledMailHistory = true }
     }
 
     /// Runs once ever: Gmail mail synced before this app started reading
@@ -1471,10 +1485,13 @@ final class InboxViewModel {
     private func performOneTimeCategoryBackfillIfNeeded() async {
         guard !AppSettings.shared.hasBackfilledCategories else { return }
         guard NetworkMonitor.shared.isOnline else { return }
-        AppSettings.shared.hasBackfilledCategories = true
+        var allSucceeded = true
 
         for account in accounts where account.provider == .gmail {
-            guard let token = try? await OAuthManager.shared.validAccessToken(for: account) else { continue }
+            guard let token = try? await OAuthManager.shared.validAccessToken(for: account) else {
+                allSucceeded = false
+                continue
+            }
             let targets = messages.filter { $0.accountId == account.id && $0.provider == .gmail }
             guard !targets.isEmpty else { continue }
 
@@ -1511,6 +1528,10 @@ final class InboxViewModel {
             messages = updated
             MessageCacheStore.save(messages)
         }
+        // Only mark done once every Gmail account's categories actually got
+        // patched — see the history-backfill flag's comment for why setting
+        // this unconditionally before the work runs is wrong.
+        if allSucceeded { AppSettings.shared.hasBackfilledCategories = true }
     }
 
     /// Runs once ever: now that the local cache scales to any mailbox size
@@ -1521,21 +1542,28 @@ final class InboxViewModel {
     private func performOneTimeCategoryMailBackfillIfNeeded() async {
         guard !AppSettings.shared.hasBackfilledCategoryMail else { return }
         guard NetworkMonitor.shared.isOnline else { return }
-        AppSettings.shared.hasBackfilledCategoryMail = true
+        var allSucceeded = true
 
         let categoriesToBackfill: [MessageCategory] = [.primary, .social, .updates, .forums]
         for account in accounts where account.provider == .gmail {
-            guard let token = try? await OAuthManager.shared.validAccessToken(for: account) else { continue }
+            guard let token = try? await OAuthManager.shared.validAccessToken(for: account) else {
+                allSucceeded = false
+                continue
+            }
             for category in categoriesToBackfill {
                 do {
                     let fetched = try await GmailAPI.fetchInboxByCategory(
                         category, for: account, accessToken: token, limit: 2000)
                     merge(account: account, fetched: fetched)
                 } catch {
+                    allSucceeded = false
                     AppLog.sync.error("Category mail backfill (\(category.rawValue)) failed: \(error.localizedDescription)")
                 }
             }
         }
+        // Only mark done once every account/category actually backfilled —
+        // see the history-backfill flag's comment for why.
+        if allSucceeded { AppSettings.shared.hasBackfilledCategoryMail = true }
     }
 
     /// One-time repair for Outlook messages synced before Graph requests
@@ -1549,11 +1577,13 @@ final class InboxViewModel {
     private func performOutlookImmutableIdMigrationIfNeeded() async {
         guard !AppSettings.shared.hasMigratedOutlookImmutableIds else { return }
         guard NetworkMonitor.shared.isOnline else { return }
-        AppSettings.shared.hasMigratedOutlookImmutableIds = true
+        var allSucceeded = true
 
         for account in accounts where account.provider == .outlook {
-            guard let token = try? await OAuthManager.shared.validAccessToken(for: account) else { continue }
-            messages.removeAll { $0.accountId == account.id && $0.provider == .outlook }
+            guard let token = try? await OAuthManager.shared.validAccessToken(for: account) else {
+                allSucceeded = false
+                continue
+            }
             do {
                 // All four folders this app ever assigns locally — a message
                 // sitting in Archive or Deleted Items has an id that's
@@ -1565,11 +1595,21 @@ final class InboxViewModel {
                 async let archiveTask = GraphAPI.fetchArchived(for: account, accessToken: token, limit: 10000)
                 async let deletedTask = GraphAPI.fetchDeleted(for: account, accessToken: token, limit: 10000)
                 let (inbox, sent, archived, deleted) = try await (inboxTask, sentTask, archiveTask, deletedTask)
+                // Only drop the stale cached copies once the refetch has
+                // actually succeeded — removing first and fetching after
+                // meant any message that only existed in Archive/Deleted
+                // Items was gone for good if the fetch then failed partway
+                // through (regular syncs never re-populate those folders).
+                messages.removeAll { $0.accountId == account.id && $0.provider == .outlook }
                 merge(account: account, fetched: inbox + sent + archived + deleted)
             } catch {
+                allSucceeded = false
                 AppLog.sync.error("Outlook immutable-id migration failed for \(account.email): \(error.localizedDescription)")
             }
         }
+        // Only mark done once every Outlook account migrated successfully —
+        // otherwise this silently never retries and stays permanently stale.
+        if allSucceeded { AppSettings.shared.hasMigratedOutlookImmutableIds = true }
     }
 
     /// One-time import of each provider's real starred/important state for
@@ -1582,10 +1622,13 @@ final class InboxViewModel {
     private func performStarredImportantMigrationIfNeeded() async {
         guard !AppSettings.shared.hasMigratedStarredImportant else { return }
         guard NetworkMonitor.shared.isOnline else { return }
-        AppSettings.shared.hasMigratedStarredImportant = true
+        var allSucceeded = true
 
         for account in accounts where account.provider == .gmail {
-            guard let token = try? await OAuthManager.shared.validAccessToken(for: account) else { continue }
+            guard let token = try? await OAuthManager.shared.validAccessToken(for: account) else {
+                allSucceeded = false
+                continue
+            }
             do {
                 async let starredTask = GmailAPI.fetchMessageIds(label: "STARRED", accessToken: token, limit: 50000)
                 async let importantTask = GmailAPI.fetchMessageIds(label: "IMPORTANT", accessToken: token, limit: 50000)
@@ -1595,6 +1638,7 @@ final class InboxViewModel {
                     messages[index].isImportant = important.contains(messages[index].providerId)
                 }
             } catch {
+                allSucceeded = false
                 AppLog.sync.error("Starred/important migration failed for \(account.email): \(error.localizedDescription)")
             }
         }
@@ -1608,21 +1652,32 @@ final class InboxViewModel {
         // ran — it may have, on a build before flag/importance were part
         // of its $select, which wouldn't have carried this data either).
         for account in accounts where account.provider == .outlook {
-            guard let token = try? await OAuthManager.shared.validAccessToken(for: account) else { continue }
-            messages.removeAll { $0.accountId == account.id && $0.provider == .outlook }
+            guard let token = try? await OAuthManager.shared.validAccessToken(for: account) else {
+                allSucceeded = false
+                continue
+            }
             do {
                 async let inboxTask = GraphAPI.fetchInbox(for: account, accessToken: token, limit: 10000)
                 async let sentTask = GraphAPI.fetchSent(for: account, accessToken: token, limit: 10000)
                 async let archiveTask = GraphAPI.fetchArchived(for: account, accessToken: token, limit: 10000)
                 async let deletedTask = GraphAPI.fetchDeleted(for: account, accessToken: token, limit: 10000)
                 let (inbox, sent, archived, deleted) = try await (inboxTask, sentTask, archiveTask, deletedTask)
+                // Same ordering fix as the immutable-id migration above —
+                // only drop the stale cached copies once the refetch has
+                // actually succeeded, so a mid-fetch failure can't
+                // permanently lose Archive/Deleted-only mail.
+                messages.removeAll { $0.accountId == account.id && $0.provider == .outlook }
                 merge(account: account, fetched: inbox + sent + archived + deleted)
             } catch {
+                allSucceeded = false
                 AppLog.sync.error("Starred/important migration (Outlook) failed for \(account.email): \(error.localizedDescription)")
             }
         }
 
         MessageCacheStore.save(messages)
+        // Only mark done once every account actually migrated — see the
+        // history-backfill flag's comment for why.
+        if allSucceeded { AppSettings.shared.hasMigratedStarredImportant = true }
     }
 
     /// Manual re-fetch for every connected account — backs the toolbar's
@@ -1982,7 +2037,7 @@ final class InboxViewModel {
         guard !AppSettings.shared.hasBackfilledSearchIndex else { return }
         guard NetworkMonitor.shared.isOnline else { return }
         guard !messages.isEmpty else { return }
-        AppSettings.shared.hasBackfilledSearchIndex = true
+        var allSucceeded = true
 
         let entries = messages.map { searchIndexEntry(for: $0) }
         let chunkSize = 300
@@ -1992,9 +2047,13 @@ final class InboxViewModel {
             do {
                 try await BackendAPI.indexForSearch(chunk)
             } catch {
+                allSucceeded = false
                 AppLog.sync.error("search index backfill chunk failed: \(error.localizedDescription)")
             }
             index += chunkSize
         }
+        // Only mark done once every chunk actually indexed — see the
+        // history-backfill flag's comment for why.
+        if allSucceeded { AppSettings.shared.hasBackfilledSearchIndex = true }
     }
 }

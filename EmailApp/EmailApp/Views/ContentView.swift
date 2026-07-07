@@ -139,6 +139,7 @@ struct ContentView: View {
         .overlay(alignment: .bottomTrailing) {
             if let context = vm.composeContext {
                 ComposeView(vm: vm, context: context, onClose: { vm.composeContext = nil })
+                    .id(context.id)
                     .padding(20)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }

@@ -200,45 +200,55 @@ private struct InboxNavItem: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Button {
-                vm.selectedFolder = "inbox"
-                vm.categoryFilter = .primary
-                vm.providerFilter = nil
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: MessageCategory.primary.icon)
-                        .foregroundStyle(MessageCategory.primary.tint)
-                        .frame(width: 18)
-                    Text("Inbox")
-                        .font(.appSubheadline.weight(.medium))
-                    Spacer()
-                    if let unreadBadge {
-                        Text(unreadBadge)
-                            .font(.appCaption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(Color.appHover))
+            HStack(spacing: 10) {
+                // A separate sibling Button, not a `.onTapGesture` nested
+                // inside the row Button's label — that nesting let a click
+                // on just the chevron also fire the row Button's action,
+                // resetting selectedFolder/categoryFilter/providerFilter
+                // as an unwanted side effect of expanding/collapsing.
+                Button {
+                    vm.selectedFolder = "inbox"
+                    vm.categoryFilter = .primary
+                    vm.providerFilter = nil
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: MessageCategory.primary.icon)
+                            .foregroundStyle(MessageCategory.primary.tint)
+                            .frame(width: 18)
+                        Text("Inbox")
+                            .font(.appSubheadline.weight(.medium))
+                        Spacer()
+                        if let unreadBadge {
+                            Text(unreadBadge)
+                                .font(.appCaption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Color.appHover))
+                        }
                     }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.pointerPlain)
+
+                Button { isExpanded.toggle() } label: {
                     Image(systemName: "chevron.up")
                         .font(.appCaption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(isExpanded ? 0 : 180))
                         .iconButtonHitArea()
-                        .onTapGesture { isExpanded.toggle() }
                 }
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 8).fill(isActive || isDropTargeted ? Color.appHover : .clear))
-                .animation(.easeOut(duration: 0.18), value: isActive)
-                .contentShape(Rectangle())
+                .buttonStyle(.pointerPlain)
             }
-            .buttonStyle(.pointerPlain)
-                .dropDestination(for: String.self) { items, _ in
-                    receiveThreadDrop(items) { vm.handleDrop(threadKeys: $0, onto: "inbox") }
-                } isTargeted: { isDropTargeted = $0 }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8).fill(isActive || isDropTargeted ? Color.appHover : .clear))
+            .animation(.easeOut(duration: 0.18), value: isActive)
+            .dropDestination(for: String.self) { items, _ in
+                receiveThreadDrop(items) { vm.handleDrop(threadKeys: $0, onto: "inbox") }
+            } isTargeted: { isDropTargeted = $0 }
 
             if isExpanded {
                 let gmailColor = vm.accounts.first(where: { $0.provider == .gmail })?.color ?? Provider.gmail.color
