@@ -1033,6 +1033,9 @@ final class InboxViewModel {
                 selectedThreadKeys.removeAll()
             }
             select(thread)
+            // So a later Shift-click has an anchor to range from — without
+            // this, Shift-click after a plain click silently did nothing.
+            lastClickedThreadKey = thread.id
         }
     }
 

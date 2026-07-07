@@ -219,21 +219,23 @@ private struct ThreadRow: View {
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.16), value: isHovering)
         .quickLookPreview($preview.previewURL)
-        // Selects this row the instant a press-drag begins, *before*
-        // `.draggable`'s own preview/payload closures evaluate — without
-        // this, dragging a row that wasn't already selected raced with
-        // `beginDrag(for:)`'s mutation below and the preview pill could
-        // render against the still-empty selection ("Move 0 conversations").
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    if !vm.selectedThreadKeys.contains(thread.id) {
-                        vm.selectedThreadKeys = [thread.id]
-                    }
-                }
-        )
-        .draggable(vm.beginDrag(for: thread)) {
-            DragCountPill(count: vm.selectedThreadKeys.count)
+        .onDrag {
+            // `.draggable(_:preview:)`'s preview always lifts off from this
+            // (full-width) row's own bounds rather than the pointer, so a
+            // small pill preview visibly flew in from wherever the row sits
+            // on screen. `.onDrag` + a manually rendered preview image
+            // tracks the pointer correctly from the first frame instead.
+            // Both the payload and the image are built in this one closure
+            // (rather than split across `.draggable`'s separate payload/
+            // preview closures) so the count can't read a stale selection.
+            let payload = vm.beginDrag(for: thread)
+            let provider = NSItemProvider(object: payload as NSString)
+            let renderer = ImageRenderer(content: DragCountPill(count: vm.selectedThreadKeys.count))
+            renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+            if let image = renderer.nsImage {
+                provider.previewImageHandler = { completion, _, _ in completion?(image, nil) }
+            }
+            return provider
         }
     }
 }
