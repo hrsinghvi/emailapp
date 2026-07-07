@@ -82,6 +82,14 @@ private struct ThreadRow: View {
     let onToggleCheck: () -> Void
     @State private var isHovering = false
     @State private var preview = AttachmentPreviewController()
+    /// This row's on-screen size and the pointer's last local position over
+    /// it — used only to build the drag preview below. Making the preview
+    /// exactly this size, with the pill painted at this exact point, means
+    /// the preview's bounds match the row's actual bounds one-to-one, so
+    /// there's no lift/rescale animation from "the row's spot" to "the
+    /// pointer" — they're already the same spot.
+    @State private var rowSize: CGSize = .zero
+    @State private var dragAnchor: CGPoint = .zero
 
     /// Fixed regardless of hover/selection/attachment state, so the row
     /// never visually shifts. `leadingInset` + `senderExtraLeadingPadding`
@@ -219,23 +227,29 @@ private struct ThreadRow: View {
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.16), value: isHovering)
         .quickLookPreview($preview.previewURL)
-        .onDrag {
-            // `.draggable(_:preview:)`'s preview always lifts off from this
-            // (full-width) row's own bounds rather than the pointer, so a
-            // small pill preview visibly flew in from wherever the row sits
-            // on screen. `.onDrag` + a manually rendered preview image
-            // tracks the pointer correctly from the first frame instead.
-            // Both the payload and the image are built in this one closure
-            // (rather than split across `.draggable`'s separate payload/
-            // preview closures) so the count can't read a stale selection.
-            let payload = vm.beginDrag(for: thread)
-            let provider = NSItemProvider(object: payload as NSString)
-            let renderer = ImageRenderer(content: DragCountPill(count: vm.selectedThreadKeys.count))
-            renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
-            if let image = renderer.nsImage {
-                provider.previewImageHandler = { completion, _, _ in completion?(image, nil) }
+        .background {
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { rowSize = geo.size }
+                    .onChange(of: geo.size) { _, newValue in rowSize = newValue }
             }
-            return provider
+        }
+        .onContinuousHover(coordinateSpace: .local) { phase in
+            if case .active(let location) = phase { dragAnchor = location }
+        }
+        .draggable(vm.beginDrag(for: thread)) {
+            // Sized to exactly match this row's own on-screen bounds, with
+            // the pill painted at the pointer's last known local position —
+            // since the preview's frame is identical to the source row's
+            // frame, there's no size/position interpolation for SwiftUI to
+            // animate between "the row" and "the pointer": they're already
+            // the same rect, so the preview just appears where it's grabbed.
+            ZStack(alignment: .topLeading) {
+                Color.clear
+                DragCountPill(count: vm.selectedThreadKeys.contains(thread.id) ? vm.selectedThreadKeys.count : 1)
+                    .position(dragAnchor)
+            }
+            .frame(width: rowSize.width, height: rowSize.height)
         }
     }
 }
