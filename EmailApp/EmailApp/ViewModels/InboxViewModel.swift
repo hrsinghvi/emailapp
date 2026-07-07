@@ -1147,6 +1147,17 @@ final class InboxViewModel {
             return
         }
         selectedThreadKeys.removeAll()
+
+        // Dropping an already-starred email onto Starred (etc.) genuinely
+        // changes nothing — don't show a "moved, Undo" toast for a no-op.
+        let anyChanged = snapshots.contains { snapshot in
+            guard let current = messages.first(where: { $0.id == snapshot.id }) else { return false }
+            return current.folder != snapshot.folder
+                || current.providerCategory != snapshot.providerCategory
+                || current.isStarred != snapshot.isStarred
+                || current.isImportant != snapshot.isImportant
+        }
+        guard anyChanged else { return }
         showMoveToast(count: targets.count, target: target, snapshots: snapshots)
     }
 

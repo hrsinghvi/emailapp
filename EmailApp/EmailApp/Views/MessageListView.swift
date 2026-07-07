@@ -117,6 +117,10 @@ private struct ThreadRow: View {
                         .scaleEffect(isChecked ? 1.08 : 1)
                         .animation(.spring(response: 0.22, dampingFraction: 1), value: isChecked)
                         .frame(width: checkboxClusterWidth, height: 22)
+                        // Bigger click target than the visible glyph — the
+                        // padding only widens the hit area (contentShape),
+                        // it doesn't change the checkbox's rendered size.
+                        .padding(6)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.pointerPlain)
@@ -215,6 +219,19 @@ private struct ThreadRow: View {
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.16), value: isHovering)
         .quickLookPreview($preview.previewURL)
+        // Selects this row the instant a press-drag begins, *before*
+        // `.draggable`'s own preview/payload closures evaluate — without
+        // this, dragging a row that wasn't already selected raced with
+        // `beginDrag(for:)`'s mutation below and the preview pill could
+        // render against the still-empty selection ("Move 0 conversations").
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    if !vm.selectedThreadKeys.contains(thread.id) {
+                        vm.selectedThreadKeys = [thread.id]
+                    }
+                }
+        )
         .draggable(vm.beginDrag(for: thread)) {
             DragCountPill(count: vm.selectedThreadKeys.count)
         }
