@@ -244,13 +244,31 @@ private struct ThreadRow: View {
             // frame, there's no size/position interpolation for SwiftUI to
             // animate between "the row" and "the pointer": they're already
             // the same rect, so the preview just appears where it's grabbed.
+            // The pill's center is clamped to stay fully inside that frame
+            // — grabbing near the row's top/bottom edge used to push the
+            // (taller-than-the-row) pill past the frame's bounds, cropping it.
             ZStack(alignment: .topLeading) {
                 Color.clear
                 DragCountPill(count: vm.selectedThreadKeys.contains(thread.id) ? vm.selectedThreadKeys.count : 1)
-                    .position(dragAnchor)
+                    .position(clampedDragAnchor)
             }
             .frame(width: rowSize.width, height: rowSize.height)
         }
+    }
+
+    /// `dragAnchor` clamped so the pill (~40pt tall, up to ~260pt wide) never
+    /// extends past `rowSize`'s edges, regardless of where within the row the
+    /// drag actually started.
+    private var clampedDragAnchor: CGPoint {
+        let halfWidth: CGFloat = 130
+        let halfHeight: CGFloat = 24
+        let x = rowSize.width > 2 * halfWidth
+            ? min(max(dragAnchor.x, halfWidth), rowSize.width - halfWidth)
+            : rowSize.width / 2
+        let y = rowSize.height > 2 * halfHeight
+            ? min(max(dragAnchor.y, halfHeight), rowSize.height - halfHeight)
+            : rowSize.height / 2
+        return CGPoint(x: x, y: y)
     }
 }
 
