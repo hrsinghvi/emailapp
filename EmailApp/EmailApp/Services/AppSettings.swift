@@ -44,7 +44,6 @@ final class AppSettings {
         static let defaultReplyBehavior = "settings.defaultReplyBehavior"
         static let signatures = "settings.signatures"
         static let accountColors = "settings.accountColors"
-        static let gesturesEnabled = "settings.gesturesEnabled"
         static let hasBackfilledMailHistory = "settings.hasBackfilledMailHistory"
         static let hasBackfilledCategories = "settings.hasBackfilledCategories"
         static let hasBackfilledCategoryMail = "settings.hasBackfilledCategoryMail"
@@ -107,10 +106,6 @@ final class AppSettings {
     /// sidebar account dot, Settings account rows.
     var accountColors: [String: String] {
         didSet { defaults.set(accountColors, forKey: Key.accountColors) }
-    }
-
-    var gesturesEnabled: Bool {
-        didSet { defaults.set(gesturesEnabled, forKey: Key.gesturesEnabled) }
     }
 
     /// One-time deep-history backfill (2000 latest from Gmail, everything
@@ -195,7 +190,6 @@ final class AppSettings {
         defaultReplyBehavior = DefaultReplyBehavior(rawValue: defaults.string(forKey: Key.defaultReplyBehavior) ?? "") ?? .reply
         signatures = defaults.dictionary(forKey: Key.signatures) as? [String: String] ?? [:]
         accountColors = defaults.dictionary(forKey: Key.accountColors) as? [String: String] ?? [:]
-        gesturesEnabled = defaults.object(forKey: Key.gesturesEnabled) as? Bool ?? true
         hasBackfilledMailHistory = defaults.object(forKey: Key.hasBackfilledMailHistory) as? Bool ?? false
         hasBackfilledCategories = defaults.object(forKey: Key.hasBackfilledCategories) as? Bool ?? false
         hasBackfilledCategoryMail = defaults.object(forKey: Key.hasBackfilledCategoryMail) as? Bool ?? false

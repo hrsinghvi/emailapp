@@ -465,43 +465,52 @@ enum GmailAPI {
 
     // MARK: - Networking
 
+    private nonisolated static func isThrottled(_ error: Error) -> Bool {
+        if case GmailError.requestFailed(429, _) = error { return true }
+        return false
+    }
+
     private nonisolated static func get(_ urlString: String, accessToken: String) async throws -> Data {
-        guard let url = URL(string: urlString) else {
-            throw GmailError.requestFailed(-1, "bad url: \(urlString)")
+        try await RequestThrottle.gmail.run(isThrottled: isThrottled) {
+            guard let url = URL(string: urlString) else {
+                throw GmailError.requestFailed(-1, "bad url: \(urlString)")
+            }
+            var req = URLRequest(url: url)
+            req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse else {
+                throw GmailError.requestFailed(-1, "no HTTP response")
+            }
+            if http.statusCode == 401 { throw GmailError.unauthorized }
+            guard (200..<300).contains(http.statusCode) else {
+                throw GmailError.requestFailed(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+            }
+            return data
         }
-        var req = URLRequest(url: url)
-        req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else {
-            throw GmailError.requestFailed(-1, "no HTTP response")
-        }
-        if http.statusCode == 401 { throw GmailError.unauthorized }
-        guard (200..<300).contains(http.statusCode) else {
-            throw GmailError.requestFailed(http.statusCode, String(data: data, encoding: .utf8) ?? "")
-        }
-        return data
     }
 
     private nonisolated static func post<T: Encodable>(
         _ urlString: String, accessToken: String, json: T
     ) async throws -> Data {
-        guard let url = URL(string: urlString) else {
-            throw GmailError.requestFailed(-1, "bad url: \(urlString)")
+        try await RequestThrottle.gmail.run(isThrottled: isThrottled) {
+            guard let url = URL(string: urlString) else {
+                throw GmailError.requestFailed(-1, "bad url: \(urlString)")
+            }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONEncoder().encode(json)
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse else {
+                throw GmailError.requestFailed(-1, "no HTTP response")
+            }
+            if http.statusCode == 401 { throw GmailError.unauthorized }
+            guard (200..<300).contains(http.statusCode) else {
+                throw GmailError.requestFailed(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+            }
+            return data
         }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(json)
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else {
-            throw GmailError.requestFailed(-1, "no HTTP response")
-        }
-        if http.statusCode == 401 { throw GmailError.unauthorized }
-        guard (200..<300).contains(http.statusCode) else {
-            throw GmailError.requestFailed(http.statusCode, String(data: data, encoding: .utf8) ?? "")
-        }
-        return data
     }
 }
 

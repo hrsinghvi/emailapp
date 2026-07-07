@@ -747,6 +747,19 @@ final class InboxViewModel {
         archive(message)
     }
 
+    /// Gmail/Graph message ids can go stale across folder moves — a queued
+    /// or rapid-fire archive/delete/restore for the same message can 404
+    /// ("ErrorItemNotFound"/"Not Found") even though the move already
+    /// happened server-side under the hood. Treating that as fatal and
+    /// rolling the optimistic local change back is worse than just trusting
+    /// it went through — that's what made Restore look like it "did
+    /// nothing" instead of just not showing a scary alert.
+    private func isNotFoundError(_ error: Error) -> Bool {
+        if case GmailAPI.GmailError.requestFailed(404, _) = error { return true }
+        if case GraphAPI.GraphError.requestFailed(404, _) = error { return true }
+        return false
+    }
+
     /// Optimistic: message disappears from the inbox list immediately.
     /// Offline: queued, kept archived locally. Online but the call still
     /// fails: a genuine error, rolled back and surfaced.
@@ -775,6 +788,10 @@ final class InboxViewModel {
             } catch {
                 guard NetworkMonitor.shared.isOnline else {
                     enqueueOffline(.archive(messageId: message.id))
+                    return
+                }
+                guard !isNotFoundError(error) else {
+                    AppLog.sync.error("archive 404 for \(message.id), keeping optimistic move: \(error.localizedDescription)")
                     return
                 }
                 if let idx = messages.firstIndex(where: { $0.id == message.id }) {
@@ -820,6 +837,10 @@ final class InboxViewModel {
             } catch {
                 guard NetworkMonitor.shared.isOnline else {
                     enqueueOffline(.unarchive(messageId: message.id))
+                    return
+                }
+                guard !isNotFoundError(error) else {
+                    AppLog.sync.error("unarchive 404 for \(message.id), keeping optimistic move: \(error.localizedDescription)")
                     return
                 }
                 if let idx = messages.firstIndex(where: { $0.id == message.id }) {
@@ -895,6 +916,10 @@ final class InboxViewModel {
                     enqueueOffline(.delete(messageId: message.id))
                     return
                 }
+                guard !isNotFoundError(error) else {
+                    AppLog.sync.error("delete 404 for \(message.id), keeping optimistic move: \(error.localizedDescription)")
+                    return
+                }
                 if let idx = messages.firstIndex(where: { $0.id == message.id }) {
                     messages[idx].folder = previousFolder
                     MessageCacheStore.save(messages)
@@ -943,6 +968,10 @@ final class InboxViewModel {
             } catch {
                 guard NetworkMonitor.shared.isOnline else {
                     enqueueOffline(.restore(messageId: message.id))
+                    return
+                }
+                guard !isNotFoundError(error) else {
+                    AppLog.sync.error("restore 404 for \(message.id), keeping optimistic move: \(error.localizedDescription)")
                     return
                 }
                 if let idx = messages.firstIndex(where: { $0.id == message.id }) {
@@ -994,9 +1023,28 @@ final class InboxViewModel {
                 selectedThreadKeys.formUnion(ids[(a <= b ? a...b : b...a)])
             }
         } else {
-            selectedThreadKeys.removeAll()
+            // A plain click on a row that's already part of a multi-selection
+            // just opens/previews it, keeping the rest checked — matches
+            // Finder/Mail: clicking one of several selected items doesn't
+            // collapse the selection until you release without dragging.
+            // This also keeps the whole set intact for `beginDrag(for:)` when
+            // the same mouse-down turns into a drag instead of a tap.
+            if !selectedThreadKeys.contains(thread.id) {
+                selectedThreadKeys.removeAll()
+            }
             select(thread)
         }
+    }
+
+    /// Called once, right as a row starts being dragged. Selects just this
+    /// row if it wasn't already part of the current selection, then returns
+    /// every selected thread's key as a single comma-joined payload string
+    /// for the sidebar drop targets to decode.
+    func beginDrag(for thread: MessageThread) -> String {
+        if !selectedThreadKeys.contains(thread.id) {
+            selectedThreadKeys = [thread.id]
+        }
+        return selectedThreadKeys.joined(separator: ",")
     }
 
     func toggleSelection(_ thread: MessageThread) {
@@ -1037,6 +1085,141 @@ final class InboxViewModel {
         let targets = selectedMessages
         Task { for message in targets { await setRead(message, read: read) } }
         selectedThreadKeys.removeAll()
+    }
+
+    // MARK: - Drag & drop moves
+
+    /// Snapshot of the fields a drag-drop move can touch, taken right before
+    /// the move so an Undo can put each message back exactly where it was.
+    private struct MessageSnapshot {
+        let id: UUID
+        let folder: String
+        let providerCategory: MessageCategory?
+        let isStarred: Bool
+        let isImportant: Bool
+
+        init(_ message: Message) {
+            id = message.id
+            folder = message.folder
+            providerCategory = message.providerCategory
+            isStarred = message.isStarred
+            isImportant = message.isImportant
+        }
+    }
+
+    /// A "Moved to X — Undo" banner shown above the sidebar footer.
+    struct MoveToast: Identifiable, Equatable {
+        let id = UUID()
+        let text: String
+        static func == (lhs: MoveToast, rhs: MoveToast) -> Bool { lhs.id == rhs.id }
+    }
+
+    var moveToast: MoveToast?
+    private var pendingUndo: (() -> Void)?
+    private var moveToastDismissTask: Task<Void, Never>?
+
+    /// Called when a dragged thread selection is dropped on a sidebar row.
+    /// `target` is that row's folder id ("inbox", "promotions", "starred",
+    /// "important", "archive", "trash", "all", ...).
+    func handleDrop(threadKeys: Set<String>, onto target: String) {
+        guard target != "all" else { return }
+        let targets = messages.filter { threadKeys.contains($0.threadKey) }
+        guard !targets.isEmpty else { return }
+        let snapshots = targets.map(MessageSnapshot.init)
+
+        switch target {
+        case "starred":
+            for message in targets where !message.isStarred { toggleStarred(message) }
+        case "important":
+            for message in targets where !message.isImportant { toggleImportant(message) }
+        case "archive":
+            for message in targets { archive(message) }
+        case "trash":
+            for message in targets { delete(message) }
+        case "inbox", "promotions", "social", "updates", "forums":
+            let category = MessageCategory(rawValue: target) ?? .primary
+            for message in targets {
+                if message.folder == "trash" { restore(message) }
+                else if message.folder != "inbox" { unarchive(message) }
+                setCategory(message, to: category)
+            }
+        default:
+            return
+        }
+        selectedThreadKeys.removeAll()
+        showMoveToast(count: targets.count, target: target, snapshots: snapshots)
+    }
+
+    /// Local-only, like `providerCategory`'s other writers — dragging into a
+    /// tab is a manual override, not a real Gmail label change.
+    private func setCategory(_ message: Message, to category: MessageCategory?) {
+        guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
+        messages[index].providerCategory = category
+        MessageCacheStore.save(messages)
+    }
+
+    private func toastLabel(count: Int, target: String) -> String {
+        let noun = count == 1 ? "Conversation" : "\(count) conversations"
+        switch target {
+        case "starred": return "\(noun) starred"
+        case "important": return "\(noun) marked important"
+        case "archive": return "\(noun) archived"
+        case "trash": return "\(noun) moved to Trash"
+        case "inbox": return "\(noun) moved to Inbox"
+        case "promotions": return "\(noun) moved to \"Promotions\""
+        case "social": return "\(noun) moved to \"Social\""
+        case "updates": return "\(noun) moved to \"Updates\""
+        case "forums": return "\(noun) moved to \"Forums\""
+        default: return "\(noun) updated"
+        }
+    }
+
+    private func showMoveToast(count: Int, target: String, snapshots: [MessageSnapshot]) {
+        let toast = MoveToast(text: toastLabel(count: count, target: target))
+        moveToast = toast
+        pendingUndo = { [weak self] in
+            guard let self else { return }
+            for snapshot in snapshots { self.restoreSnapshot(snapshot) }
+        }
+        moveToastDismissTask?.cancel()
+        moveToastDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(7.5))
+            guard !Task.isCancelled, let self, self.moveToast?.id == toast.id else { return }
+            self.moveToast = nil
+        }
+    }
+
+    /// Reverts one message to exactly the folder/category/star/important
+    /// state it had before the move that produced the current toast — reuses
+    /// the same archive/delete/restore/unarchive paths as the forward move,
+    /// so an Undo stays in sync with Gmail/Outlook instead of just editing
+    /// the local cache.
+    private func restoreSnapshot(_ snapshot: MessageSnapshot) {
+        guard let message = messages.first(where: { $0.id == snapshot.id }) else { return }
+        if message.folder != snapshot.folder {
+            switch snapshot.folder {
+            case "archive": archive(message)
+            case "trash": delete(message)
+            default:
+                if message.folder == "trash" { restore(message) }
+                else if message.folder != "inbox" { unarchive(message) }
+            }
+        }
+        if message.isStarred != snapshot.isStarred { toggleStarred(message) }
+        if message.isImportant != snapshot.isImportant { toggleImportant(message) }
+        setCategory(message, to: snapshot.providerCategory)
+    }
+
+    func undoMove() {
+        pendingUndo?()
+        dismissMoveToast()
+    }
+
+    func dismissMoveToast() {
+        moveToastDismissTask?.cancel()
+        moveToastDismissTask = nil
+        pendingUndo = nil
+        moveToast = nil
     }
 
     // MARK: - Compose / send

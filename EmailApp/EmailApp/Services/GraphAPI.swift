@@ -409,22 +409,29 @@ enum GraphAPI {
 
     // MARK: - Networking
 
+    private nonisolated static func isThrottled(_ error: Error) -> Bool {
+        if case GraphError.requestFailed(429, _) = error { return true }
+        return false
+    }
+
     private nonisolated static func get(_ urlString: String, accessToken: String) async throws -> Data {
-        guard let url = URL(string: urlString) else {
-            throw GraphError.requestFailed(-1, "bad url: \(urlString)")
+        try await RequestThrottle.graph.run(isThrottled: isThrottled) {
+            guard let url = URL(string: urlString) else {
+                throw GraphError.requestFailed(-1, "bad url: \(urlString)")
+            }
+            var req = URLRequest(url: url)
+            req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            req.setValue(immutableIdHeader, forHTTPHeaderField: "Prefer")
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse else {
+                throw GraphError.requestFailed(-1, "no HTTP response")
+            }
+            if http.statusCode == 401 { throw GraphError.unauthorized }
+            guard (200..<300).contains(http.statusCode) else {
+                throw GraphError.requestFailed(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+            }
+            return data
         }
-        var req = URLRequest(url: url)
-        req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        req.setValue(immutableIdHeader, forHTTPHeaderField: "Prefer")
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else {
-            throw GraphError.requestFailed(-1, "no HTTP response")
-        }
-        if http.statusCode == 401 { throw GraphError.unauthorized }
-        guard (200..<300).contains(http.statusCode) else {
-            throw GraphError.requestFailed(http.statusCode, String(data: data, encoding: .utf8) ?? "")
-        }
-        return data
     }
 
     /// IdType="ImmutableId": without this, Graph's message ids are tied to
@@ -450,24 +457,26 @@ enum GraphAPI {
     private nonisolated static func send<T: Encodable>(
         _ urlString: String, method: String, accessToken: String, json: T
     ) async throws -> Data {
-        guard let url = URL(string: urlString) else {
-            throw GraphError.requestFailed(-1, "bad url: \(urlString)")
+        try await RequestThrottle.graph.run(isThrottled: isThrottled) {
+            guard let url = URL(string: urlString) else {
+                throw GraphError.requestFailed(-1, "bad url: \(urlString)")
+            }
+            var req = URLRequest(url: url)
+            req.httpMethod = method
+            req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue(immutableIdHeader, forHTTPHeaderField: "Prefer")
+            req.httpBody = try JSONEncoder().encode(json)
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse else {
+                throw GraphError.requestFailed(-1, "no HTTP response")
+            }
+            if http.statusCode == 401 { throw GraphError.unauthorized }
+            guard (200..<300).contains(http.statusCode) else {
+                throw GraphError.requestFailed(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+            }
+            return data
         }
-        var req = URLRequest(url: url)
-        req.httpMethod = method
-        req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue(immutableIdHeader, forHTTPHeaderField: "Prefer")
-        req.httpBody = try JSONEncoder().encode(json)
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else {
-            throw GraphError.requestFailed(-1, "no HTTP response")
-        }
-        if http.statusCode == 401 { throw GraphError.unauthorized }
-        guard (200..<300).contains(http.statusCode) else {
-            throw GraphError.requestFailed(http.statusCode, String(data: data, encoding: .utf8) ?? "")
-        }
-        return data
     }
 
     private nonisolated static func post<T: Encodable>(
@@ -483,20 +492,22 @@ enum GraphAPI {
     }
 
     private nonisolated static func delete(_ urlString: String, accessToken: String) async throws {
-        guard let url = URL(string: urlString) else {
-            throw GraphError.requestFailed(-1, "bad url: \(urlString)")
-        }
-        var req = URLRequest(url: url)
-        req.httpMethod = "DELETE"
-        req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        req.setValue(immutableIdHeader, forHTTPHeaderField: "Prefer")
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else {
-            throw GraphError.requestFailed(-1, "no HTTP response")
-        }
-        if http.statusCode == 401 { throw GraphError.unauthorized }
-        guard (200..<300).contains(http.statusCode) else {
-            throw GraphError.requestFailed(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+        try await RequestThrottle.graph.run(isThrottled: isThrottled) {
+            guard let url = URL(string: urlString) else {
+                throw GraphError.requestFailed(-1, "bad url: \(urlString)")
+            }
+            var req = URLRequest(url: url)
+            req.httpMethod = "DELETE"
+            req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            req.setValue(immutableIdHeader, forHTTPHeaderField: "Prefer")
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse else {
+                throw GraphError.requestFailed(-1, "no HTTP response")
+            }
+            if http.statusCode == 401 { throw GraphError.unauthorized }
+            guard (200..<300).contains(http.statusCode) else {
+                throw GraphError.requestFailed(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+            }
         }
     }
 }

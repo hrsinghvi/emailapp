@@ -34,7 +34,8 @@ struct SidebarView: View {
                 NavItem(
                     label: "Starred", icon: "star", isActive: vm.selectedFolder == "starred",
                     tint: Color(hex: "#e8c547").opacity(0.85),
-                    badge: badge(vm.threadCount(forFolder: "starred"))
+                    badge: badge(vm.threadCount(forFolder: "starred")),
+                    onDrop: { vm.handleDrop(threadKeys: $0, onto: "starred") }
                 ) {
                     vm.selectedFolder = "starred"
                 }
@@ -54,21 +55,24 @@ struct SidebarView: View {
                 NavItem(
                     label: "Important", icon: "bookmark", isActive: vm.selectedFolder == "important",
                     tint: Color(hex: "#e2678f").opacity(0.85),
-                    badge: badge(vm.threadCount(forFolder: "important"))
+                    badge: badge(vm.threadCount(forFolder: "important")),
+                    onDrop: { vm.handleDrop(threadKeys: $0, onto: "important") }
                 ) {
                     vm.selectedFolder = "important"
                 }
                 NavItem(
                     label: "Archive", icon: "archivebox", isActive: vm.selectedFolder == "archive",
                     tint: Color(hex: "#a8c14e").opacity(0.8),
-                    badge: badge(vm.threadCount(forFolder: "archive"))
+                    badge: badge(vm.threadCount(forFolder: "archive")),
+                    onDrop: { vm.handleDrop(threadKeys: $0, onto: "archive") }
                 ) {
                     vm.selectedFolder = "archive"
                 }
                 NavItem(
                     label: "Trash", icon: "trash", isActive: vm.selectedFolder == "trash",
                     tint: Color(hex: "#7b8fe0").opacity(0.8),
-                    badge: badge(vm.threadCount(forFolder: "trash"))
+                    badge: badge(vm.threadCount(forFolder: "trash")),
+                    onDrop: { vm.handleDrop(threadKeys: $0, onto: "trash") }
                 ) {
                     vm.selectedFolder = "trash"
                 }
@@ -83,6 +87,12 @@ struct SidebarView: View {
 
             Spacer()
 
+            if let toast = vm.moveToast {
+                MoveToastView(text: toast.text, onUndo: { vm.undoMove() }, onDismiss: { vm.dismissMoveToast() })
+                    .padding(.bottom, 8)
+                    .transition(.opacity)
+            }
+
             connectRow
                 .padding(.bottom, 8)
 
@@ -92,6 +102,7 @@ struct SidebarView: View {
         .padding(.top, 34)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Color.appSurface)
+        .animation(.easeOut(duration: 0.18), value: vm.moveToast)
     }
 
     private var composeButton: some View {
@@ -177,6 +188,7 @@ struct SidebarView: View {
 private struct InboxNavItem: View {
     @Bindable var vm: InboxViewModel
     @Binding var isExpanded: Bool
+    @State private var isDropTargeted = false
 
     private var isActive: Bool { vm.selectedFolder == "inbox" && vm.categoryFilter == .primary }
     // Thread count for Primary, matching exactly what "1-50 of N" shows
@@ -219,11 +231,14 @@ private struct InboxNavItem: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 8).fill(isActive ? Color.appHover : .clear))
+                .background(RoundedRectangle(cornerRadius: 8).fill(isActive || isDropTargeted ? Color.appHover : .clear))
                 .animation(.easeOut(duration: 0.18), value: isActive)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.pointerPlain)
+                .dropDestination(for: String.self) { items, _ in
+                    receiveThreadDrop(items) { vm.handleDrop(threadKeys: $0, onto: "inbox") }
+                } isTargeted: { isDropTargeted = $0 }
 
             if isExpanded {
                 let gmailColor = vm.accounts.first(where: { $0.provider == .gmail })?.color ?? Provider.gmail.color
@@ -249,6 +264,7 @@ private struct InboxNavItem: View {
 private struct CategoryNavItem: View {
     @Bindable var vm: InboxViewModel
     let category: MessageCategory
+    @State private var isDropTargeted = false
 
     private var isActive: Bool { vm.selectedFolder == "inbox" && vm.categoryFilter == category }
     private var badge: String? {
@@ -282,11 +298,59 @@ private struct CategoryNavItem: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8).fill(isActive ? Color.appHover : .clear))
+            .background(RoundedRectangle(cornerRadius: 8).fill(isActive || isDropTargeted ? Color.appHover : .clear))
                 .animation(.easeOut(duration: 0.18), value: isActive)
             .contentShape(Rectangle())
         }
         .buttonStyle(.pointerPlain)
+        .dropDestination(for: String.self) { items, _ in
+            receiveThreadDrop(items) { vm.handleDrop(threadKeys: $0, onto: category.rawValue) }
+        } isTargeted: { isDropTargeted = $0 }
+    }
+}
+
+/// Shared by every sidebar drop target — decodes the comma-joined thread-key
+/// payload `MessageListView`'s row `.draggable` produces into a key set, then
+/// hands it to `perform`.
+private func receiveThreadDrop(_ items: [String], perform: (Set<String>) -> Void) -> Bool {
+    guard let blob = items.first else { return false }
+    let keys = Set(blob.split(separator: ",").map(String.init))
+    perform(keys)
+    return true
+}
+
+/// "Moved to X — Undo" banner shown right above the sidebar footer after a
+/// drag-drop move — auto-dismisses itself (see `InboxViewModel.showMoveToast`)
+/// but can also be dismissed or undone here.
+private struct MoveToastView: View {
+    let text: String
+    let onUndo: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "envelope")
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.appCaption)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Button("Undo", action: onUndo)
+                .font(.appCaption.weight(.semibold))
+                .foregroundStyle(Color.appAccent)
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.appCaption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.pointerPlain)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.appHover))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.appBorder))
     }
 }
 
@@ -370,7 +434,9 @@ private struct NavItem: View {
     let isActive: Bool
     var tint: Color = .secondary
     var badge: String? = nil
+    var onDrop: ((Set<String>) -> Void)? = nil
     let action: () -> Void
+    @State private var isDropTargeted = false
 
     var body: some View {
         Button(action: action) {
@@ -396,10 +462,14 @@ private struct NavItem: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isActive ? Color.appHover : .clear)
+                    .fill(isActive || isDropTargeted ? Color.appHover : .clear)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.pointerPlain)
+        .dropDestination(for: String.self) { items, _ in
+            guard let onDrop else { return false }
+            return receiveThreadDrop(items, perform: onDrop)
+        } isTargeted: { isDropTargeted = $0 }
     }
 }

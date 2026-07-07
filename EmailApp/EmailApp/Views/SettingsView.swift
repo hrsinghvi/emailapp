@@ -465,11 +465,6 @@ private struct ShortcutsSettingsSection: View {
         VStack(alignment: .leading, spacing: 4) {
             SettingsHeader(title: "Shortcuts")
 
-            SettingsRow(title: "Swipe gestures", subtitle: "Swipe right to archive, left to mark unread, on message rows") {
-                Toggle("", isOn: $settings.gesturesEnabled).labelsHidden().toggleStyle(.switch)
-            }
-            Divider().overlay(Color.appBorder).padding(.bottom, 6)
-
             ForEach(shortcuts, id: \.1) { shortcut, action in
                 HStack {
                     Text(shortcut).font(.appCaption.weight(.semibold)).foregroundStyle(.secondary)

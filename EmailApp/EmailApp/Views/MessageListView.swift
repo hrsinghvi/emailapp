@@ -10,35 +10,58 @@ struct MessageListView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(vm.pagedThreads) { thread in
-                        SwipeableRow(
-                            rightIcon: vm.selectedFolder == "trash" ? "tray.and.arrow.up.fill"
-                                : vm.selectedFolder == "archive" ? "tray.and.arrow.down.fill" : "archivebox.fill",
-                            onSwipeRight: {
-                                if vm.selectedFolder == "trash" { vm.restoreThread(thread) }
-                                else if vm.selectedFolder == "archive" { vm.unarchiveThread(thread) }
-                                else { vm.archiveThread(thread) }
-                            },
-                            onSwipeLeft: { vm.markThreadUnread(thread) }
-                        ) {
-                            ThreadRow(
-                                vm: vm,
-                                thread: thread,
-                                isOpen: vm.selectedThreadKey == thread.id,
-                                isChecked: vm.selectedThreadKeys.contains(thread.id),
-                                onToggleCheck: { vm.toggleSelection(thread) }
-                            )
-                            .onTapGesture {
-                                let flags = NSEvent.modifierFlags
-                                vm.handleRowClick(thread, shift: flags.contains(.shift), command: flags.contains(.command))
-                            }
-                            .contextMenu {
-                                Button("Ask about this email") {
-                                    vm.selectedThreadKey = thread.id
-                                    vm.isAskAIPanelPresented = true
-                                }
-                            }
-                            .pointerOnHover()
+                        let message = thread.latest
+                        // Right-click (and drag) act on the whole current
+                        // multi-selection when this row is part of it,
+                        // otherwise just this one thread.
+                        let targetKeys: Set<String> = vm.selectedThreadKeys.contains(thread.id) ? vm.selectedThreadKeys : [thread.id]
+                        let targetThreads: [MessageThread] = vm.pagedThreads.filter { targetKeys.contains($0.id) }
+
+                        ThreadRow(
+                            vm: vm,
+                            thread: thread,
+                            isOpen: vm.selectedThreadKey == thread.id,
+                            isChecked: vm.selectedThreadKeys.contains(thread.id),
+                            onToggleCheck: { vm.toggleSelection(thread) }
+                        )
+                        .onTapGesture {
+                            let flags = NSEvent.modifierFlags
+                            vm.handleRowClick(thread, shift: flags.contains(.shift), command: flags.contains(.command))
                         }
+                        .contextMenu {
+                            if targetKeys.count == 1 {
+                                Button("Reply") { vm.composeContext = .reply(message) }
+                                Button("Reply All") { vm.composeContext = .replyAll(message) }
+                                Button("Forward") { vm.composeContext = .forward(message) }
+                                Divider()
+                            }
+                            Button("Archive") { for t in targetThreads { vm.archiveThread(t) } }
+                            Button("Delete") { for t in targetThreads { vm.deleteThread(t) } }
+                            Button("Mark as unread") { for t in targetThreads { vm.markThreadUnread(t) } }
+                            Divider()
+                            Button(message.isStarred ? "Remove from Starred" : "Star") {
+                                for t in targetThreads { for m in t.messages { vm.toggleStarred(m) } }
+                            }
+                            Button(message.isImportant ? "Remove from Important" : "Mark as Important") {
+                                for t in targetThreads { for m in t.messages { vm.toggleImportant(m) } }
+                            }
+                            Divider()
+                            Menu("Move to") {
+                                Button("Inbox") { vm.handleDrop(threadKeys: targetKeys, onto: "inbox") }
+                                Button("Promotions") { vm.handleDrop(threadKeys: targetKeys, onto: "promotions") }
+                                Button("Social") { vm.handleDrop(threadKeys: targetKeys, onto: "social") }
+                                Button("Updates") { vm.handleDrop(threadKeys: targetKeys, onto: "updates") }
+                                Button("Forums") { vm.handleDrop(threadKeys: targetKeys, onto: "forums") }
+                                Button("Archive") { vm.handleDrop(threadKeys: targetKeys, onto: "archive") }
+                                Button("Trash") { vm.handleDrop(threadKeys: targetKeys, onto: "trash") }
+                            }
+                            Divider()
+                            Button("Ask about this email") {
+                                vm.selectedThreadKey = thread.id
+                                vm.isAskAIPanelPresented = true
+                            }
+                        }
+                        .pointerOnHover()
                         .transition(.driftUp)
                         Divider().overlay(Color.appBorder)
                     }
@@ -192,6 +215,31 @@ private struct ThreadRow: View {
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.16), value: isHovering)
         .quickLookPreview($preview.previewURL)
+        .draggable(vm.beginDrag(for: thread)) {
+            DragCountPill(count: vm.selectedThreadKeys.count)
+        }
+    }
+}
+
+/// Cursor-follow drag preview shown while dragging one or more selected rows
+/// onto a sidebar folder — replaces the default full-row snapshot with a
+/// compact "Move N conversations" pill, matching Mail's own drag affordance.
+private struct DragCountPill: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "envelope.fill")
+                .foregroundStyle(Color.black.opacity(0.55))
+            Text(count == 1 ? "Move 1 conversation" : "Move \(count) conversations")
+                .font(.appSubheadline.weight(.medium))
+                .foregroundStyle(.black)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(height: 40, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: false)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white))
     }
 }
 
