@@ -83,9 +83,18 @@ enum AIService {
         if let query = await decideSearchQuery(for: instructions) {
             let searchResults = await WebSearchService.search(query)
             if !searchResults.isEmpty {
-                system += " Web search results are provided below — trust them over your own knowledge for facts, dates, and current events, since your training data may be outdated. If the results don't actually answer what's needed, say you're not sure rather than guessing."
-                let block = searchResults.map { "- \($0.title): \($0.snippet)" }.joined(separator: "\n")
+                // "Trust the results over your own knowledge" alone wasn't
+                // enough — with a small/incomplete result set (e.g. 2 real
+                // matches on a day with a full slate expected), the model
+                // padded the list with plausible-sounding invented ones
+                // instead of reporting only what the results actually say.
+                // This has to explicitly forbid adding anything beyond the
+                // provided results, not just prefer them when present.
+                system += " Web search results are provided below — they are your ONLY source of truth for current facts, dates, scores, and events; your own training data on these topics is outdated and must not be used. Report ONLY what the search results explicitly state. Do NOT add extra items, matches, people, or numbers that aren't in the results, even if it would make the answer feel more complete — an incomplete but accurate answer is correct, a complete but partly invented one is not. If the results don't cover something the user asked about, say that plainly instead of filling the gap."
+                let block = searchResults.map { "- \($0.title) (\($0.url)): \($0.snippet)" }.joined(separator: "\n")
                 prompt += "\n\nWeb search results for \"\(query)\":\n\(block)"
+            } else {
+                system += " You attempted a web search for current facts but got no results — you do NOT have reliable current information on this topic. Say so plainly instead of guessing."
             }
         }
         if !quotedThread.isEmpty {

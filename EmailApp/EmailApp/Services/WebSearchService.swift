@@ -11,7 +11,7 @@ import Foundation
 /// that was unreliable enough to produce confidently wrong answers (see
 /// commit history), which is worse than admitting "I don't know."
 enum WebSearchService {
-    struct Result { let title: String; let snippet: String }
+    struct Result { let title: String; let snippet: String; let url: String }
 
     static let keychainAccount = "ai-web-search-tavily-key"
 
@@ -29,8 +29,14 @@ enum WebSearchService {
         let body: [String: Any] = [
             "api_key": apiKey,
             "query": query,
-            "max_results": limit,
-            "search_depth": "basic",
+            "max_results": max(limit, 6),
+            "search_depth": "advanced",
+            // Grounding queries here are always about current events (scores,
+            // news, prices, schedules — see AIService.decideSearchQuery's
+            // gate), so biasing toward recent/news results is strictly
+            // better than Tavily's general-purpose default ranking.
+            "topic": "news",
+            "days": 3,
         ]
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return [] }
         request.httpBody = payload
@@ -39,14 +45,14 @@ enum WebSearchService {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return [] }
             let decoded = try JSONDecoder().decode(TavilyResponse.self, from: data)
-            return decoded.results.prefix(limit).map { Result(title: $0.title, snippet: $0.content) }
+            return decoded.results.prefix(limit).map { Result(title: $0.title, snippet: $0.content, url: $0.url) }
         } catch {
             return []
         }
     }
 
     private struct TavilyResponse: Decodable {
-        struct Item: Decodable { let title: String; let content: String }
+        struct Item: Decodable { let title: String; let content: String; let url: String }
         let results: [Item]
     }
 }
