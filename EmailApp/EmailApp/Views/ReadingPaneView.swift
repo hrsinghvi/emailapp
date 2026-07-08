@@ -189,8 +189,9 @@ private struct ExpandedMessageCard: View {
                 }
                 Spacer()
                 Text(message.receivedAt, format: .dateTime.month().day().hour().minute())
-                    .font(.appCaption)
+                    .font(.appSubheadline)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
 
                 Button { vm.composeContext = .reply(message) } label: {
                     Image(systemName: "arrowshape.turn.up.left")
