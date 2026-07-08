@@ -29,7 +29,7 @@ struct EmailAppApp: App {
                 // count happened to change after launch. .task(id:) runs
                 // immediately AND on every subsequent change.
                 .task(id: vm.totalUnreadCount) {
-                    NSApplication.shared.dockTile.badgeLabel = vm.totalUnreadCount > 0 ? "\(vm.totalUnreadCount)" : nil
+                    NotificationService.setBadgeCount(vm.totalUnreadCount)
                 }
         }
         .windowStyle(.hiddenTitleBar)

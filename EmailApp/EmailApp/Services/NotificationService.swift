@@ -5,6 +5,17 @@ enum NotificationService {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
+    /// The Dock badge — via `UNUserNotificationCenter`, not
+    /// `NSApplication.shared.dockTile.badgeLabel`. The latter is
+    /// process-local: it's held in the running app's own memory, so the
+    /// moment the app quits, the badge vanishes with it (even though the
+    /// unread count it represented is still true). Setting it through the
+    /// notification center instead makes macOS own the badge state, so it
+    /// stays on the Dock icon regardless of whether the app is running.
+    static func setBadgeCount(_ count: Int) {
+        UNUserNotificationCenter.current().setBadgeCount(count)
+    }
+
     /// Only ever called for genuinely new mail (see `handleRealtimeInsert`) —
     /// never for the initial sync of existing messages.
     static func notifyNewMail(_ message: Message) {
