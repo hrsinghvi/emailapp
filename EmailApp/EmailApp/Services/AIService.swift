@@ -35,6 +35,43 @@ enum AIService {
 
     private static var groundedSystemPrefix: String { "\(dateContext) \(noHallucination)" }
 
+    /// qwen2.5:7b sometimes wraps the actual email body in chatty assistant
+    /// self-talk ("It looks like you've shared a calendar... I'll assume
+    /// your goal is...", "Would you like me to add any specific details?
+    /// Let me know!") despite every system prompt here telling it to output
+    /// only the body — this strips leading/trailing paragraphs that read as
+    /// talking to the user rather than being part of the email itself, as a
+    /// deterministic backstop for when the instruction alone doesn't hold.
+    private static func stripAssistantChatter(_ text: String) -> String {
+        let chatterPhrases = [
+            "would you like", "let me know if", "is there anything else", "feel free to",
+            "i can help with", "i'll assume", "i can further refine", "does this work for you",
+            "here's a refined version", "here's an updated version", "here's a rundown",
+            "sure, here's", "sure! here's", "sure, here is", "based on the search results",
+            "it looks like you", "i hope this helps", "hope this helps",
+        ]
+        func isChatter(_ paragraph: String) -> Bool {
+            guard !paragraph.isEmpty else { return true }
+            let lowered = paragraph.lowercased()
+            return chatterPhrases.contains { lowered.contains($0) }
+        }
+
+        var paragraphs = text.components(separatedBy: "\n\n").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        while let first = paragraphs.first, isChatter(first) { paragraphs.removeFirst() }
+        while let last = paragraphs.last, isChatter(last) { paragraphs.removeLast() }
+        // A lone leftover "---" divider (the model's own way of separating
+        // chatter from the actual draft) reads as a stray line once
+        // whatever it was separating is gone.
+        while let first = paragraphs.first, first == "---" { paragraphs.removeFirst() }
+        while let last = paragraphs.last, last == "---" { paragraphs.removeLast() }
+
+        let cleaned = paragraphs.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        // Stripping everything (a fully chatty, contentless response) is
+        // worse than leaving the original text visible for the user to
+        // notice and discard themselves.
+        return cleaned.isEmpty ? text : cleaned
+    }
+
     private static func threadContext(_ messages: [Message], limit: Int = 12) -> String {
         messages.suffix(limit).map { message in
             "From: \(message.senderName) <\(message.senderEmail)>\nDate: \(message.receivedAt)\nSubject: \(message.subject)\n\(message.body)"
@@ -100,7 +137,7 @@ enum AIService {
     /// some past date, so current-events-shaped requests ("who won X
     /// yesterday") are wrong more often than not without this.
     static func draftEmail(instructions: String, quotedThread: [Message], pastSentToRecipient: [Message]) async throws -> String {
-        var system = "\(groundedSystemPrefix) You are an email assistant. Write only the email body, no subject line, no greeting placeholders unless natural. Match the tone of past sent messages if provided."
+        var system = "\(groundedSystemPrefix) You are an email assistant. Write only the email body, no subject line, no greeting placeholders unless natural. Match the tone of past sent messages if provided. Output ONLY the email body itself — never a question back to the user, an offer to add more detail, or any other comment about what you're doing."
         var prompt = "Instructions: \(instructions)"
         var didSearch = false
 
@@ -133,7 +170,20 @@ enum AIService {
         // out to a "complete-feeling" size even when told not to; less
         // randomness makes it more likely to actually stick to what's in
         // front of it instead of drifting back to pattern completion.
-        return try await OllamaService.generate(prompt: prompt, system: system, maxTokens: 400, temperature: didSearch ? 0.2 : 0.7)
+        let result = try await OllamaService.generate(prompt: prompt, system: system, maxTokens: 400, temperature: didSearch ? 0.2 : 0.7)
+        return stripAssistantChatter(result)
+    }
+
+    /// Follow-up edits to an already-AI-drafted body ("Change with AI" in
+    /// ComposeView, shown once a first draft exists) — revises the existing
+    /// text per free-form instructions and replaces it, unlike
+    /// `draftEmail`'s first pass which appends onto whatever was already in
+    /// the compose window (a signature, usually nothing else yet).
+    static func reviseEmail(instructions: String, currentBody: String) async throws -> String {
+        let system = "\(groundedSystemPrefix) You are an email editing assistant revising an existing email draft per the user's instructions. Output ONLY the revised email body — no preamble, no explanation, no quotes around it, no questions back to the user, no offers to help further."
+        let prompt = "Instructions: \(instructions)\n\nCurrent email draft:\n\(currentBody)"
+        let result = try await OllamaService.generate(prompt: prompt, system: system, maxTokens: 500, temperature: 0.3)
+        return stripAssistantChatter(result)
     }
 
     enum RewriteStyle: String, CaseIterable {
@@ -170,7 +220,8 @@ enum AIService {
     static func rewrite(text: String, style: RewriteStyle) async throws -> String {
         let system = "\(groundedSystemPrefix) You are an email editing assistant. Output ONLY the rewritten email body — no preamble, no explanation, no quotes around it."
         let prompt = "\(style.instruction)\n\nEmail body:\n\(text)"
-        return try await OllamaService.generate(prompt: prompt, system: system, maxTokens: 500)
+        let result = try await OllamaService.generate(prompt: prompt, system: system, maxTokens: 500)
+        return stripAssistantChatter(result)
     }
 
     /// 3g — short ghost-text continuation of what's currently being typed.

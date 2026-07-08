@@ -37,6 +37,17 @@ struct ComposeView: View {
     @State private var bodyUndoStack: [NSAttributedString] = []
     @State private var bodyRedoStack: [NSAttributedString] = []
     @State private var outgoingPreviewURL: URL?
+    /// Flips the AI bar from "Draft with AI" (appends a first pass) to
+    /// "Change with AI" (revises what's already there) after the first
+    /// successful AI draft — a second "draft" call with fresh instructions
+    /// doesn't make sense once there's already AI-authored content to edit.
+    @State private var hasDraftedWithAI = false
+
+    /// Escape minimizes instead of closing (Gmail's behavior) — only the
+    /// header's X actually closes/discards-to-draft. The view (and all its
+    /// @State) stays alive while minimized, so restoring shows exactly
+    /// what was there.
+    @State private var isMinimized = false
 
     private var titleText: String {
         switch context {
@@ -68,6 +79,98 @@ struct ComposeView: View {
     private var isSendDisabled: Bool { toEmails.isEmpty || subject.isEmpty }
 
     var body: some View {
+        Group {
+            if isMinimized {
+                minimizedBar
+            } else {
+                fullComposeContent
+            }
+        }
+        .quickLookPreview($outgoingPreviewURL)
+        .onAppear(perform: prefill)
+        .onAppear { editorController.subjectProvider = { subject } }
+        .onAppear { editorController.senderNameProvider = { composeAccount?.displayName ?? "" } }
+        .onAppear {
+            // Reply/Reply All already have a fixed recipient — the body is
+            // the obvious next thing to type, so focus it instead of
+            // leaving nothing focused. `.async` since the underlying
+            // NSTextView (set by RichTextEditor's makeNSView) may not be
+            // attached to its window in the same runloop turn as this
+            // onAppear.
+            guard toIsFixed else { return }
+            DispatchQueue.main.async { editorController.focus() }
+        }
+        .onAppear {
+            // SwiftUI's .onKeyPress doesn't reliably see Escape when focus
+            // is inside the rich text editor's underlying NSTextView (it's
+            // its own first responder and can swallow the key before it
+            // ever reaches SwiftUI's responder chain) — a local NSEvent
+            // monitor intercepts it regardless of which control has focus.
+            // Escape minimizes (Gmail's behavior) rather than closing —
+            // only the header's X actually discards/closes-to-draft. If
+            // already minimized there's nothing smaller to collapse to, so
+            // the event passes through untouched.
+            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                // Let the link-insert sheet handle its own Escape/Cancel
+                // instead of minimizing the whole compose window underneath it.
+                guard event.keyCode == 53, !showLinkPrompt, !isMinimized else { return event }
+                withAnimation(.easeOut(duration: 0.15)) { isMinimized = true }
+                return nil
+            }
+        }
+        .onDisappear {
+            autosave()
+            if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+        }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(4))
+                autosave()
+            }
+        }
+        .sheet(isPresented: $showLinkPrompt) {
+            LinkPromptView(text: $linkText, url: $linkURL) {
+                editorController.insertLink(text: linkText.isEmpty ? linkURL : linkText, url: linkURL)
+                linkText = ""
+                linkURL = ""
+            }
+        }
+    }
+
+    /// Collapsed Gmail-style title bar shown while minimized — tapping it
+    /// (or the chevron) restores the full compose window with everything
+    /// exactly as it was; only the X here actually closes/discards-to-draft.
+    private var minimizedBar: some View {
+        HStack(spacing: 10) {
+            Text(titleText)
+                .font(.appSubheadline.weight(.semibold))
+                .lineLimit(1)
+            Spacer()
+            Button { withAnimation(.easeOut(duration: 0.15)) { isMinimized = false } } label: {
+                Image(systemName: "chevron.up")
+                    .font(.appCaption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .iconButtonHitArea()
+            }
+            .buttonStyle(.pointerPlain)
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.appCaption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .iconButtonHitArea()
+            }
+            .buttonStyle(.pointerPlain)
+        }
+        .padding(.horizontal, 14)
+        .frame(width: 260, height: 44)
+        .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.appBorder))
+        .shadow(color: .black.opacity(0.4), radius: 16, y: 6)
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { isMinimized = false } }
+    }
+
+    private var fullComposeContent: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(titleText)
@@ -259,7 +362,7 @@ struct ComposeView: View {
                     Button {
                         withAnimation(.easeOut(duration: 0.15)) { isDraftPromptShown.toggle() }
                     } label: {
-                        Label("Draft with AI", systemImage: "sparkle")
+                        Label(hasDraftedWithAI ? "Change with AI" : "Draft with AI", systemImage: "sparkle")
                             .font(.appSubheadline.weight(.medium))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 10)
@@ -298,54 +401,6 @@ struct ComposeView: View {
         .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.appBorder))
         .shadow(color: .black.opacity(0.4), radius: 24, y: 8)
-        .quickLookPreview($outgoingPreviewURL)
-        .onAppear(perform: prefill)
-        .onAppear { editorController.subjectProvider = { subject } }
-        .onAppear { editorController.senderNameProvider = { composeAccount?.displayName ?? "" } }
-        .onAppear {
-            // Reply/Reply All already have a fixed recipient — the body is
-            // the obvious next thing to type, so focus it instead of
-            // leaving nothing focused. `.async` since the underlying
-            // NSTextView (set by RichTextEditor's makeNSView) may not be
-            // attached to its window in the same runloop turn as this
-            // onAppear.
-            guard toIsFixed else { return }
-            DispatchQueue.main.async { editorController.focus() }
-        }
-        .onAppear {
-            // SwiftUI's .onKeyPress doesn't reliably see Escape when focus
-            // is inside the rich text editor's underlying NSTextView (it's
-            // its own first responder and can swallow the key before it
-            // ever reaches SwiftUI's responder chain) — a local NSEvent
-            // monitor intercepts it regardless of which control has focus.
-            // onClose() -> ComposeView disappears -> onDisappear's autosave
-            // already only saves a draft if something's actually been
-            // entered, so empty compose just closes with no leftover draft.
-            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                // Let the link-insert sheet handle its own Escape/Cancel
-                // instead of closing the whole compose window underneath it.
-                guard event.keyCode == 53, !showLinkPrompt else { return event }
-                onClose()
-                return nil
-            }
-        }
-        .onDisappear {
-            autosave()
-            if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
-        }
-        .task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(4))
-                autosave()
-            }
-        }
-        .sheet(isPresented: $showLinkPrompt) {
-            LinkPromptView(text: $linkText, url: $linkURL) {
-                editorController.insertLink(text: linkText.isEmpty ? linkURL : linkText, url: linkURL)
-                linkText = ""
-                linkURL = ""
-            }
-        }
     }
 
     private func prefill() {
@@ -468,19 +523,30 @@ struct ComposeView: View {
         let quoted = quotedThreadMessage
         let pastSent = pastSentMessages
         let previousBody = attributedBody
+        // Once there's already AI-authored content, a follow-up instruction
+        // means "change what's there," not "write another pass and append
+        // it" — the button itself relabels to "Change with AI" for this.
+        let isRevision = hasDraftedWithAI
         draftTask = Task {
             do {
-                let text = try await AIService.draftEmail(instructions: instructions, quotedThread: quoted, pastSentToRecipient: pastSent)
+                let text = isRevision
+                    ? try await AIService.reviseEmail(instructions: instructions, currentBody: previousBody.string)
+                    : try await AIService.draftEmail(instructions: instructions, quotedThread: quoted, pastSentToRecipient: pastSent)
                 try Task.checkCancellation()
                 let attributed = NSAttributedString(
                     string: text,
                     attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.white]
                 )
-                let combined = NSMutableAttributedString(attributedString: previousBody)
-                if combined.length > 0 { combined.append(NSAttributedString(string: "\n\n")) }
-                combined.append(attributed)
                 pushUndo(previousBody)
-                attributedBody = combined
+                if isRevision {
+                    attributedBody = attributed
+                } else {
+                    let combined = NSMutableAttributedString(attributedString: previousBody)
+                    if combined.length > 0 { combined.append(NSAttributedString(string: "\n\n")) }
+                    combined.append(attributed)
+                    attributedBody = combined
+                }
+                hasDraftedWithAI = true
                 isDraftPromptShown = false
                 draftInstructions = ""
             } catch is CancellationError {
