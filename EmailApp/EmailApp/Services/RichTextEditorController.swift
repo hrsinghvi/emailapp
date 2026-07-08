@@ -14,12 +14,24 @@ final class RichTextEditorController {
     /// context — the controller doesn't otherwise know it.
     var subjectProvider: () -> String = { "" }
 
+    /// Makes the body the key text view — used for reply/reply-all/forward,
+    /// where the recipient is already fixed and typing the reply is the
+    /// obvious next action, so the cursor should already be there.
+    func focus() {
+        guard let textView, let window = textView.window else { return }
+        window.makeFirstResponder(textView)
+    }
+
     // MARK: - Ghost-text autocomplete (3g)
 
-    /// The ghost suggestion's range in `textStorage`, when one is showing.
-    /// Never reflected to `attributedText`/autosave/send — see `insertGhost`
-    /// and `acceptGhost`'s doc comments for why.
+    /// The ghost suggestion's range in `textStorage`, when one is showing —
+    /// always exactly 1 character long (see `insertGhost`). Never reflected
+    /// to `attributedText`/autosave/send — see `insertGhost` and
+    /// `acceptGhost`'s doc comments for why.
     private var ghostRange: NSRange?
+    /// The real suggestion text `acceptGhost()` substitutes in for the
+    /// single placeholder character at `ghostRange` when accepted.
+    private var ghostText: String?
     private var completionTask: Task<Void, Never>?
 
     var hasGhost: Bool { ghostRange != nil }
@@ -32,14 +44,11 @@ final class RichTextEditorController {
     /// `didChangeText()`, a ghost that was inserted-then-removed on the
     /// same keystroke would still emit a spurious empty edit notification.
     func clearGhost() {
-        guard let range = ghostRange, let storage = textView?.textStorage, NSMaxRange(range) <= storage.length else {
-            ghostRange = nil
-            return
-        }
+        defer { ghostRange = nil; ghostText = nil }
+        guard let range = ghostRange, let storage = textView?.textStorage, NSMaxRange(range) <= storage.length else { return }
         storage.beginEditing()
         storage.deleteCharacters(in: range)
         storage.endEditing()
-        ghostRange = nil
     }
 
     /// Debounced entry point — called after every real (non-ghost) text
@@ -75,42 +84,65 @@ final class RichTextEditorController {
         }
     }
 
-    /// Inserted directly into storage, deliberately WITHOUT `didChangeText()`
-    /// — layout still redraws the gray text (NSTextView redraws on any
-    /// storage edit regardless), but skipping the delegate notification is
-    /// what keeps this suggestion out of `textDidChange` -> `attributedText`
-    /// -> autosave/send. The suggestion only ever becomes real content via
-    /// `acceptGhost()`, which explicitly re-colors it and *does* call
-    /// `didChangeText()`.
+    /// Rendered as a single `NSTextAttachment` glyph (one placeholder
+    /// character, U+FFFC) instead of the suggestion's real characters — a
+    /// real multi-character insert let the caret land *inside* the
+    /// suggestion (click, arrow keys, selection), making it look and behave
+    /// like ordinary editable text instead of a suggestion you either
+    /// accept whole or dismiss whole. An attachment can only be placed
+    /// before or after as a single unit. Inserted WITHOUT `didChangeText()`
+    /// — layout still redraws regardless, but skipping the delegate
+    /// notification is what keeps this out of `textDidChange` ->
+    /// `attributedText` -> autosave/send. Only `acceptGhost()` (which
+    /// substitutes real text in for the placeholder and *does* call
+    /// `didChangeText()`) turns it into real content.
     private func insertGhost(_ text: String, at location: Int) {
         guard let tv = textView, let storage = tv.textStorage else { return }
-        let attributed = NSAttributedString(string: text, attributes: [
-            .font: currentTypingFont(),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.4),
-        ])
+        let font = currentTypingFont()
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white.withAlphaComponent(0.4)]
+        let size = (text as NSString).size(withAttributes: attrs)
+        guard size.width > 0, size.height > 0 else { return }
+        let image = NSImage(size: size)
+        image.lockFocus()
+        (text as NSString).draw(at: .zero, withAttributes: attrs)
+        image.unlockFocus()
+
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        // Baseline-align the rendered image with surrounding text instead
+        // of the attachment's default vertical centering, which sits high.
+        attachment.bounds = CGRect(x: 0, y: font.descender, width: size.width, height: size.height)
+
         storage.beginEditing()
-        storage.insert(attributed, at: location)
+        storage.insert(NSAttributedString(attachment: attachment), at: location)
         storage.endEditing()
-        ghostRange = NSRange(location: location, length: (text as NSString).length)
+        ghostRange = NSRange(location: location, length: 1)
+        ghostText = text
         tv.setSelectedRange(NSRange(location: location, length: 0))
     }
 
-    /// Tab / Right-arrow when a ghost is showing: turns it into real typed
-    /// content (white, caret moved past it, delegate notified so it
-    /// actually saves/sends from here on). Returns false when there's
-    /// nothing to accept, so the caller falls back to the key's normal
-    /// behavior (real tab / real caret move).
+    /// Tab / Right-arrow when a ghost is showing: substitutes the
+    /// placeholder attachment for the suggestion's real, normally-colored
+    /// text (caret moved past it, delegate notified so it actually
+    /// saves/sends from here on). Returns false when there's nothing to
+    /// accept, so the caller falls back to the key's normal behavior (real
+    /// tab / real caret move).
     @discardableResult
     func acceptGhost() -> Bool {
-        guard let range = ghostRange, let tv = textView, let storage = tv.textStorage, NSMaxRange(range) <= storage.length else {
+        guard let range = ghostRange, let text = ghostText, let tv = textView, let storage = tv.textStorage,
+              NSMaxRange(range) <= storage.length
+        else {
             ghostRange = nil
+            ghostText = nil
             return false
         }
+        let real = NSAttributedString(string: text, attributes: [.font: currentTypingFont(), .foregroundColor: NSColor.white])
         storage.beginEditing()
-        storage.addAttribute(.foregroundColor, value: NSColor.white, range: range)
+        storage.replaceCharacters(in: range, with: real)
         storage.endEditing()
         ghostRange = nil
-        tv.setSelectedRange(NSRange(location: range.location + range.length, length: 0))
+        ghostText = nil
+        tv.setSelectedRange(NSRange(location: range.location + real.length, length: 0))
         tv.didChangeText()
         return true
     }

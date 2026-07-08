@@ -76,7 +76,7 @@ struct ReadingPaneView: View {
 
                     ForEach(thread.messages) { message in
                         if vm.expandedMessageIds.contains(message.id) {
-                            ExpandedMessageCard(vm: vm, message: message)
+                            ExpandedMessageCard(vm: vm, message: message, thread: thread)
                                 .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                         } else {
                             collapsedRow(message)
@@ -138,13 +138,15 @@ struct ReadingPaneView: View {
 private struct ExpandedMessageCard: View {
     let vm: InboxViewModel
     let message: Message
+    let thread: MessageThread
     @State private var htmlHeight: CGFloat
     @State private var preview = AttachmentPreviewController()
     @State private var thumbnails: [String: NSImage] = [:]
 
-    init(vm: InboxViewModel, message: Message) {
+    init(vm: InboxViewModel, message: Message, thread: MessageThread) {
         self.vm = vm
         self.message = message
+        self.thread = thread
         // If this message was prewarmed, its height is already known —
         // start there so there's no loading-spinner flash at all.
         _htmlHeight = State(initialValue: HTMLPrewarmCache.shared.height(for: message.id) ?? 0)
@@ -189,6 +191,30 @@ private struct ExpandedMessageCard: View {
                 Text(message.receivedAt, format: .dateTime.month().day().hour().minute())
                     .font(.appCaption)
                     .foregroundStyle(.secondary)
+
+                Button { vm.composeContext = .reply(message) } label: {
+                    Image(systemName: "arrowshape.turn.up.left")
+                        .font(.appCaption)
+                        .foregroundStyle(.secondary)
+                        .iconButtonHitArea()
+                }
+                .buttonStyle(.pointerPlain)
+
+                Menu {
+                    Button("Reply") { vm.composeContext = .reply(message) }
+                    Button("Forward") { vm.composeContext = .forward(message) }
+                    Divider()
+                    Button("Delete") { vm.delete(message) }
+                    Button("Mark unread from here") { vm.markUnreadFromHere(message, in: thread) }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.appCaption)
+                        .foregroundStyle(.secondary)
+                        .iconButtonHitArea()
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
             }
             .contentShape(Rectangle())
             .onTapGesture { vm.toggleExpand(message) }
@@ -212,11 +238,17 @@ private struct ExpandedMessageCard: View {
 
     /// "me" for any recipient that matches one of the connected accounts,
     /// otherwise the actual address — same convention Gmail's own "to"
-    /// line uses. Falls back to the sender's own address for the rare
-    /// message with no recorded recipients (a self-send, or an older
-    /// realtime-webhook row synced before To/Cc were carried).
+    /// line uses. A realtime-webhook placeholder (`needsFullSync`) has no
+    /// recipients yet by design (see `Message.needsFullSync`'s doc comment)
+    /// — showing the sender's own address there read as "you sent this to
+    /// yourself" for mail that was actually sent to someone else and just
+    /// hasn't finished syncing its real To/Cc in yet. Only falls back to the
+    /// sender's own address for the genuinely rare case of a fully-synced
+    /// message that still has no recorded recipients (an actual self-send).
     private var recipientSummary: String {
-        guard !message.toRecipients.isEmpty else { return message.senderEmail }
+        guard !message.toRecipients.isEmpty else {
+            return message.needsFullSync ? "…" : message.senderEmail
+        }
         let connectedEmails = Set(vm.accounts.map { $0.email.lowercased() })
         return message.toRecipients
             .map { connectedEmails.contains($0.lowercased()) ? "me" : $0 }

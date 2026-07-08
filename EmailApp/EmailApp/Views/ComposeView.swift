@@ -86,7 +86,7 @@ struct ComposeView: View {
             // a zIndex here (at the sibling level in this VStack) or it
             // paints behind whichever field comes after it, same issue the
             // search bar's dropdown had against the toolbar below it.
-            RecipientChipField(placeholder: "To", emails: $toEmails, isDisabled: toIsFixed)
+            RecipientChipField(placeholder: "To", emails: $toEmails, isDisabled: toIsFixed, autoFocus: !toIsFixed)
                 .zIndex(3)
 
             if showCcBcc {
@@ -301,6 +301,16 @@ struct ComposeView: View {
         .quickLookPreview($outgoingPreviewURL)
         .onAppear(perform: prefill)
         .onAppear { editorController.subjectProvider = { subject } }
+        .onAppear {
+            // Reply/Reply All already have a fixed recipient — the body is
+            // the obvious next thing to type, so focus it instead of
+            // leaving nothing focused. `.async` since the underlying
+            // NSTextView (set by RichTextEditor's makeNSView) may not be
+            // attached to its window in the same runloop turn as this
+            // onAppear.
+            guard toIsFixed else { return }
+            DispatchQueue.main.async { editorController.focus() }
+        }
         .onAppear {
             // SwiftUI's .onKeyPress doesn't reliably see Escape when focus
             // is inside the rich text editor's underlying NSTextView (it's

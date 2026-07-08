@@ -52,6 +52,10 @@ struct RecipientChipField: View {
     let placeholder: String
     @Binding var emails: [String]
     var isDisabled: Bool = false
+    /// Focuses this field's text input the moment it appears — used for the
+    /// To field on a brand-new compose, so you can start typing a name
+    /// immediately instead of having to click in first.
+    var autoFocus: Bool = false
 
     @State private var draftText = ""
     @State private var suggestions: [Contact] = []
@@ -111,6 +115,7 @@ struct RecipientChipField: View {
             }
         )
         .onPreferenceChange(FieldHeightPreferenceKey.self) { fieldHeight = $0 }
+        .onAppear { if autoFocus && !isDisabled { isFieldFocused = true } }
         // A floating overlay instead of a sibling in the VStack — the
         // dropdown appears on top of Subject/the editor below it instead
         // of pushing them down the way inline content would.

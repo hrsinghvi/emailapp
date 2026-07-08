@@ -319,6 +319,31 @@ enum GraphAPI {
 
     private nonisolated struct EmptyBody: Encodable {}
 
+    // MARK: - Single message
+
+    /// Refetches one already-known message id with its full To/Cc/body —
+    /// used to heal a realtime-webhook placeholder (`needsFullSync`) that
+    /// the regular windowed inbox/sent sync missed. `folder` is passed in
+    /// rather than derived from the response, since we already know it
+    /// locally and Graph's own folder id isn't in this `$select`.
+    nonisolated static func fetchMessage(id: String, account: Account, accessToken: String, folder: String) async throws -> Message {
+        var comps = URLComponents(string: "\(base)/me/messages/\(id)")!
+        comps.queryItems = [
+            .init(
+                name: "$select",
+                value: "id,subject,bodyPreview,body,from,receivedDateTime,isRead,conversationId,"
+                    + "toRecipients,ccRecipients,hasAttachments,flag,importance"
+            ),
+        ]
+        let data = try await get(comps.url!.absoluteString, accessToken: accessToken)
+        let raw = try JSONDecoder().decode(RawMessage.self, from: data)
+        var message = raw.toMessage(account: account, folder: folder)
+        if raw.hasAttachments == true {
+            message.attachments = try await fetchAttachments(messageId: raw.id, accessToken: accessToken)
+        }
+        return message
+    }
+
     // MARK: - Attachments
 
     nonisolated static func fetchAttachments(messageId: String, accessToken: String) async throws -> [Attachment] {

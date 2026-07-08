@@ -290,7 +290,10 @@ enum GmailAPI {
 
     // MARK: - Single message
 
-    private nonisolated static func fetchMessage(
+    /// Refetches one already-known message id with its full To/Cc/body —
+    /// used to heal a realtime-webhook placeholder (`needsFullSync`) that
+    /// the regular windowed inbox/sent sync missed.
+    nonisolated static func fetchMessage(
         id: String, account: Account, accessToken: String, folder: String
     ) async throws -> Message {
         let data = try await get("\(base)/messages/\(id)?format=full", accessToken: accessToken)

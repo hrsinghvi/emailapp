@@ -568,8 +568,13 @@ final class InboxViewModel {
     }
 
     private var filteredMessages: [Message] {
-        messages
+        // A search should look through all of your mail, not just whatever
+        // sidebar folder/category happens to be open — same as Gmail's own
+        // search box. Trash stays excluded by default, same as "All Mail".
+        let isSearching = !searchFreeText.isEmpty
+        return messages
             .filter { message in
+                if isSearching { return message.folder != "trash" }
                 switch selectedFolder {
                 case "all": return message.folder != "trash"
                 case "starred": return message.isStarred
@@ -578,7 +583,7 @@ final class InboxViewModel {
                 }
             }
             .filter { providerFilter == nil || $0.provider == providerFilter }
-            .filter { selectedFolder != "inbox" || $0.category == categoryFilter }
+            .filter { isSearching || selectedFolder != "inbox" || $0.category == categoryFilter }
             .filter { message in
                 if searchHasAttachment, message.attachments.isEmpty { return false }
                 if searchFromMe, !accounts.contains(where: { $0.email.caseInsensitiveCompare(message.senderEmail) == .orderedSame }) { return false }
@@ -867,6 +872,13 @@ final class InboxViewModel {
 
     func markThreadUnread(_ thread: MessageThread) {
         for message in thread.messages { markUnread(message) }
+    }
+
+    /// Gmail's "Mark unread from here" — marks the given message and every
+    /// later one in the same thread unread, leaving anything before it as-is.
+    func markUnreadFromHere(_ message: Message, in thread: MessageThread) {
+        guard let index = thread.messages.firstIndex(where: { $0.id == message.id }) else { return }
+        for later in thread.messages[index...] { markUnread(later) }
     }
 
     /// Toggles the whole thread to the opposite of its latest message's
@@ -1694,6 +1706,42 @@ final class InboxViewModel {
                 AppLog.sync.error("Manual refresh failed for \(account.email): \(error.localizedDescription)")
             }
         }
+        await healNeedsFullSyncMessages()
+    }
+
+    /// Directly refetches any message still waiting on a realtime-webhook
+    /// placeholder's full sync (`needsFullSync`) by id, rather than relying
+    /// on it happening to fall within `fetchAndMerge`'s windowed "most
+    /// recent N inbox/sent" fetch — which can permanently miss it if
+    /// enough other mail arrives first (the exact bug behind a message's
+    /// "to" field silently staying empty, and the reading pane then
+    /// falling back to showing the sender's own address for it).
+    private func healNeedsFullSyncMessages() async {
+        let pending = messages.filter { $0.needsFullSync }
+        guard !pending.isEmpty else { return }
+        for pendingMessage in pending {
+            guard let account = accounts.first(where: { $0.id == pendingMessage.accountId }),
+                  let token = try? await OAuthManager.shared.validAccessToken(for: account)
+            else { continue }
+            do {
+                var fetched: Message
+                switch pendingMessage.provider {
+                case .gmail:
+                    fetched = try await GmailAPI.fetchMessage(
+                        id: pendingMessage.providerId, account: account, accessToken: token, folder: pendingMessage.folder)
+                case .outlook:
+                    fetched = try await GraphAPI.fetchMessage(
+                        id: pendingMessage.providerId, account: account, accessToken: token, folder: pendingMessage.folder)
+                }
+                guard let index = messages.firstIndex(where: { $0.id == pendingMessage.id }) else { continue }
+                fetched.isStarred = messages[index].isStarred
+                fetched.isImportant = messages[index].isImportant
+                messages[index] = fetched
+            } catch {
+                AppLog.sync.error("needsFullSync heal failed for \(pendingMessage.id): \(error.localizedDescription)")
+            }
+        }
+        MessageCacheStore.save(messages)
     }
 
     private var syncTimerTask: Task<Void, Never>?
@@ -1849,7 +1897,14 @@ final class InboxViewModel {
         // partial update to the index rather than nothing until next sync.
         Task { await ContactsIndexService.recordContacts(from: [message]) }
         let settings = AppSettings.shared
-        if settings.notificationsEnabled, !settings.mutedAccountEmails.contains(row.accountEmail) {
+        // Gmail/Outlook autosave a draft as its own realtime-inserted row
+        // while you're still typing it — same shape as real inbound mail,
+        // but sent "from" your own address. Excluding self-sent rows is
+        // what actually distinguishes "you got a new email" from "you're
+        // still composing one," since a draft's folder can still read
+        // "inbox" server-side.
+        let isSelfSent = accounts.contains { $0.email.caseInsensitiveCompare(message.senderEmail) == .orderedSame }
+        if settings.notificationsEnabled, !settings.mutedAccountEmails.contains(row.accountEmail), !isSelfSent {
             NotificationService.notifyNewMail(message)
         }
         // Fire-and-forget: keeps semantic search current for mail that
@@ -1857,6 +1912,14 @@ final class InboxViewModel {
         // indexForSearch in merge() below. A failure just leaves this one
         // message embeddingless until the next backfill pass catches it.
         Task { await embedAndStore(message) }
+        // Heals this placeholder's To/Cc/body shortly after it arrives,
+        // instead of waiting on the next periodic/manual sync (which can be
+        // many minutes away, or — since fetchAndMerge only looks at the most
+        // recent N inbox/sent messages — might never catch it at all).
+        Task {
+            try? await Task.sleep(for: .seconds(5))
+            await healNeedsFullSyncMessages()
+        }
     }
 
     /// Composes the same text (subject + sender + body, truncated) for both
