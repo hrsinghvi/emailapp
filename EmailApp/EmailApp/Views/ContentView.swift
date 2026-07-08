@@ -523,10 +523,6 @@ private struct ListToolbar: View {
             Spacer()
 
             if vm.selectedThreadKeys.isEmpty {
-                if !vm.pendingSends.isEmpty {
-                    PendingSendBannerStack(vm: vm)
-                }
-
                 if range.total > 0 {
                     Text("\(range.start + 1)–\(range.end) of \(range.total)")
                         .font(.appCaption)
@@ -581,6 +577,14 @@ private struct ListToolbar: View {
         .padding(.leading, 29)
         .padding(.trailing, 6)
         .padding(.vertical, 10)
+        .overlay {
+            // Centered between the checkbox/refresh group on the left and
+            // the pagination controls on the right, rather than living
+            // inline in either group.
+            if vm.selectedThreadKeys.isEmpty, !vm.pendingSends.isEmpty {
+                PendingSendBannerStack(vm: vm)
+            }
+        }
         .animation(.easeOut(duration: 0.18), value: vm.selectedThreadKeys.isEmpty)
     }
 
