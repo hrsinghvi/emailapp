@@ -79,6 +79,12 @@ struct RichTextEditor: NSViewRepresentable {
         textView.allowsUndo = true
         textView.isAutomaticLinkDetectionEnabled = true
         textView.isAutomaticQuoteSubstitutionEnabled = false
+        // Off by default on NSTextView — without it, the view's own
+        // readable-pasteboard-types check excludes image data entirely, so
+        // Paste (menu item and Cmd+V) is greyed out/beeps whenever the
+        // clipboard holds an image (e.g. a screenshot), never even
+        // reaching ComposeTextView.paste(_:) below.
+        textView.importsGraphics = true
         textView.font = .systemFont(ofSize: 14)
         // `.textColor` is a dynamic color that resolves off the view's own
         // NSAppearance — this app is forced dark-only via SwiftUI's

@@ -14,6 +14,11 @@ final class RichTextEditorController {
     /// context — the controller doesn't otherwise know it.
     var subjectProvider: () -> String = { "" }
 
+    /// Set by ComposeView to the signed-in-as account's display name — so
+    /// ghost-text completion knows who's actually writing instead of Ollama
+    /// guessing a random name to sign off with.
+    var senderNameProvider: () -> String = { "" }
+
     /// Makes the body the key text view — used for reply/reply-all/forward,
     /// where the recipient is already fixed and typing the reply is the
     /// obvious next action, so the cursor should already be there.
@@ -99,7 +104,7 @@ final class RichTextEditorController {
             guard !preceding.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             let suggestion: String
             do {
-                suggestion = try await AIService.completeSentence(subject: self.subjectProvider(), precedingText: preceding)
+                suggestion = try await AIService.completeSentence(subject: self.subjectProvider(), precedingText: preceding, senderName: self.senderNameProvider())
             } catch {
                 return
             }

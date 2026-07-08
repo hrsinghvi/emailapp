@@ -301,6 +301,7 @@ struct ComposeView: View {
         .quickLookPreview($outgoingPreviewURL)
         .onAppear(perform: prefill)
         .onAppear { editorController.subjectProvider = { subject } }
+        .onAppear { editorController.senderNameProvider = { composeAccount?.displayName ?? "" } }
         .onAppear {
             // Reply/Reply All already have a fixed recipient — the body is
             // the obvious next thing to type, so focus it instead of
@@ -386,6 +387,19 @@ struct ComposeView: View {
 
     private static func splitRecipients(_ raw: String) -> [String] {
         raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
+    /// The account this compose session is sending as — same resolution
+    /// `prefill()` uses per-context, consolidated here so AI features (3g
+    /// autocomplete) know the real sender's name instead of guessing one.
+    private var composeAccount: Account? {
+        switch context {
+        case .new: return vm.accounts.first
+        case .reply(let message), .replyAll(let message), .forward(let message):
+            return vm.accounts.first { $0.id == message.accountId } ?? vm.accounts.first
+        case .draft(let draft):
+            return vm.accounts.first { $0.email == draft.accountEmail } ?? vm.accounts.first
+        }
     }
 
     private func signatureHTML(forAccount account: Account?) -> String {

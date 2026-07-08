@@ -135,8 +135,9 @@ enum AIService {
     }
 
     /// 3g — short ghost-text continuation of what's currently being typed.
-    static func completeSentence(subject: String, precedingText: String) async throws -> String {
-        let system = "Continue the user's email naturally. Reply with ONLY the next few words that continue their sentence, nothing else. Stop after a short phrase."
+    static func completeSentence(subject: String, precedingText: String, senderName: String) async throws -> String {
+        let identity = senderName.isEmpty ? "" : " The user's name is \(senderName) — if the continuation signs off with a name, use theirs, never invent a different one."
+        let system = "Continue the user's email naturally. Reply with ONLY the next few words that continue their sentence, nothing else. Stop after a short phrase.\(identity)"
         let prompt = "Subject: \(subject)\n\nText so far: \(precedingText)"
         let result = try await OllamaService.generate(prompt: prompt, system: system, maxTokens: 20)
         return result.components(separatedBy: .newlines).first ?? result
