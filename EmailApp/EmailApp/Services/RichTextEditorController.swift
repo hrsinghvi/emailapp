@@ -32,6 +32,16 @@ final class RichTextEditorController {
     /// The real suggestion text `acceptGhost()` substitutes in for the
     /// single placeholder character at `ghostRange` when accepted.
     private var ghostText: String?
+    /// The body's real typing font/color at the moment the ghost was
+    /// inserted, captured so `acceptGhost()` can reuse it exactly. Reading
+    /// `currentTypingFont()` fresh at accept time instead used to produce a
+    /// visibly different font: once the caret sits next to the ghost's
+    /// attachment character, AppKit's automatic typing-attribute
+    /// inheritance can pick up the attachment's own (dimmed) attributes,
+    /// so the accepted text came out in whatever that attachment happened
+    /// to carry rather than the surrounding body text's actual font.
+    private var ghostFont: NSFont?
+    private var ghostRealColor: NSColor?
     private var completionTask: Task<Void, Never>?
 
     var hasGhost: Bool { ghostRange != nil }
@@ -44,11 +54,29 @@ final class RichTextEditorController {
     /// `didChangeText()`, a ghost that was inserted-then-removed on the
     /// same keystroke would still emit a spurious empty edit notification.
     func clearGhost() {
-        defer { ghostRange = nil; ghostText = nil }
+        defer { ghostRange = nil; ghostText = nil; ghostFont = nil; ghostRealColor = nil }
         guard let range = ghostRange, let storage = textView?.textStorage, NSMaxRange(range) <= storage.length else { return }
         storage.beginEditing()
         storage.deleteCharacters(in: range)
         storage.endEditing()
+    }
+
+    /// Clears any showing ghost the same way `clearGhost()` does, but
+    /// returns `range` re-expressed against storage as it will be *after*
+    /// that removal — needed when the caller (a Cmd+A-then-type replace,
+    /// say) already captured `range` before the ghost's 1-character
+    /// removal shifts everything after it, which would otherwise apply the
+    /// caller's edit at the wrong offset or short by one character.
+    func clearGhostAdjusting(_ range: NSRange) -> NSRange {
+        guard let ghost = ghostRange else { return range }
+        defer { clearGhost() }
+        if ghost.location < range.location {
+            return NSRange(location: range.location - ghost.length, length: range.length)
+        }
+        if ghost.location >= range.location, NSMaxRange(ghost) <= NSMaxRange(range) {
+            return NSRange(location: range.location, length: range.length - ghost.length)
+        }
+        return range
     }
 
     /// Debounced entry point — called after every real (non-ghost) text
@@ -99,7 +127,8 @@ final class RichTextEditorController {
     private func insertGhost(_ text: String, at location: Int) {
         guard let tv = textView, let storage = tv.textStorage else { return }
         let font = currentTypingFont()
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white.withAlphaComponent(0.4)]
+        let realColor = (tv.typingAttributes[.foregroundColor] as? NSColor) ?? .white
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: realColor.withAlphaComponent(0.4)]
         let size = (text as NSString).size(withAttributes: attrs)
         guard size.width > 0, size.height > 0 else { return }
         let image = NSImage(size: size)
@@ -118,6 +147,8 @@ final class RichTextEditorController {
         storage.endEditing()
         ghostRange = NSRange(location: location, length: 1)
         ghostText = text
+        ghostFont = font
+        ghostRealColor = realColor
         tv.setSelectedRange(NSRange(location: location, length: 0))
     }
 
@@ -134,14 +165,18 @@ final class RichTextEditorController {
         else {
             ghostRange = nil
             ghostText = nil
+            ghostFont = nil
+            ghostRealColor = nil
             return false
         }
-        let real = NSAttributedString(string: text, attributes: [.font: currentTypingFont(), .foregroundColor: NSColor.white])
+        let real = NSAttributedString(string: text, attributes: [.font: ghostFont ?? currentTypingFont(), .foregroundColor: ghostRealColor ?? .white])
         storage.beginEditing()
         storage.replaceCharacters(in: range, with: real)
         storage.endEditing()
         ghostRange = nil
         ghostText = nil
+        ghostFont = nil
+        ghostRealColor = nil
         tv.setSelectedRange(NSRange(location: range.location + real.length, length: 0))
         tv.didChangeText()
         return true

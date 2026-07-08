@@ -40,11 +40,30 @@ final class ComposeTextView: NSTextView {
     }
 
     override func paste(_ sender: Any?) {
-        if let image = NSPasteboard.general.readObjects(forClasses: [NSImage.self], options: nil)?.first as? NSImage {
+        if let image = Self.imageFromPasteboard(NSPasteboard.general) {
             controller?.insertImage(image)
             return
         }
         super.paste(sender)
+    }
+
+    /// Screenshots (Cmd+Shift+Ctrl+4, or a copied Preview selection) don't
+    /// always come back through `readObjects(forClasses:)` — depending on
+    /// source, the pasteboard only advertises raw `.tiff`/`public.png` data
+    /// with no `NSPasteboardReading`-conforming item, which `readObjects`
+    /// silently returns nil for. Fall back to reading those types directly.
+    private static func imageFromPasteboard(_ pasteboard: NSPasteboard) -> NSImage? {
+        if let objects = pasteboard.readObjects(forClasses: [NSImage.self], options: nil),
+           let image = objects.first as? NSImage, image.isValid {
+            return image
+        }
+        let rawTypes: [NSPasteboard.PasteboardType] = [.tiff, NSPasteboard.PasteboardType("public.png"), NSPasteboard.PasteboardType("public.jpeg")]
+        for type in rawTypes {
+            if let data = pasteboard.data(forType: type), let image = NSImage(data: data), image.isValid {
+                return image
+            }
+        }
+        return nil
     }
 }
 
@@ -141,13 +160,32 @@ struct RichTextEditor: NSViewRepresentable {
         /// text just typed for a markdown pattern and replaces it with the
         /// equivalent formatting — same trigger convention as Notion/Slack.
         func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange, replacementString: String?) -> Bool {
+            parent.controller.deselectImage()
+
             // Any real keystroke clears a showing ghost first (3g) — the
             // user's typed character should land in a clean document, not
             // interleaved with unaccepted suggestion text. Tab/Right-arrow
             // never reach here (they're commands, handled in
             // doCommandBy above), so this only fires for genuine edits.
-            parent.controller.clearGhost()
-            parent.controller.deselectImage()
+            //
+            // `range` was captured by AppKit before this delegate call —
+            // if a ghost is showing, clearing it (a 1-character delete)
+            // shifts storage out from under that range, so applying the
+            // edit ourselves against an adjusted range instead of letting
+            // AppKit re-apply the stale one. Otherwise e.g. Cmd+A then
+            // type only replaced part of the document (the ghost's
+            // removal desynced the select-all range mid-edit).
+            if parent.controller.hasGhost {
+                let adjusted = parent.controller.clearGhostAdjusting(range)
+                guard let storage = textView.textStorage else { return false }
+                storage.beginEditing()
+                storage.replaceCharacters(in: adjusted, with: replacementString ?? "")
+                storage.endEditing()
+                textView.didChangeText()
+                textView.setSelectedRange(NSRange(location: adjusted.location + (replacementString?.count ?? 0), length: 0))
+                parent.controller.scheduleGhostSuggestion()
+                return false
+            }
             defer { parent.controller.scheduleGhostSuggestion() }
 
             guard let trigger = replacementString, trigger == " " || trigger == "\n" else { return true }
