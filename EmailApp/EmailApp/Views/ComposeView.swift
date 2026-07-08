@@ -590,7 +590,7 @@ struct ComposeView: View {
         vm.queueSend(
             draftId: hasSavedOnce ? draftId : nil, origin: origin,
             to: toEmails.joined(separator: ", "), cc: ccEmails.joined(separator: ", "), bcc: bccEmails.joined(separator: ", "),
-            subject: subject, bodyHTML: attributedBody.htmlStringForSending(), attachments: attachments
+            subject: subject, bodyHTML: attributedBody.htmlString(), attachments: attachments
         )
         onClose()
     }

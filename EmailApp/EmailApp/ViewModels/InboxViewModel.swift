@@ -300,9 +300,17 @@ final class InboxViewModel {
     }
 
     private func dispatchSend(
-        origin: DraftOrigin, to: String, cc: String, bcc: String, subject: String, bodyHTML: String,
+        origin: DraftOrigin, to: String, cc: String, bcc: String, subject: String, bodyHTML rawBodyHTML: String,
         attachments: [OutgoingAttachment]
     ) async throws {
+        // The compose editor stores/restores its body as white (its own
+        // background is forced dark) — recolored to black here, the single
+        // choke point every send path (immediate, offline-queued, undo's
+        // resend) routes through, right before it actually leaves the app.
+        // Undoing a send reopens `pending.bodyHTML`, which was never
+        // touched by this, so the reopened draft stays white instead of
+        // coming back black.
+        let bodyHTML = (NSAttributedString(html: rawBodyHTML) ?? NSAttributedString(string: rawBodyHTML)).htmlStringForSending()
         func plainSend() async throws {
             try await send(to: to, cc: cc, bcc: bcc, subject: subject, bodyHTML: bodyHTML, attachments: attachments)
         }

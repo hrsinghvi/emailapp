@@ -135,7 +135,6 @@ struct ContentView: View {
         .task { await vm.startRealtimeUpdates() }
         .task { await vm.startMCPApprovalUpdates() }
         .task { await ContactsIndexService.warmCache() }
-        .overlay(alignment: .topTrailing) { PendingSendBannerStack(vm: vm) }
         .overlay(alignment: .bottomTrailing) {
             if let context = vm.composeContext {
                 ComposeView(vm: vm, context: context, onClose: { vm.composeContext = nil })
@@ -296,6 +295,10 @@ private struct TopBar: View {
                 }
 
                 Spacer()
+
+                if !vm.pendingSends.isEmpty {
+                    PendingSendBannerStack(vm: vm, height: searchBarHeight, width: 212)
+                }
 
                 ConnectivityIndicator(vm: vm)
             }
