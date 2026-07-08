@@ -136,14 +136,40 @@ struct ContentView: View {
         .task { await vm.startMCPApprovalUpdates() }
         .task { await ContactsIndexService.warmCache() }
         .overlay(alignment: .bottomTrailing) {
-            if let context = vm.composeContext {
-                ComposeView(vm: vm, context: context, onClose: { vm.composeContext = nil })
-                    .id(context.id)
-                    .padding(20)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            if !vm.composeSessions.isEmpty {
+                // Newest session first (see `openCompose`) renders leftmost
+                // — a freshly opened compose/reply/forward appears to the
+                // left of whatever's already open instead of replacing it.
+                // `.bottom` alignment lets minimized bars (short) and full
+                // panels (tall) sit together in one row, bottoms flush,
+                // exactly like Gmail interleaves them.
+                HStack(alignment: .bottom, spacing: 14) {
+                    ForEach(vm.composeSessions) { session in
+                        ComposeView(
+                            vm: vm,
+                            context: session.context,
+                            onClose: { vm.closeCompose(session.id) },
+                            isMinimized: Binding(
+                                get: { vm.composeSessions.first { $0.id == session.id }?.isMinimized ?? false },
+                                set: { newValue in
+                                    guard let index = vm.composeSessions.firstIndex(where: { $0.id == session.id }) else { return }
+                                    vm.composeSessions[index].isMinimized = newValue
+                                }
+                            )
+                        )
+                        .id(session.id)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .padding(20)
             }
         }
-        .animation(.spring(response: 0.32, dampingFraction: 1), value: vm.composeContext?.id)
+        .animation(.spring(response: 0.32, dampingFraction: 1), value: vm.composeSessions.map(\.id))
+        .alert("Too many emails open", isPresented: $vm.composeLimitAlertShown) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("You already have 3 emails open at once — that's the max. Send, close, or finish one before starting another.")
+        }
         .overlay {
             if vm.isSettingsPresented {
                 ZStack {
@@ -188,10 +214,10 @@ struct ContentView: View {
                 vm.isSettingsPresented = false
                 return nil
             }
-            if vm.composeContext != nil {
-                vm.composeContext = nil
-                return nil
-            }
+            // Each open ComposeView owns its own Escape handling now
+            // (minimize, not close — see ComposeView's escapeMonitor) since
+            // there's no longer a single "the" compose window to act on
+            // here with multiple possibly open at once.
             if vm.isAskAIPanelPresented {
                 vm.isAskAIPanelPresented = false
                 return nil
@@ -678,13 +704,13 @@ private struct DetailToolbar: View {
                 SummarizeChip(vm: vm)
             }
             ActionPill(title: "Reply", icon: "arrowshape.turn.up.left", tint: .white) {
-                vm.composeContext = .reply(thread.latest)
+                vm.openCompose(.reply(thread.latest))
             }
             ActionPill(title: "Reply All", icon: "arrowshape.turn.up.left.2", tint: .white) {
-                vm.composeContext = .replyAll(thread.latest)
+                vm.openCompose(.replyAll(thread.latest))
             }
             ActionPill(title: "Forward", icon: "arrowshape.turn.up.right", tint: .white) {
-                vm.composeContext = .forward(thread.latest)
+                vm.openCompose(.forward(thread.latest))
             }
         }
         .padding(.horizontal, 6)

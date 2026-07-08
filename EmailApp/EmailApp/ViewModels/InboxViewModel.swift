@@ -35,6 +35,38 @@ final class InboxViewModel {
             case .draft(let draft): return "draft-\(draft.id)"
             }
         }
+
+        /// Shared between `ComposeView`'s own header and the minimized-bar
+        /// title in the compose stack — both need it, and only one of them
+        /// has a `ComposeView` instance around to read it off of.
+        var title: String {
+            switch self {
+            case .new: return "New Message"
+            case .reply: return "Reply"
+            case .replyAll: return "Reply All"
+            case .forward: return "Forward"
+            case .draft(let draft):
+                switch draft.origin {
+                case .new: return "New Message"
+                case .reply: return "Reply"
+                case .replyAll: return "Reply All"
+                case .forward: return "Forward"
+                }
+            }
+        }
+    }
+
+    /// One open compose window — Gmail-style, up to `maxComposeSessions` at
+    /// once, each independently minimizable. `isMinimized` lives here (not
+    /// as `ComposeView`'s own `@State`) so the compose stack can lay
+    /// minimized/open sessions out together while every session's actual
+    /// form state (recipients, body, attachments, AI draft history, ...)
+    /// stays alive in its own `ComposeView` instance the whole time — nothing
+    /// about minimizing ever unmounts that view.
+    struct ComposeSession: Identifiable {
+        let id = UUID()
+        var context: ComposeContext
+        var isMinimized = false
     }
 
     enum SendError: LocalizedError {
@@ -138,11 +170,38 @@ final class InboxViewModel {
     /// per message against a list that can run into the hundreds.
     private var searchResultIdSet: Set<UUID>?
     private(set) var isSearching = false
-    var composeContext: ComposeContext?
+    /// Open compose windows, newest first (the compose stack renders this
+    /// order left-to-right, so a freshly opened one appears to the left of
+    /// whatever was already open — see `openCompose`).
+    var composeSessions: [ComposeSession] = []
+    private static let maxComposeSessions = 3
+    /// Set true when `openCompose` is refused for already being at the cap
+    /// — `ContentView` shows this as an alert, then resets it.
+    var composeLimitAlertShown = false
     /// Settings is an in-window dimmed modal (Claude-desktop style), not a
     /// separate NSWindow — this is the only state it needs.
     var isSettingsPresented = false
     var errorMessage: String?
+
+    /// Opens a new compose window (Compose, Reply, Reply All, Forward, or
+    /// reopening a draft) — never replaces an already-open one, up to
+    /// `maxComposeSessions` at a time. `force` bypasses the cap for Undo
+    /// Send reopening a just-cancelled send: that's the user recovering
+    /// content they already committed to, not a fresh compose action, so
+    /// losing it silently to the cap would be worse than briefly exceeding it.
+    @discardableResult
+    func openCompose(_ context: ComposeContext, force: Bool = false) -> Bool {
+        guard force || composeSessions.count < Self.maxComposeSessions else {
+            composeLimitAlertShown = true
+            return false
+        }
+        composeSessions.insert(ComposeSession(context: context), at: 0)
+        return true
+    }
+
+    func closeCompose(_ id: UUID) {
+        composeSessions.removeAll { $0.id == id }
+    }
     /// Bumped to request the search field take keyboard focus (Cmd+K).
     var searchFocusTrigger = 0
     /// Bumped to request the search field give up keyboard focus — the
@@ -262,7 +321,7 @@ final class InboxViewModel {
         let pending = pendingSends[index]
         pending.task?.cancel()
         pendingSends.remove(at: index)
-        composeContext = .draft(pending.asDraft)
+        openCompose(.draft(pending.asDraft), force: true)
     }
 
     private func performActualSend(_ id: UUID) async {

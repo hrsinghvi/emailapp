@@ -36,7 +36,7 @@ struct EmailAppApp: App {
         .defaultSize(width: 1300, height: 800)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("New Message") { vm.composeContext = .new }
+                Button("New Message") { vm.openCompose(.new) }
                     .keyboardShortcut("n", modifiers: .command)
             }
             // Settings is an in-window dimmed modal (not a separate
@@ -53,17 +53,17 @@ struct EmailAppApp: App {
                 // the setting.
                 Button(AppSettings.shared.defaultReplyBehavior == .reply ? "Reply" : "Reply All") {
                     guard let message = vm.focusedMessage else { return }
-                    vm.composeContext = AppSettings.shared.defaultReplyBehavior == .reply ? .reply(message) : .replyAll(message)
+                    vm.openCompose(AppSettings.shared.defaultReplyBehavior == .reply ? .reply(message) : .replyAll(message))
                 }
                 .keyboardShortcut("r", modifiers: .command)
                 .disabled(vm.focusedMessage == nil)
                 Button(AppSettings.shared.defaultReplyBehavior == .reply ? "Reply All" : "Reply") {
                     guard let message = vm.focusedMessage else { return }
-                    vm.composeContext = AppSettings.shared.defaultReplyBehavior == .reply ? .replyAll(message) : .reply(message)
+                    vm.openCompose(AppSettings.shared.defaultReplyBehavior == .reply ? .replyAll(message) : .reply(message))
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(vm.focusedMessage == nil)
-                Button("Forward") { vm.focusedMessage.map { vm.composeContext = .forward($0) } }
+                Button("Forward") { vm.focusedMessage.map { vm.openCompose(.forward($0)) } }
                     .keyboardShortcut("f", modifiers: .command)
                     .disabled(vm.focusedMessage == nil)
                 Divider()

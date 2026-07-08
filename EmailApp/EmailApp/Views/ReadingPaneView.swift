@@ -193,7 +193,7 @@ private struct ExpandedMessageCard: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
 
-                Button { vm.composeContext = .reply(message) } label: {
+                Button { vm.openCompose(.reply(message)) } label: {
                     Image(systemName: "arrowshape.turn.up.left")
                         .font(.appCaption)
                         .foregroundStyle(.secondary)
@@ -202,8 +202,8 @@ private struct ExpandedMessageCard: View {
                 .buttonStyle(.pointerPlain)
 
                 Menu {
-                    Button("Reply") { vm.composeContext = .reply(message) }
-                    Button("Forward") { vm.composeContext = .forward(message) }
+                    Button("Reply") { vm.openCompose(.reply(message)) }
+                    Button("Forward") { vm.openCompose(.forward(message)) }
                     Divider()
                     Button("Delete") { vm.delete(message) }
                     Button("Mark unread from here") { vm.markUnreadFromHere(message, in: thread) }

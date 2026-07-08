@@ -10,6 +10,12 @@ struct ComposeView: View {
     /// Floats as a non-modal panel (Gmail-style), not a `.sheet` — so there's
     /// no `\.dismiss` environment value to close it with.
     let onClose: () -> Void
+    /// Lives on `InboxViewModel.ComposeSession`, not local `@State` — the
+    /// compose stack needs to read/set it from outside to lay minimized and
+    /// open sessions out together, and driving it externally means this
+    /// view is never unmounted by minimizing (state — recipients, body,
+    /// attachments, AI draft history — stays exactly as it was).
+    @Binding var isMinimized: Bool
 
     @State private var draftId = UUID()
     @State private var origin: DraftOrigin = .new
@@ -43,27 +49,7 @@ struct ComposeView: View {
     /// doesn't make sense once there's already AI-authored content to edit.
     @State private var hasDraftedWithAI = false
 
-    /// Escape minimizes instead of closing (Gmail's behavior) — only the
-    /// header's X actually closes/discards-to-draft. The view (and all its
-    /// @State) stays alive while minimized, so restoring shows exactly
-    /// what was there.
-    @State private var isMinimized = false
-
-    private var titleText: String {
-        switch context {
-        case .new: return "New Message"
-        case .reply: return "Reply"
-        case .replyAll: return "Reply All"
-        case .forward: return "Forward"
-        case .draft(let draft):
-            switch draft.origin {
-            case .new: return "New Message"
-            case .reply: return "Reply"
-            case .replyAll: return "Reply All"
-            case .forward: return "Forward"
-            }
-        }
-    }
+    private var titleText: String { context.title }
 
     /// A fresh reply/reply-all locks "To" to the original sender — but once
     /// it's saved as a draft and reopened, it's the user's own in-progress
@@ -118,6 +104,14 @@ struct ComposeView: View {
                 return nil
             }
         }
+        .onChange(of: isMinimized) { _, minimized in
+            // Reply/Reply All's autofocus already only fires on first
+            // appear — restoring from minimized needs its own trigger since
+            // the underlying NSTextView was never actually torn down, just
+            // hidden, so nothing else would refocus it.
+            guard !minimized, toIsFixed else { return }
+            DispatchQueue.main.async { editorController.focus() }
+        }
         .onDisappear {
             autosave()
             if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
@@ -141,31 +135,31 @@ struct ComposeView: View {
     /// (or the chevron) restores the full compose window with everything
     /// exactly as it was; only the X here actually closes/discards-to-draft.
     private var minimizedBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Text(titleText)
                 .font(.appSubheadline.weight(.semibold))
                 .lineLimit(1)
             Spacer()
             Button { withAnimation(.easeOut(duration: 0.15)) { isMinimized = false } } label: {
                 Image(systemName: "chevron.up")
-                    .font(.appCaption.weight(.semibold))
+                    .font(.appSubheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .iconButtonHitArea()
             }
             .buttonStyle(.pointerPlain)
             Button(action: onClose) {
                 Image(systemName: "xmark")
-                    .font(.appCaption.weight(.semibold))
+                    .font(.appSubheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .iconButtonHitArea()
             }
             .buttonStyle(.pointerPlain)
         }
-        .padding(.horizontal, 14)
-        .frame(width: 260, height: 44)
-        .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.appBorder))
-        .shadow(color: .black.opacity(0.4), radius: 16, y: 6)
+        .padding(.horizontal, 16)
+        .frame(width: 320, height: 52)
+        .background(Color.appSurfaceRaised, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.appBorder.opacity(0.9), lineWidth: 1.5))
+        .shadow(color: .black.opacity(0.45), radius: 20, y: 8)
         .contentShape(Rectangle())
         .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { isMinimized = false } }
     }
@@ -176,6 +170,13 @@ struct ComposeView: View {
                 Text(titleText)
                     .font(.appSubheadline.weight(.semibold))
                 Spacer()
+                Button { withAnimation(.easeOut(duration: 0.15)) { isMinimized = true } } label: {
+                    Image(systemName: "minus")
+                        .font(.appCaption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .iconButtonHitArea()
+                }
+                .buttonStyle(.pointerPlain)
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                         .font(.appCaption.weight(.semibold))

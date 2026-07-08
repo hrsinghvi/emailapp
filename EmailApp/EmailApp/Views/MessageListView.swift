@@ -30,9 +30,9 @@ struct MessageListView: View {
                         }
                         .contextMenu {
                             if targetKeys.count == 1 {
-                                Button("Reply") { vm.composeContext = .reply(message) }
-                                Button("Reply All") { vm.composeContext = .replyAll(message) }
-                                Button("Forward") { vm.composeContext = .forward(message) }
+                                Button("Reply") { vm.openCompose(.reply(message)) }
+                                Button("Reply All") { vm.openCompose(.replyAll(message)) }
+                                Button("Forward") { vm.openCompose(.forward(message)) }
                                 Divider()
                             }
                             Button("Archive") { for t in targetThreads { vm.archiveThread(t) } }

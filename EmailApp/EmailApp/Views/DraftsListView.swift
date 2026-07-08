@@ -11,7 +11,7 @@ struct DraftsListView: View {
                 ForEach(vm.drafts) { draft in
                     DraftRow(draft: draft)
                         .contentShape(Rectangle())
-                        .onTapGesture { vm.composeContext = .draft(draft) }
+                        .onTapGesture { vm.openCompose(.draft(draft)) }
                         .pointerOnHover()
                         .contextMenu {
                             Button("Delete Draft", role: .destructive) { vm.deleteDraft(id: draft.id) }

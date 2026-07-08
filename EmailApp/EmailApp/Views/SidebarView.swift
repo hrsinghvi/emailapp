@@ -107,7 +107,7 @@ struct SidebarView: View {
 
     private var composeButton: some View {
         Button {
-            vm.composeContext = .new
+            vm.openCompose(.new)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "square.and.pencil")
