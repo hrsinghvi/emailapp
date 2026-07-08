@@ -478,6 +478,61 @@ private struct ShortcutsSettingsSection: View {
     }
 }
 
+// MARK: - Tavily web search grounding
+
+/// Local Ollama has no clock and frozen training data — draft/summarize/ask
+/// requests that need current facts (scores, news, prices) hallucinate
+/// without this. Backed by Tavily's free-tier search API; the key lives in
+/// Keychain (`WebSearchService.keychainAccount`), never in `AppSettings`,
+/// consistent with how OAuth tokens are stored elsewhere in the app.
+private struct TavilyAPIKeyRow: View {
+    @State private var keyInput = ""
+    @State private var hasStoredKey = false
+    @State private var didSave = false
+
+    var body: some View {
+        SettingsRow(
+            title: "Web search grounding",
+            subtitle: hasStoredKey
+                ? "Tavily API key configured — Draft with AI and Ask AI can search the web for current facts before answering."
+                : "Add a free Tavily API key (tavily.com) so Draft with AI and Ask AI can ground answers in real, current facts instead of guessing."
+        ) {
+            HStack(spacing: 6) {
+                SecureField("tvly-…", text: $keyInput)
+                    .textFieldStyle(.plain)
+                    .font(.appCaption)
+                    .frame(width: 160)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.appHover))
+                Button(didSave ? "Saved" : "Save") {
+                    let trimmed = keyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return }
+                    try? KeychainService.saveString(trimmed, account: WebSearchService.keychainAccount)
+                    hasStoredKey = true
+                    didSave = true
+                    Task {
+                        try? await Task.sleep(for: .seconds(2))
+                        didSave = false
+                    }
+                }
+                .buttonStyle(.pointerPlain)
+                .font(.appCaption.weight(.medium))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.appHover))
+            }
+        }
+        .onAppear {
+            hasStoredKey = WebSearchService.hasAPIKey()
+            // The stored key isn't echoed back into the field — only
+            // whether one exists (via the subtitle) — so a lost/rotated
+            // key still requires re-entering it, but an already-configured
+            // one isn't re-displayed in plaintext every time Settings opens.
+        }
+    }
+}
+
 // MARK: - Advanced
 
 private struct AdvancedSettingsSection: View {
@@ -494,9 +549,12 @@ private struct AdvancedSettingsSection: View {
         VStack(alignment: .leading, spacing: 4) {
             SettingsHeader(title: "Advanced")
 
-            SettingsRow(title: "AI features", subtitle: "Master switch for Ask AI, thread summaries, draft assist, and autocomplete — all local via Ollama, nothing leaves your Mac") {
+            SettingsRow(title: "AI features", subtitle: "Master switch for Ask AI, thread summaries, draft assist, and autocomplete — runs locally via Ollama (web search grounding below is the one exception that leaves your Mac)") {
                 Toggle("", isOn: $settings.aiFeaturesEnabled).labelsHidden().toggleStyle(.switch)
             }
+            Divider().overlay(Color.appBorder)
+
+            TavilyAPIKeyRow()
             Divider().overlay(Color.appBorder)
 
             SettingsRow(title: "Ghost-text autocomplete", subtitle: "Inline suggestions while composing, driven by the local qwen2.5 model") {

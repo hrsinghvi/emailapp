@@ -80,6 +80,44 @@ enum KeychainService {
         return items.compactMap { $0[kSecAttrAccount as String] as? String }
     }
 
+    /// Generic string storage (API keys, etc.) alongside the OAuth-token
+    /// items above — same keychain service/account scheme, just a plain
+    /// UTF-8 payload instead of `OAuthTokens` JSON.
+    static func saveString(_ value: String, account: String) throws {
+        let data = Data(value.utf8)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        let update = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if update == errSecItemNotFound {
+            var add = query
+            add[kSecValueData as String] = data
+            let status = SecItemAdd(add as CFDictionary, nil)
+            guard status == errSecSuccess else { throw KeychainError.unexpectedStatus(status) }
+        } else if update != errSecSuccess {
+            throw KeychainError.unexpectedStatus(update)
+        }
+    }
+
+    static func loadString(account: String) throws -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = result as? Data else {
+            throw KeychainError.unexpectedStatus(status)
+        }
+        return String(data: data, encoding: .utf8)
+    }
+
     static func delete(account: String) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
