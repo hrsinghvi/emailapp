@@ -296,10 +296,6 @@ private struct TopBar: View {
 
                 Spacer()
 
-                if !vm.pendingSends.isEmpty {
-                    PendingSendBannerStack(vm: vm, height: searchBarHeight, width: 212)
-                }
-
                 ConnectivityIndicator(vm: vm)
             }
         }
@@ -527,6 +523,10 @@ private struct ListToolbar: View {
             Spacer()
 
             if vm.selectedThreadKeys.isEmpty {
+                if !vm.pendingSends.isEmpty {
+                    PendingSendBannerStack(vm: vm)
+                }
+
                 if range.total > 0 {
                     Text("\(range.start + 1)–\(range.end) of \(range.total)")
                         .font(.appCaption)
