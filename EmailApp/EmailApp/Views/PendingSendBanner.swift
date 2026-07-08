@@ -11,7 +11,8 @@ struct PendingSendBannerStack: View {
                 PendingSendBanner(vm: vm, pending: pending)
             }
         }
-        .padding(.bottom, 16)
+        .padding(.top, 44)
+        .padding(.trailing, 16)
     }
 }
 
@@ -21,20 +22,21 @@ private struct PendingSendBanner: View {
     @State private var remaining: Int = 0
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             ProgressView()
-                .controlSize(.small)
+                .controlSize(.regular)
             Text("Sending… (\(remaining)s)")
-                .font(.appSubheadline)
+                .font(.appTitle2)
             Button("Undo") { vm.undoSend(pending.id) }
                 .buttonStyle(.pointerPlain)
-                .font(.appSubheadline.weight(.semibold))
+                .font(.appTitle2.weight(.semibold))
                 .foregroundStyle(Color.appAccent)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 14)
         .background(Color.appSurfaceRaised, in: Capsule())
         .overlay(Capsule().strokeBorder(Color.appBorder))
+        .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
         .onAppear { remaining = max(0, Int(pending.scheduledAt.timeIntervalSinceNow.rounded(.up))) }
         .task {
             while remaining > 0 {

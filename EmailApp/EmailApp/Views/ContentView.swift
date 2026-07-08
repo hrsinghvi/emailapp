@@ -135,7 +135,7 @@ struct ContentView: View {
         .task { await vm.startRealtimeUpdates() }
         .task { await vm.startMCPApprovalUpdates() }
         .task { await ContactsIndexService.warmCache() }
-        .overlay(alignment: .bottom) { PendingSendBannerStack(vm: vm) }
+        .overlay(alignment: .topTrailing) { PendingSendBannerStack(vm: vm) }
         .overlay(alignment: .bottomTrailing) {
             if let context = vm.composeContext {
                 ComposeView(vm: vm, context: context, onClose: { vm.composeContext = nil })
