@@ -148,6 +148,7 @@ struct ContentView: View {
                         ComposeView(
                             vm: vm,
                             context: session.context,
+                            sessionId: session.id,
                             onClose: { vm.closeCompose(session.id) },
                             isMinimized: Binding(
                                 get: { vm.composeSessions.first { $0.id == session.id }?.isMinimized ?? false },
