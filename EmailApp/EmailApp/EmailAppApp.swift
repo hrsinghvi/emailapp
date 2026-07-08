@@ -80,12 +80,41 @@ struct EmailAppApp: App {
                 Button("Focus Search") { vm.searchFocusTrigger += 1 }
                     .keyboardShortcut("k", modifiers: .command)
                 Divider()
-                Button("All Mail") { vm.providerFilter = nil }
-                    .keyboardShortcut("1", modifiers: .command)
-                Button("Gmail") { vm.providerFilter = .gmail }
+                Button("Inbox") {
+                    vm.selectedFolder = "inbox"
+                    vm.categoryFilter = .primary
+                    vm.providerFilter = nil
+                    vm.markSidebarVisited("inbox")
+                }
+                .keyboardShortcut("1", modifiers: .command)
+                Button("Promotions") { vm.selectCategory(.promotions) }
                     .keyboardShortcut("2", modifiers: .command)
-                Button("Outlook") { vm.providerFilter = .outlook }
+                Button("Social") { vm.selectCategory(.social) }
                     .keyboardShortcut("3", modifiers: .command)
+                Button("Updates") { vm.selectCategory(.updates) }
+                    .keyboardShortcut("4", modifiers: .command)
+                Button("Forums") { vm.selectCategory(.forums) }
+                    .keyboardShortcut("5", modifiers: .command)
+                Divider()
+                Button("Gmail") {
+                    vm.selectedFolder = "inbox"
+                    vm.categoryFilter = .primary
+                    vm.providerFilter = .gmail
+                    vm.markSidebarVisited("gmail")
+                }
+                .keyboardShortcut("g", modifiers: .command)
+                Button("Outlook") {
+                    vm.selectedFolder = "inbox"
+                    vm.categoryFilter = .primary
+                    vm.providerFilter = .outlook
+                    vm.markSidebarVisited("outlook")
+                }
+                .keyboardShortcut("o", modifiers: .command)
+                Divider()
+                Button("Trash") { vm.selectedFolder = "trash" }
+                    .keyboardShortcut("t", modifiers: .command)
+                Button("Drafts") { vm.selectedFolder = "drafts" }
+                    .keyboardShortcut("d", modifiers: .command)
             }
         }
     }

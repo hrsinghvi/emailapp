@@ -197,6 +197,7 @@ private struct InboxNavItem: View {
         let count = vm.threadCount(for: .primary)
         return count > 0 ? "\(count)" : nil
     }
+    private var newMailCount: Int { vm.newMailCount(forFolder: "inbox") }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -210,6 +211,7 @@ private struct InboxNavItem: View {
                     vm.selectedFolder = "inbox"
                     vm.categoryFilter = .primary
                     vm.providerFilter = nil
+                    vm.markSidebarVisited("inbox")
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: MessageCategory.primary.icon)
@@ -218,6 +220,9 @@ private struct InboxNavItem: View {
                         Text("Inbox")
                             .font(.appSubheadline.weight(.medium))
                         Spacer()
+                        if newMailCount > 0 {
+                            NewMailBadge(count: newMailCount)
+                        }
                         if let unreadBadge {
                             Text(unreadBadge)
                                 .font(.appCaption2.weight(.semibold))
@@ -253,15 +258,17 @@ private struct InboxNavItem: View {
             if isExpanded {
                 let gmailColor = vm.accounts.first(where: { $0.provider == .gmail })?.color ?? Provider.gmail.color
                 let outlookColor = vm.accounts.first(where: { $0.provider == .outlook })?.color ?? Provider.outlook.color
-                ProviderShortcut(label: "Gmail", color: gmailColor, isActive: isActive && vm.providerFilter == .gmail) {
+                ProviderShortcut(label: "Gmail", color: gmailColor, isActive: isActive && vm.providerFilter == .gmail, newCount: vm.newMailCount(forFolder: "gmail")) {
                     vm.selectedFolder = "inbox"
                     vm.categoryFilter = .primary
                     vm.providerFilter = .gmail
+                    vm.markSidebarVisited("gmail")
                 }
-                ProviderShortcut(label: "Outlook", color: outlookColor, isActive: isActive && vm.providerFilter == .outlook) {
+                ProviderShortcut(label: "Outlook", color: outlookColor, isActive: isActive && vm.providerFilter == .outlook, newCount: vm.newMailCount(forFolder: "outlook")) {
                     vm.selectedFolder = "inbox"
                     vm.categoryFilter = .primary
                     vm.providerFilter = .outlook
+                    vm.markSidebarVisited("outlook")
                 }
             }
         }
@@ -281,12 +288,11 @@ private struct CategoryNavItem: View {
         let count = vm.threadCount(for: category)
         return count > 0 ? "\(count)" : nil
     }
+    private var newMailCount: Int { vm.newMailCount(for: category) }
 
     var body: some View {
         Button {
-            vm.selectedFolder = "inbox"
-            vm.categoryFilter = category
-            vm.providerFilter = nil
+            vm.selectCategory(category)
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: category.icon)
@@ -295,6 +301,9 @@ private struct CategoryNavItem: View {
                 Text(category.label)
                     .font(.appSubheadline.weight(.medium))
                 Spacer()
+                if newMailCount > 0 {
+                    NewMailBadge(count: newMailCount)
+                }
                 if let badge {
                     Text(badge)
                         .font(.appCaption2.weight(.semibold))
@@ -316,6 +325,23 @@ private struct CategoryNavItem: View {
         .dropDestination(for: String.self) { items, _ in
             receiveThreadDrop(items) { vm.handleDrop(threadKeys: $0, onto: category.rawValue) }
         } isTargeted: { isDropTargeted = $0 }
+    }
+}
+
+/// Colored "new mail since you last clicked into this" pill — distinct
+/// from the grey total-count badges elsewhere in the sidebar. Doesn't
+/// clear on read, only when the destination is actually clicked into
+/// again — see `InboxViewModel.newMailCount`'s doc comment.
+private struct NewMailBadge: View {
+    let count: Int
+
+    var body: some View {
+        Text("\(count)")
+            .font(.appCaption2.weight(.bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(Color(hex: "#ff6250")))
     }
 }
 
@@ -368,6 +394,7 @@ private struct ProviderShortcut: View {
     let label: String
     let color: Color
     let isActive: Bool
+    var newCount: Int = 0
     let action: () -> Void
 
     var body: some View {
@@ -378,6 +405,9 @@ private struct ProviderShortcut: View {
                 Text(label)
                     .font(.appSubheadline)
                 Spacer()
+                if newCount > 0 {
+                    NewMailBadge(count: newCount)
+                }
             }
             .foregroundStyle(isActive ? .primary : .secondary)
             .padding(.horizontal, 8)

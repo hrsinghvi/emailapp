@@ -283,6 +283,52 @@ final class InboxViewModel {
         }
     }
 
+    // MARK: - Sidebar "new mail" indicators
+
+    /// Per-sidebar-destination "last clicked into" timestamps, backing the
+    /// colored new-mail badges below — deliberately distinct from an unread
+    /// count (which clears the moment a message is *read*): this only
+    /// resets when the user actually clicks into that Inbox/Gmail/Outlook/
+    /// category row, so mail that arrives while they're reading something
+    /// else still counts as "new" until they go back and look.
+    private var sidebarLastVisited: [String: Date] = [:]
+    /// Baseline for a destination the user hasn't explicitly clicked into
+    /// yet this session — "new" then means "since launch" rather than
+    /// showing every message that ever existed as unread.
+    private let sidebarVisitBaseline = Date()
+
+    func markSidebarVisited(_ key: String) {
+        sidebarLastVisited[key] = Date()
+    }
+
+    /// Shared by the sidebar's category rows and the Cmd+2..5 shortcuts.
+    func selectCategory(_ category: MessageCategory) {
+        selectedFolder = "inbox"
+        categoryFilter = category
+        providerFilter = nil
+        markSidebarVisited("category-\(category.rawValue)")
+    }
+
+    private func newMailCount(sidebarKey key: String, matching predicate: (Message) -> Bool) -> Int {
+        let since = sidebarLastVisited[key] ?? sidebarVisitBaseline
+        return messages.filter { predicate($0) && $0.receivedAt > since }.count
+    }
+
+    /// Inbox / Gmail / Outlook new-mail badge.
+    func newMailCount(forFolder key: String) -> Int {
+        switch key {
+        case "inbox": return newMailCount(sidebarKey: "inbox") { $0.folder == "inbox" }
+        case "gmail": return newMailCount(sidebarKey: "gmail") { $0.folder == "inbox" && $0.provider == .gmail }
+        case "outlook": return newMailCount(sidebarKey: "outlook") { $0.folder == "inbox" && $0.provider == .outlook }
+        default: return 0
+        }
+    }
+
+    /// Promotions/Social/Updates/Forums new-mail badge.
+    func newMailCount(for category: MessageCategory) -> Int {
+        newMailCount(sidebarKey: "category-\(category.rawValue)") { $0.folder == "inbox" && $0.category == category }
+    }
+
     init() {
         accounts = []
         messages = []
