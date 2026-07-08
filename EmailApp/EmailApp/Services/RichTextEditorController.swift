@@ -436,7 +436,7 @@ final class RichTextEditorController {
         rect.origin.x += tv.textContainerOrigin.x
         rect.origin.y += tv.textContainerOrigin.y
 
-        let overlay = ImageResizeOverlay(frame: rect)
+        let overlay = ImageResizeOverlay(imageRect: rect)
         resizeStartWidth = attachment.bounds.width
         overlay.onDrag = { [weak self] deltaX in
             self?.resizeImage(range: range, attachment: attachment, image: image, deltaX: deltaX)
@@ -492,7 +492,7 @@ final class RichTextEditorController {
         var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: container)
         rect.origin.x += tv.textContainerOrigin.x
         rect.origin.y += tv.textContainerOrigin.y
-        overlay.frame = rect
+        overlay.reposition(imageRect: rect)
     }
 
     private func removeImage(range: NSRange) {
