@@ -151,9 +151,10 @@ struct ComposeView: View {
 
     private var fullComposeContent: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
+            HStack(spacing: 10) {
                 Text(titleText)
                     .font(.appSubheadline.weight(.semibold))
+                fromPill
                 Spacer()
                 Button { withAnimation(.easeOut(duration: 0.15)) { isMinimized = true } } label: {
                     Image(systemName: "minus")
@@ -175,8 +176,6 @@ struct ComposeView: View {
             // a zIndex here (at the sibling level in this VStack) or it
             // paints behind whichever field comes after it, same issue the
             // search bar's dropdown had against the toolbar below it.
-            fromRow
-
             RecipientChipField(placeholder: "To", emails: $toEmails, isDisabled: toIsFixed, autoFocus: !toIsFixed)
                 .zIndex(3)
 
@@ -682,47 +681,47 @@ struct ComposeView: View {
         onClose()
     }
 
-    /// Mandatory From account picker — shown on every compose window,
-    /// replies included, so it's always visible which account will
-    /// actually send even when (as with reply/reply-all) there's only one
-    /// valid choice. See `fromAccountChoices` for why that set is
-    /// sometimes locked to a single account.
-    private var fromRow: some View {
-        HStack(spacing: 10) {
-            Text("From")
-                .font(.appCaption)
-                .foregroundStyle(.secondary)
-                .frame(width: 32, alignment: .leading)
-            Menu {
-                ForEach(fromAccountChoices) { account in
-                    Button {
-                        selectedAccountEmail = account.email
-                    } label: {
-                        if account.email == selectedAccountEmail {
-                            Label(account.email, systemImage: "checkmark")
-                        } else {
-                            Text(account.email)
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Circle().fill(selectedAccount?.color ?? .secondary).frame(width: 7, height: 7)
-                    Text(selectedAccountEmail.isEmpty ? "Select account" : selectedAccountEmail)
-                        .font(.appSubheadline)
-                        .foregroundStyle(selectedAccountEmail.isEmpty ? .secondary : .primary)
-                    if fromAccountChoices.count > 1 {
-                        Image(systemName: "chevron.down")
-                            .font(.appCaption2)
-                            .foregroundStyle(.secondary)
+    /// Mandatory From account picker — a small provider-colored pill inline
+    /// with the title, shown on every compose window (replies included) so
+    /// it's always visible which account will actually send, even when (as
+    /// with reply/reply-all) there's only one valid choice. See
+    /// `fromAccountChoices` for why that set is sometimes locked to a
+    /// single account.
+    private var fromPill: some View {
+        let tint = selectedAccount?.color ?? .secondary
+        return Menu {
+            ForEach(fromAccountChoices) { account in
+                Button {
+                    selectedAccountEmail = account.email
+                } label: {
+                    if account.email == selectedAccountEmail {
+                        Label(account.email, systemImage: "checkmark")
+                    } else {
+                        Text(account.email)
                     }
                 }
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .disabled(fromAccountChoices.count <= 1)
-            Spacer()
+        } label: {
+            HStack(spacing: 5) {
+                Circle().fill(tint).frame(width: 6, height: 6)
+                Text(selectedAccountEmail.isEmpty ? "Select account" : selectedAccountEmail)
+                    .font(.appCaption)
+                    .lineLimit(1)
+                if fromAccountChoices.count > 1 {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                }
+            }
+            .foregroundStyle(selectedAccountEmail.isEmpty ? .secondary : tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(tint.opacity(0.16)))
+            .overlay(Capsule().strokeBorder(tint.opacity(0.4), lineWidth: 1))
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(fromAccountChoices.count <= 1)
     }
 
     private func field(_ placeholder: String, text: Binding<String>) -> some View {
