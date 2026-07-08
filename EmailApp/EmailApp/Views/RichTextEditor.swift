@@ -7,12 +7,54 @@ import SwiftUI
 /// commands this needs (lists, indent) — TextKit natively supports every
 /// formatting operation the toolbar exposes, and round-trips to HTML via
 /// `NSAttributedString`'s built-in reader/writer for storage and sending.
+/// `NSTextView` subclass adding two behaviors stock `NSTextView` doesn't
+/// have: clicking an inline image selects it (so the resize/preset chrome
+/// can show) instead of just placing the caret inside it, and pasting an
+/// image routes through the same capped-size `insertImage` path the toolbar
+/// button uses instead of Cocoa's default paste, which inserts pasted
+/// images at full native pixel size.
+final class ComposeTextView: NSTextView {
+    weak var controller: RichTextEditorController?
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if let charIndex = attachmentCharacterIndex(at: point) {
+            controller?.selectImage(at: NSRange(location: charIndex, length: 1))
+            return
+        }
+        controller?.deselectImage()
+        super.mouseDown(with: event)
+    }
+
+    private func attachmentCharacterIndex(at point: NSPoint) -> Int? {
+        guard let layoutManager, let textContainer, let textStorage else { return nil }
+        let containerPoint = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
+        guard glyphIndex < layoutManager.numberOfGlyphs else { return nil }
+        let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        guard charIndex < textStorage.length,
+              textStorage.attribute(.attachment, at: charIndex, effectiveRange: nil) is NSTextAttachment
+        else { return nil }
+        let glyphRect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
+        return glyphRect.contains(containerPoint) ? charIndex : nil
+    }
+
+    override func paste(_ sender: Any?) {
+        if let image = NSPasteboard.general.readObjects(forClasses: [NSImage.self], options: nil)?.first as? NSImage {
+            controller?.insertImage(image)
+            return
+        }
+        super.paste(sender)
+    }
+}
+
 struct RichTextEditor: NSViewRepresentable {
     @Binding var attributedText: NSAttributedString
     let controller: RichTextEditorController
 
     func makeNSView(context: Context) -> NSScrollView {
-        let textView = NSTextView()
+        let textView = ComposeTextView()
+        textView.controller = controller
         textView.delegate = context.coordinator
         textView.isRichText = true
         textView.allowsUndo = true
@@ -44,6 +86,10 @@ struct RichTextEditor: NSViewRepresentable {
         textView.textContainer?.widthTracksTextView = true
 
         controller.textView = textView
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scrollView.contentView, queue: .main) { [weak controller] _ in
+            controller?.deselectImage()
+        }
         return scrollView
     }
 
@@ -101,6 +147,7 @@ struct RichTextEditor: NSViewRepresentable {
             // never reach here (they're commands, handled in
             // doCommandBy above), so this only fires for genuine edits.
             parent.controller.clearGhost()
+            parent.controller.deselectImage()
             defer { parent.controller.scheduleGhostSuggestion() }
 
             guard let trigger = replacementString, trigger == " " || trigger == "\n" else { return true }

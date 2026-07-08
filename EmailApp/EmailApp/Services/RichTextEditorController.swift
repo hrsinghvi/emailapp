@@ -354,4 +354,113 @@ final class RichTextEditorController {
         tv.didChangeText()
         tv.setSelectedRange(NSRange(location: range.location + 1, length: 0))
     }
+
+    // MARK: - Inline image selection & resize (3g)
+
+    /// The attachment character range currently showing resize chrome, if
+    /// any — always exactly 1 character (an attachment is always a single
+    /// placeholder glyph), same convention as `ghostRange`.
+    private var selectedImageRange: NSRange?
+    private weak var imageOverlay: ImageResizeOverlay?
+    private var resizeStartWidth: CGFloat = 0
+
+    /// Called by `ComposeTextView.mouseDown` when the click landed on an
+    /// inline image glyph — selects that one character (so keyboard delete
+    /// removes the whole image, matching how a click-selected image behaves
+    /// in every rich text editor) and shows the resize/preset chrome.
+    func selectImage(at range: NSRange) {
+        guard let tv = textView, let storage = tv.textStorage,
+              NSMaxRange(range) <= storage.length,
+              let attachment = storage.attribute(.attachment, at: range.location, effectiveRange: nil) as? NSTextAttachment,
+              let image = attachment.image
+        else {
+            deselectImage()
+            return
+        }
+        selectedImageRange = range
+        tv.setSelectedRange(range)
+        showOverlay(for: range, attachment: attachment, image: image)
+    }
+
+    func deselectImage() {
+        selectedImageRange = nil
+        imageOverlay?.removeFromSuperview()
+        imageOverlay = nil
+    }
+
+    private func showOverlay(for range: NSRange, attachment: NSTextAttachment, image: NSImage) {
+        imageOverlay?.removeFromSuperview()
+        guard let tv = textView, let layoutManager = tv.layoutManager, let container = tv.textContainer else { return }
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: container)
+        rect.origin.x += tv.textContainerOrigin.x
+        rect.origin.y += tv.textContainerOrigin.y
+
+        let overlay = ImageResizeOverlay(frame: rect)
+        resizeStartWidth = attachment.bounds.width
+        overlay.onDrag = { [weak self] deltaX in
+            self?.resizeImage(range: range, attachment: attachment, image: image, deltaX: deltaX)
+        }
+        overlay.onDragEnd = { [weak self] in self?.textView?.didChangeText() }
+        overlay.onPreset = { [weak self] preset in self?.applyPreset(preset, range: range, attachment: attachment, image: image) }
+        overlay.onRemove = { [weak self] in self?.removeImage(range: range) }
+        tv.addSubview(overlay)
+        imageOverlay = overlay
+    }
+
+    private func maxImageWidth() -> CGFloat {
+        guard let container = textView?.textContainer else { return 360 }
+        return max(container.size.width - 16, 40)
+    }
+
+    private func resizeImage(range: NSRange, attachment: NSTextAttachment, image: NSImage, deltaX: CGFloat) {
+        guard let tv = textView else { return }
+        let width = min(max(resizeStartWidth + deltaX, 40), maxImageWidth())
+        let aspect = image.size.height / max(image.size.width, 1)
+        attachment.bounds = CGRect(x: 0, y: 0, width: width, height: width * aspect)
+        relayoutAttachment(range: range)
+        repositionOverlay(for: range)
+        _ = tv
+    }
+
+    private func applyPreset(_ preset: ImageResizeOverlay.ImagePreset, range: NSRange, attachment: NSTextAttachment, image: NSImage) {
+        let maxWidth = maxImageWidth()
+        let width: CGFloat
+        switch preset {
+        case .small: width = min(160, maxWidth)
+        case .bestFit: width = min(360, maxWidth)
+        case .original: width = min(image.size.width, maxWidth)
+        }
+        let aspect = image.size.height / max(image.size.width, 1)
+        attachment.bounds = CGRect(x: 0, y: 0, width: width, height: width * aspect)
+        resizeStartWidth = width
+        relayoutAttachment(range: range)
+        textView?.didChangeText()
+        repositionOverlay(for: range)
+    }
+
+    private func relayoutAttachment(range: NSRange) {
+        guard let layoutManager = textView?.layoutManager else { return }
+        layoutManager.invalidateGlyphs(forCharacterRange: range, changeInLength: 0, actualCharacterRange: nil)
+        layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+        textView?.needsDisplay = true
+    }
+
+    private func repositionOverlay(for range: NSRange) {
+        guard let tv = textView, let layoutManager = tv.layoutManager, let container = tv.textContainer, let overlay = imageOverlay else { return }
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: container)
+        rect.origin.x += tv.textContainerOrigin.x
+        rect.origin.y += tv.textContainerOrigin.y
+        overlay.frame = rect
+    }
+
+    private func removeImage(range: NSRange) {
+        guard let tv = textView, let storage = tv.textStorage, NSMaxRange(range) <= storage.length else { return }
+        storage.beginEditing()
+        storage.deleteCharacters(in: range)
+        storage.endEditing()
+        tv.didChangeText()
+        deselectImage()
+    }
 }
