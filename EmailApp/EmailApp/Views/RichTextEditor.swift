@@ -47,6 +47,24 @@ final class ComposeTextView: NSTextView {
         super.paste(sender)
     }
 
+    /// A caret next to an inline image otherwise stretches to the whole
+    /// line's fragment height (an image on the line inflates that height
+    /// far past normal text), towering over the actual text. Shrinks it to
+    /// the current typing font's height instead, anchored to the same
+    /// baseline-ish bottom edge AppKit already computed for `rect`.
+    override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
+        let font = (typingAttributes[.font] as? NSFont) ?? .systemFont(ofSize: 14)
+        let fontHeight = font.ascender - font.descender
+        guard fontHeight > 0, fontHeight < rect.height else {
+            super.drawInsertionPoint(in: rect, color: color, turnedOn: flag)
+            return
+        }
+        var adjusted = rect
+        adjusted.origin.y = rect.maxY - fontHeight
+        adjusted.size.height = fontHeight
+        super.drawInsertionPoint(in: adjusted, color: color, turnedOn: flag)
+    }
+
     /// Screenshots (Cmd+Shift+Ctrl+4, or a copied Preview selection) don't
     /// always come back through `readObjects(forClasses:)` — depending on
     /// source, the pasteboard only advertises raw `.tiff`/`public.png` data

@@ -10,8 +10,6 @@ struct FormattingToolbar: View {
     let onInsertImage: () -> Void
     let onAttachFile: () -> Void
 
-    @State private var textColor: Color = .primary
-
     private static let fontFamilies = ["System", "Helvetica Neue", "Times New Roman", "Courier New", "Georgia", "Arial"]
     private static let fontSizes: [CGFloat] = [10, 12, 14, 16, 18, 24, 32]
 
@@ -47,8 +45,6 @@ struct FormattingToolbar: View {
                         Button("\(Int(size)) pt") { controller.setFontSize(size) }
                     }
                 }
-                ColorPicker("Text Color", selection: $textColor)
-                    .onChange(of: textColor) { _, newValue in controller.setTextColor(NSColor(newValue)) }
                 Divider()
                 Button("Indent") { controller.indent() }
                 Button("Outdent") { controller.outdent() }

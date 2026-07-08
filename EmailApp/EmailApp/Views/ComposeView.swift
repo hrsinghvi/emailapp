@@ -474,7 +474,7 @@ struct ComposeView: View {
                 try Task.checkCancellation()
                 let attributed = NSAttributedString(
                     string: text,
-                    attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.labelColor]
+                    attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.white]
                 )
                 let combined = NSMutableAttributedString(attributedString: previousBody)
                 if combined.length > 0 { combined.append(NSAttributedString(string: "\n\n")) }
@@ -509,7 +509,7 @@ struct ComposeView: View {
                 pushUndo(previousBody)
                 attributedBody = NSAttributedString(
                     string: text,
-                    attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.labelColor]
+                    attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.white]
                 )
             } catch is CancellationError {
             } catch {
@@ -590,7 +590,7 @@ struct ComposeView: View {
         vm.queueSend(
             draftId: hasSavedOnce ? draftId : nil, origin: origin,
             to: toEmails.joined(separator: ", "), cc: ccEmails.joined(separator: ", "), bcc: bccEmails.joined(separator: ", "),
-            subject: subject, bodyHTML: attributedBody.htmlString(), attachments: attachments
+            subject: subject, bodyHTML: attributedBody.htmlStringForSending(), attachments: attachments
         )
         onClose()
     }

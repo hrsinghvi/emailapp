@@ -240,15 +240,6 @@ final class RichTextEditorController {
         }
     }
 
-    func setTextColor(_ color: NSColor) {
-        guard let tv = textView else { return }
-        if tv.selectedRange().length > 0 {
-            withStorage { storage, range in storage.addAttribute(.foregroundColor, value: color, range: range) }
-        } else {
-            tv.typingAttributes[.foregroundColor] = color
-        }
-    }
-
     func setFontFamily(_ name: String) {
         guard let tv = textView else { return }
         let apply: (NSFont) -> NSFont = { old in NSFontManager.shared.convert(NSFont(name: name, size: old.pointSize) ?? old, toHaveTrait: NSFontManager.shared.traits(of: old)) }

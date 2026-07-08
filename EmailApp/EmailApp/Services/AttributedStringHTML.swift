@@ -22,4 +22,16 @@ extension NSAttributedString {
         ) else { return "" }
         return String(data: data, encoding: .utf8) ?? ""
     }
+
+    /// The compose editor is forced to a dark background, so its only
+    /// supported text color is white — but most recipients' inboxes (Gmail
+    /// included) render on a white background, where white text would be
+    /// invisible. Sending uses this instead of `htmlString()` to flip every
+    /// character to black right before it leaves the app; the draft/local
+    /// copy stays white for editing.
+    func htmlStringForSending() -> String {
+        let recolored = NSMutableAttributedString(attributedString: self)
+        recolored.addAttribute(.foregroundColor, value: NSColor.black, range: NSRange(location: 0, length: recolored.length))
+        return recolored.htmlString()
+    }
 }
