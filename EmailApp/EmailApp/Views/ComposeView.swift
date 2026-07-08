@@ -30,6 +30,11 @@ struct ComposeView: View {
     @State private var linkText = ""
     @State private var linkURL = ""
     @State private var hasSavedOnce = false
+    /// Mandatory From account — always shown, even on replies (where in
+    /// practice there's only ever one valid choice; see
+    /// `fromAccountChoices`'s doc comment for why). Sending is disabled
+    /// until this is set.
+    @State private var selectedAccountEmail = ""
 
     @State private var editorController = RichTextEditorController()
 
@@ -61,7 +66,7 @@ struct ComposeView: View {
         }
     }
 
-    private var isSendDisabled: Bool { toEmails.isEmpty || subject.isEmpty }
+    private var isSendDisabled: Bool { toEmails.isEmpty || subject.isEmpty || selectedAccountEmail.isEmpty }
 
     var body: some View {
         Group {
@@ -74,7 +79,7 @@ struct ComposeView: View {
         .quickLookPreview($outgoingPreviewURL)
         .onAppear(perform: prefill)
         .onAppear { editorController.subjectProvider = { subject } }
-        .onAppear { editorController.senderNameProvider = { composeAccount?.displayName ?? "" } }
+        .onAppear { editorController.senderNameProvider = { selectedAccount?.displayName ?? "" } }
         .onAppear {
             // Reply/Reply All already have a fixed recipient — the body is
             // the obvious next thing to type, so focus it instead of
@@ -170,6 +175,8 @@ struct ComposeView: View {
             // a zIndex here (at the sibling level in this VStack) or it
             // paints behind whichever field comes after it, same issue the
             // search bar's dropdown had against the toolbar below it.
+            fromRow
+
             RecipientChipField(placeholder: "To", emails: $toEmails, isDisabled: toIsFixed, autoFocus: !toIsFixed)
                 .zIndex(3)
 
@@ -419,15 +426,42 @@ struct ComposeView: View {
             attachments = draft.attachments.compactMap(\.outgoing)
             hasSavedOnce = true
         }
+        selectedAccountEmail = fromAccountChoices.first(where: { $0.email == composeAccount?.email })?.email
+            ?? fromAccountChoices.first?.email ?? ""
+    }
+
+    /// Reply/reply-all stay pinned to whichever account actually owns the
+    /// original message — Gmail/Graph threading is mailbox-specific (the
+    /// thread only exists in that one account's mailbox), so even a
+    /// same-provider account couldn't send it without breaking or simply
+    /// failing against the thread. New messages and forwards aren't tied to
+    /// any mailbox, so any connected account is a valid choice.
+    private var fromAccountChoices: [Account] {
+        func lockedTo(_ messageId: UUID) -> [Account] {
+            guard let message = vm.messages.first(where: { $0.id == messageId }) else { return vm.accounts }
+            return vm.accounts.filter { $0.id == message.accountId }
+        }
+        switch context {
+        case .reply(let message), .replyAll(let message):
+            return vm.accounts.filter { $0.id == message.accountId }
+        case .draft(let draft):
+            switch draft.origin {
+            case .reply(let messageId), .replyAll(let messageId): return lockedTo(messageId)
+            case .new, .forward: return vm.accounts
+            }
+        case .new, .forward:
+            return vm.accounts
+        }
     }
 
     private static func splitRecipients(_ raw: String) -> [String] {
         raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 
-    /// The account this compose session is sending as — same resolution
-    /// `prefill()` uses per-context, consolidated here so AI features (3g
-    /// autocomplete) know the real sender's name instead of guessing one.
+    /// The default account this compose session should send as — same
+    /// resolution `prefill()` seeds `selectedAccountEmail` from. Once the
+    /// picker's been touched, `selectedAccount` (below) reflects that
+    /// choice instead; this is only ever the starting point.
     private var composeAccount: Account? {
         switch context {
         case .new: return vm.accounts.first
@@ -437,6 +471,11 @@ struct ComposeView: View {
             return vm.accounts.first { $0.email == draft.accountEmail } ?? vm.accounts.first
         }
     }
+
+    /// The account actually selected in the From-picker right now — what
+    /// AI features (ghost-text sender identity) and the send path
+    /// (`selectedAccountEmail`) both key off of.
+    private var selectedAccount: Account? { vm.accounts.first { $0.email == selectedAccountEmail } }
 
     private func signatureHTML(forAccount account: Account?) -> String {
         guard let email = account?.email, let signature = AppSettings.shared.signatures[email], !signature.isEmpty else {
@@ -634,12 +673,56 @@ struct ComposeView: View {
     /// `InboxViewModel.queueSend`. The compose window closes immediately;
     /// nothing is transmitted until the window elapses.
     private func send() {
+        guard !selectedAccountEmail.isEmpty else { return }
         vm.queueSend(
-            draftId: hasSavedOnce ? draftId : nil, origin: origin,
+            draftId: hasSavedOnce ? draftId : nil, origin: origin, fromAccountEmail: selectedAccountEmail,
             to: toEmails.joined(separator: ", "), cc: ccEmails.joined(separator: ", "), bcc: bccEmails.joined(separator: ", "),
             subject: subject, bodyHTML: attributedBody.htmlString(), attachments: attachments
         )
         onClose()
+    }
+
+    /// Mandatory From account picker — shown on every compose window,
+    /// replies included, so it's always visible which account will
+    /// actually send even when (as with reply/reply-all) there's only one
+    /// valid choice. See `fromAccountChoices` for why that set is
+    /// sometimes locked to a single account.
+    private var fromRow: some View {
+        HStack(spacing: 10) {
+            Text("From")
+                .font(.appCaption)
+                .foregroundStyle(.secondary)
+                .frame(width: 32, alignment: .leading)
+            Menu {
+                ForEach(fromAccountChoices) { account in
+                    Button {
+                        selectedAccountEmail = account.email
+                    } label: {
+                        if account.email == selectedAccountEmail {
+                            Label(account.email, systemImage: "checkmark")
+                        } else {
+                            Text(account.email)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Circle().fill(selectedAccount?.color ?? .secondary).frame(width: 7, height: 7)
+                    Text(selectedAccountEmail.isEmpty ? "Select account" : selectedAccountEmail)
+                        .font(.appSubheadline)
+                        .foregroundStyle(selectedAccountEmail.isEmpty ? .secondary : .primary)
+                    if fromAccountChoices.count > 1 {
+                        Image(systemName: "chevron.down")
+                            .font(.appCaption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(fromAccountChoices.count <= 1)
+            Spacer()
+        }
     }
 
     private func field(_ placeholder: String, text: Binding<String>) -> some View {

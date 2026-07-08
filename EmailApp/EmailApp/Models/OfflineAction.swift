@@ -4,6 +4,7 @@ import Foundation
 /// Codable, since it has to survive a relaunch while offline.
 struct QueuedSend: Codable {
     let origin: DraftOrigin
+    let fromAccountEmail: String
     let to: String
     let cc: String
     let bcc: String

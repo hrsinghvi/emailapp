@@ -80,6 +80,9 @@ final class InboxViewModel {
         let id = UUID()
         let draftId: UUID?
         let origin: DraftOrigin
+        /// The account this is actually sending from — chosen (mandatorily)
+        /// via ComposeView's From-picker, not inferred after the fact.
+        let fromAccountEmail: String
         let to: String
         let cc: String
         let bcc: String
@@ -91,7 +94,7 @@ final class InboxViewModel {
 
         var asDraft: Draft {
             Draft(
-                id: draftId ?? UUID(), accountEmail: nil, to: to, cc: cc, bcc: bcc, subject: subject,
+                id: draftId ?? UUID(), accountEmail: fromAccountEmail, to: to, cc: cc, bcc: bcc, subject: subject,
                 bodyHTML: bodyHTML,
                 attachments: attachments.map { DraftAttachment(filename: $0.filename, mimeType: $0.mimeType, data: $0.data) },
                 origin: origin, lastModified: Date()
@@ -100,7 +103,7 @@ final class InboxViewModel {
 
         var asQueuedSend: QueuedSend {
             QueuedSend(
-                origin: origin, to: to, cc: cc, bcc: bcc, subject: subject, bodyHTML: bodyHTML,
+                origin: origin, fromAccountEmail: fromAccountEmail, to: to, cc: cc, bcc: bcc, subject: subject, bodyHTML: bodyHTML,
                 attachments: attachments.map { DraftAttachment(filename: $0.filename, mimeType: $0.mimeType, data: $0.data) }
             )
         }
@@ -362,7 +365,7 @@ final class InboxViewModel {
     /// transmitted until the window elapses uninterrupted — the email
     /// exists only locally until then.
     func queueSend(
-        draftId: UUID?, origin: DraftOrigin, to: String, cc: String, bcc: String,
+        draftId: UUID?, origin: DraftOrigin, fromAccountEmail: String, to: String, cc: String, bcc: String,
         subject: String, bodyHTML: String, attachments: [OutgoingAttachment]
     ) {
         // A pending send is its own state, not simultaneously a draft — drop
@@ -372,7 +375,7 @@ final class InboxViewModel {
 
         let delay = AppSettings.shared.undoSendDelay
         var pending = PendingSend(
-            draftId: draftId, origin: origin, to: to, cc: cc, bcc: bcc, subject: subject,
+            draftId: draftId, origin: origin, fromAccountEmail: fromAccountEmail, to: to, cc: cc, bcc: bcc, subject: subject,
             bodyHTML: bodyHTML, attachments: attachments, scheduledAt: Date().addingTimeInterval(delay)
         )
         let sendId = pending.id
@@ -406,7 +409,7 @@ final class InboxViewModel {
         }
         do {
             try await dispatchSend(
-                origin: pending.origin, to: pending.to, cc: pending.cc, bcc: pending.bcc,
+                origin: pending.origin, fromAccountEmail: pending.fromAccountEmail, to: pending.to, cc: pending.cc, bcc: pending.bcc,
                 subject: pending.subject, bodyHTML: pending.bodyHTML, attachments: pending.attachments
             )
             pendingSends.removeAll { $0.id == id }
@@ -429,7 +432,7 @@ final class InboxViewModel {
     }
 
     private func dispatchSend(
-        origin: DraftOrigin, to: String, cc: String, bcc: String, subject: String, bodyHTML rawBodyHTML: String,
+        origin: DraftOrigin, fromAccountEmail: String, to: String, cc: String, bcc: String, subject: String, bodyHTML rawBodyHTML: String,
         attachments: [OutgoingAttachment]
     ) async throws {
         // The compose editor stores/restores its body as white (its own
@@ -441,12 +444,18 @@ final class InboxViewModel {
         // coming back black.
         let bodyHTML = (NSAttributedString(html: rawBodyHTML) ?? NSAttributedString(string: rawBodyHTML)).htmlStringForSending()
         func plainSend() async throws {
-            try await send(to: to, cc: cc, bcc: bcc, subject: subject, bodyHTML: bodyHTML, attachments: attachments)
+            try await sendFrom(accountEmail: fromAccountEmail, to: to, cc: cc, bcc: bcc, subject: subject, bodyHTML: bodyHTML, attachments: attachments)
         }
         switch origin {
         case .new, .forward:
             try await plainSend()
         case .reply(let messageId):
+            // Reply/reply-all stay pinned to whichever account actually
+            // owns the original message, regardless of `fromAccountEmail`
+            // — Gmail/Graph threading is mailbox-specific (the thread only
+            // exists in that one account's mailbox), so ComposeView's
+            // From-picker only ever offers that same account for these two
+            // origins in the first place; this is just enforcing it here too.
             guard let message = messages.first(where: { $0.id == messageId }) else { try await plainSend(); return }
             try await reply(to: message, cc: cc, bcc: bcc, bodyHTML: bodyHTML, attachments: attachments)
         case .replyAll(let messageId):
@@ -529,7 +538,7 @@ final class InboxViewModel {
             }
         case .send(let payload):
             try await dispatchSend(
-                origin: payload.origin, to: payload.to, cc: payload.cc, bcc: payload.bcc,
+                origin: payload.origin, fromAccountEmail: payload.fromAccountEmail, to: payload.to, cc: payload.cc, bcc: payload.bcc,
                 subject: payload.subject, bodyHTML: payload.bodyHTML,
                 attachments: payload.attachments.compactMap(\.outgoing)
             )
