@@ -154,6 +154,7 @@ struct ComposeView: View {
             HStack(spacing: 10) {
                 Text(titleText)
                     .font(.appSubheadline.weight(.semibold))
+                Spacer()
                 fromPill
                 Spacer()
                 Button { withAnimation(.easeOut(duration: 0.15)) { isMinimized = true } } label: {
@@ -171,6 +172,7 @@ struct ComposeView: View {
                 }
                 .buttonStyle(.pointerPlain)
             }
+            .padding(.bottom, 6)
 
             // Each field's suggestion dropdown floats via .overlay — needs
             // a zIndex here (at the sibling level in this VStack) or it
