@@ -45,14 +45,33 @@ enum AIService {
     static func askAboutEmail(question: String, thread: [Message], onToken: @escaping @MainActor (String) -> Void) async throws {
         let system = "\(groundedSystemPrefix) You are an email assistant. Answer briefly and only using the provided email content."
         let prompt = "Email thread:\n\(threadContext(thread))\n\nQuestion: \(question)"
-        try await OllamaService.generateStreaming(prompt: prompt, system: system, maxTokens: 400, onToken: onToken)
+        try await OllamaService.generateStreaming(prompt: prompt, system: system, maxTokens: 400, temperature: 0.2, onToken: onToken)
     }
 
     /// 3c — one-shot summary of a 3+ message thread.
     static func summarizeThread(_ messages: [Message]) async throws -> String {
         let system = "\(groundedSystemPrefix) You are an email assistant. Summarize the thread in 3-5 short bullet points, noting any open questions or action items."
         let prompt = "Email thread:\n\(threadContext(messages))"
-        return try await OllamaService.generate(prompt: prompt, system: system, maxTokens: 350)
+        return try await OllamaService.generate(prompt: prompt, system: system, maxTokens: 350, temperature: 0.2)
+    }
+
+    /// A handful of words that reliably signal "this needs a fact I might
+    /// not know reliably" — checked in ADDITION to (not instead of)
+    /// `decideSearchQuery` below, because that classification call is
+    /// itself just a small local model's judgment call and has been
+    /// observed to say no search is needed for requests that obviously did
+    /// (e.g. "today's World Cup results"). This is a deterministic
+    /// backstop: if any of these appear, a search always runs regardless
+    /// of what the classifier decided.
+    private static let factualSignalWords = [
+        "today", "yesterday", "tonight", "this week", "this weekend", "latest", "current", "currently",
+        "score", "scores", "result", "results", "won", "win", "lost", "loss", "beat", "final score",
+        "news", "happened", "update", "price", "prices", "stock", "weather", "schedule", "standings",
+    ]
+
+    private static func containsFactualSignal(_ text: String) -> Bool {
+        let lowered = text.lowercased()
+        return factualSignalWords.contains { lowered.contains($0) }
     }
 
     /// Lets the model decide for itself whether a draft request needs
@@ -60,13 +79,17 @@ enum AIService {
     /// if so, what to search for — rather than blindly searching the raw
     /// instructions text (often a bad query: "write a thank you note to
     /// Sarah" produces junk results). Returns nil when no search is needed.
+    /// `containsFactualSignal` above is the deterministic backstop for when
+    /// this call itself gets the judgment call wrong.
     private static func decideSearchQuery(for instructions: String) async -> String? {
         let system = "\(dateContext) Decide whether writing this email requires current or real-world facts you might not know reliably (news, scores, prices, schedules, dates). If yes, reply with ONLY a short web search query (3-8 words, no punctuation). If no search is needed, reply with exactly: NONE"
         let prompt = "Email request: \(instructions)"
-        guard let result = try? await OllamaService.generate(prompt: prompt, system: system, maxTokens: 20) else { return nil }
+        guard let result = try? await OllamaService.generate(prompt: prompt, system: system, maxTokens: 20, temperature: 0.1) else {
+            return containsFactualSignal(instructions) ? instructions : nil
+        }
         let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.uppercased().contains("NONE") else { return nil }
-        return trimmed
+        if !trimmed.isEmpty, !trimmed.uppercased().contains("NONE") { return trimmed }
+        return containsFactualSignal(instructions) ? instructions : nil
     }
 
     /// 3d — drafts a reply/new email body from a natural-language prompt,
@@ -79,8 +102,10 @@ enum AIService {
     static func draftEmail(instructions: String, quotedThread: [Message], pastSentToRecipient: [Message]) async throws -> String {
         var system = "\(groundedSystemPrefix) You are an email assistant. Write only the email body, no subject line, no greeting placeholders unless natural. Match the tone of past sent messages if provided."
         var prompt = "Instructions: \(instructions)"
+        var didSearch = false
 
         if let query = await decideSearchQuery(for: instructions) {
+            didSearch = true
             let searchResults = await WebSearchService.search(query)
             if !searchResults.isEmpty {
                 // "Trust the results over your own knowledge" alone wasn't
@@ -103,7 +128,12 @@ enum AIService {
         if !pastSentToRecipient.isEmpty {
             prompt += "\n\nPast messages I've sent this recipient (for tone):\n\(threadContext(pastSentToRecipient, limit: 3))"
         }
-        return try await OllamaService.generate(prompt: prompt, system: system, maxTokens: 400)
+        // Lower temperature once search results are grounding the answer —
+        // a 7B model's default sampling still tends to pad a factual list
+        // out to a "complete-feeling" size even when told not to; less
+        // randomness makes it more likely to actually stick to what's in
+        // front of it instead of drifting back to pattern completion.
+        return try await OllamaService.generate(prompt: prompt, system: system, maxTokens: 400, temperature: didSearch ? 0.2 : 0.7)
     }
 
     enum RewriteStyle: String, CaseIterable {

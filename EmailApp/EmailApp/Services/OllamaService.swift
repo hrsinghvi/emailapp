@@ -55,8 +55,8 @@ enum OllamaService {
     /// Non-streaming single-shot generation via qwen2.5:7b — used wherever
     /// the caller just wants the final text (Phase 3's AIService builds on
     /// this; nothing in Phase 1 calls it yet).
-    static func generate(prompt: String, system: String? = nil, maxTokens: Int = 512) async throws -> String {
-        struct Options: Encodable { let num_predict: Int }
+    static func generate(prompt: String, system: String? = nil, maxTokens: Int = 512, temperature: Double = 0.7) async throws -> String {
+        struct Options: Encodable { let num_predict: Int; let temperature: Double }
         struct Request: Encodable {
             let model: String
             let prompt: String
@@ -70,7 +70,7 @@ enum OllamaService {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONEncoder().encode(Request(
-            model: "qwen2.5:7b", prompt: prompt, system: system, stream: false, options: Options(num_predict: maxTokens)
+            model: "qwen2.5:7b", prompt: prompt, system: system, stream: false, options: Options(num_predict: maxTokens, temperature: temperature)
         ))
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -85,9 +85,9 @@ enum OllamaService {
     /// one with "done":true. `onToken` is called on the main actor as each
     /// chunk arrives so callers can update UI directly.
     static func generateStreaming(
-        prompt: String, system: String? = nil, maxTokens: Int = 512, onToken: @escaping @MainActor (String) -> Void
+        prompt: String, system: String? = nil, maxTokens: Int = 512, temperature: Double = 0.7, onToken: @escaping @MainActor (String) -> Void
     ) async throws {
-        struct Options: Encodable { let num_predict: Int }
+        struct Options: Encodable { let num_predict: Int; let temperature: Double }
         struct Request: Encodable {
             let model: String
             let prompt: String
@@ -101,7 +101,7 @@ enum OllamaService {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONEncoder().encode(Request(
-            model: "qwen2.5:7b", prompt: prompt, system: system, stream: true, options: Options(num_predict: maxTokens)
+            model: "qwen2.5:7b", prompt: prompt, system: system, stream: true, options: Options(num_predict: maxTokens, temperature: temperature)
         ))
         let (bytes, response) = try await URLSession.shared.bytes(for: req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
