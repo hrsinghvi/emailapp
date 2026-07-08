@@ -7,11 +7,6 @@ import UniformTypeIdentifiers
 struct ComposeView: View {
     let vm: InboxViewModel
     let context: InboxViewModel.ComposeContext
-    /// This session's stable identity in `vm.composeSessions` — needed so
-    /// this instance's own Escape monitor (below) can tell whether it's the
-    /// one that should actually act, since every open ComposeView installs
-    /// one and AppKit fires all of them for a single keypress.
-    let sessionId: UUID
     /// Floats as a non-modal panel (Gmail-style), not a `.sheet` — so there's
     /// no `\.dismiss` environment value to close it with.
     let onClose: () -> Void
@@ -37,7 +32,6 @@ struct ComposeView: View {
     @State private var hasSavedOnce = false
 
     @State private var editorController = RichTextEditorController()
-    @State private var escapeMonitor: Any?
 
     // 3d — Draft with AI
     @State private var isDraftPromptShown = false
@@ -91,34 +85,6 @@ struct ComposeView: View {
             guard toIsFixed else { return }
             DispatchQueue.main.async { editorController.focus() }
         }
-        .onAppear {
-            // SwiftUI's .onKeyPress doesn't reliably see Escape when focus
-            // is inside the rich text editor's underlying NSTextView (it's
-            // its own first responder and can swallow the key before it
-            // ever reaches SwiftUI's responder chain) — a local NSEvent
-            // monitor intercepts it regardless of which control has focus.
-            // Escape minimizes (Gmail's behavior) rather than closing —
-            // only the header's X actually discards/closes-to-draft. If
-            // already minimized there's nothing smaller to collapse to, so
-            // the event passes through untouched.
-            //
-            // With up to 3 compose windows open, EVERY one of them installs
-            // a monitor like this, and AppKit fires all of them for a
-            // single Escape press — without the sessionId check below, all
-            // three (or whichever ones passed their own guard) would react
-            // at once. Only the leftmost still-open session (the one
-            // `openCompose` most recently inserted at the front) actually
-            // acts; the rest pass the event through untouched.
-            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                // Let the link-insert sheet handle its own Escape/Cancel
-                // instead of minimizing the whole compose window underneath it.
-                guard event.keyCode == 53, !showLinkPrompt, !isMinimized,
-                      vm.composeSessions.first(where: { !$0.isMinimized })?.id == sessionId
-                else { return event }
-                withAnimation(.easeOut(duration: 0.15)) { isMinimized = true }
-                return nil
-            }
-        }
         .onChange(of: isMinimized) { _, minimized in
             // Reply/Reply All's autofocus already only fires on first
             // appear — restoring from minimized needs its own trigger since
@@ -129,7 +95,6 @@ struct ComposeView: View {
         }
         .onDisappear {
             autosave()
-            if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
         }
         .task {
             while !Task.isCancelled {

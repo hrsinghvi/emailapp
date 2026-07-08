@@ -148,7 +148,6 @@ struct ContentView: View {
                         ComposeView(
                             vm: vm,
                             context: session.context,
-                            sessionId: session.id,
                             onClose: { vm.closeCompose(session.id) },
                             isMinimized: Binding(
                                 get: { vm.composeSessions.first { $0.id == session.id }?.isMinimized ?? false },
@@ -215,10 +214,15 @@ struct ContentView: View {
                 vm.isSettingsPresented = false
                 return nil
             }
-            // Each open ComposeView owns its own Escape handling now
-            // (minimize, not close — see ComposeView's escapeMonitor) since
-            // there's no longer a single "the" compose window to act on
-            // here with multiple possibly open at once.
+            // Centralized here rather than each ComposeView installing its
+            // own monitor — AppKit fires every local monitor for a single
+            // keypress, so with several open there's no way for each
+            // instance to know on its own which one (if any) should react.
+            // See `handleComposeEscape`'s doc comment for the actual rule.
+            if !vm.composeSessions.isEmpty {
+                vm.handleComposeEscape()
+                return nil
+            }
             if vm.isAskAIPanelPresented {
                 vm.isAskAIPanelPresented = false
                 return nil

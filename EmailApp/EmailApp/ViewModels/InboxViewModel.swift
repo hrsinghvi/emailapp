@@ -202,6 +202,30 @@ final class InboxViewModel {
     func closeCompose(_ id: UUID) {
         composeSessions.removeAll { $0.id == id }
     }
+
+    /// Escape's behavior depends on how many compose windows are open.
+    /// With exactly one: a first press minimizes it, a second closes it
+    /// (autosaving as a draft if there's content, same as clicking the X —
+    /// `ComposeView.onDisappear` already does that unconditionally on
+    /// removal). With more than one, Escape only ever minimizes — the
+    /// rightmost (oldest) still-open session first, then the next one to
+    /// its left on each subsequent press, since `openCompose` inserts new
+    /// sessions at the front (leftmost) — and never closes anything, so a
+    /// stray Escape can't discard work when several are open at once. Once
+    /// every session is minimized, further presses do nothing.
+    func handleComposeEscape() {
+        guard composeSessions.count > 1 else {
+            guard let only = composeSessions.first else { return }
+            if only.isMinimized {
+                closeCompose(only.id)
+            } else {
+                composeSessions[0].isMinimized = true
+            }
+            return
+        }
+        guard let index = composeSessions.lastIndex(where: { !$0.isMinimized }) else { return }
+        composeSessions[index].isMinimized = true
+    }
     /// Bumped to request the search field take keyboard focus (Cmd+K).
     var searchFocusTrigger = 0
     /// Bumped to request the search field give up keyboard focus — the
