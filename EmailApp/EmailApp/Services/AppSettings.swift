@@ -183,7 +183,13 @@ final class AppSettings {
         launchAtLogin = defaults.object(forKey: Key.launchAtLogin) as? Bool ?? false
         keepAwakeDuringSync = defaults.object(forKey: Key.keepAwakeDuringSync) as? Bool ?? false
         quitBehavior = QuitBehavior(rawValue: defaults.string(forKey: Key.quitBehavior) ?? "") ?? .stayInDock
-        syncFrequencyMinutes = defaults.object(forKey: Key.syncFrequencyMinutes) as? Int ?? 0
+        // 0 disabled the periodic fallback entirely by default, leaving new
+        // mail 100% dependent on the realtime webhook — which has no retry
+        // of its own, so one transient failure silently and permanently
+        // stops new mail from appearing until a manual refresh. 5 minutes
+        // makes the "belt and suspenders" comment on startSyncTimerIfNeeded
+        // actually true out of the box.
+        syncFrequencyMinutes = defaults.object(forKey: Key.syncFrequencyMinutes) as? Int ?? 5
         notificationsEnabled = defaults.object(forKey: Key.notificationsEnabled) as? Bool ?? true
         mutedAccountEmails = Set(defaults.stringArray(forKey: Key.mutedAccountEmails) ?? [])
         undoSendDelay = defaults.object(forKey: Key.undoSendDelay) as? Double ?? 8
