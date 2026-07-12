@@ -177,6 +177,7 @@ private struct GeneralSettingsSection: View {
             SettingsRow(title: "Sync frequency", subtitle: "Realtime push already covers new mail — this is a backup periodic refresh") {
                 Picker("", selection: $settings.syncFrequencyMinutes) {
                     Text("Off").tag(0)
+                    Text("Every 1 min").tag(1)
                     Text("Every 5 min").tag(5)
                     Text("Every 15 min").tag(15)
                     Text("Every 30 min").tag(30)

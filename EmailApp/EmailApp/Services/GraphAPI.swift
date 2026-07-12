@@ -38,14 +38,14 @@ enum GraphAPI {
 
     /// Fetches inbox messages, newest first.
     nonisolated static func fetchInbox(
-        for account: Account, accessToken: String, limit: Int = 25
+        for account: Account, accessToken: String, limit: Int = 200
     ) async throws -> [Message] {
         try await fetchFolder(wellKnownName: "inbox", folder: "inbox", for: account, accessToken: accessToken, limit: limit)
     }
 
     /// Fetches Sent Items so the Sent folder in the sidebar has content.
     nonisolated static func fetchSent(
-        for account: Account, accessToken: String, limit: Int = 25
+        for account: Account, accessToken: String, limit: Int = 200
     ) async throws -> [Message] {
         try await fetchFolder(wellKnownName: "sentitems", folder: "sent", for: account, accessToken: accessToken, limit: limit)
     }

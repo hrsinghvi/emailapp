@@ -27,14 +27,14 @@ enum GmailAPI {
 
     /// Fetches INBOX messages, decoding each concurrently (capped at 5 in flight).
     nonisolated static func fetchInbox(
-        for account: Account, accessToken: String, limit: Int = 25
+        for account: Account, accessToken: String, limit: Int = 200
     ) async throws -> [Message] {
         try await fetchMessages(labelIds: ["INBOX"], folder: "inbox", for: account, accessToken: accessToken, limit: limit)
     }
 
     /// Fetches SENT messages so the Sent folder in the sidebar has content.
     nonisolated static func fetchSent(
-        for account: Account, accessToken: String, limit: Int = 25
+        for account: Account, accessToken: String, limit: Int = 200
     ) async throws -> [Message] {
         try await fetchMessages(labelIds: ["SENT"], folder: "sent", for: account, accessToken: accessToken, limit: limit)
     }
